@@ -1,0 +1,6 @@
+services:
+  roadlab:
+    build: .
+    ports:
+      - "${ROADLAB_PORT:-8080}:80"
+    restart: unless-stopped

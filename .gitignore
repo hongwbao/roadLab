@@ -1,0 +1,16 @@
+node_modules/
+dist/
+.cache/
+artifacts/
+test-results/
+playwright-report/
+coverage/
+.impeccable/
+PRODUCT.md
+.env
+.env.*
+!.env.example
+*.local
+*.log
+.~lock.*#
+.DS_Store

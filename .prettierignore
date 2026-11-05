@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.cache/
+artifacts/
+test-results/
+playwright-report/
+coverage/
+.impeccable/
+PRODUCT.md
+package-lock.json

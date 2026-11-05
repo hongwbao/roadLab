@@ -1,0 +1,93 @@
+{
+  "recorded_at": "2026-11-05T11:59:28.249890+00:00",
+  "latest_change": "游戏式道路资产 HUD、B 拆除、自动路口、车辆避碰、双向通行口，以及参考 CSUR 模块思路独立实现的单向端点断面对齐。",
+  "checks": [
+    {
+      "command": "npm run build",
+      "exit_code": 0
+    },
+    {
+      "command": "npm test",
+      "exit_code": 0,
+      "passed_cases": 46
+    },
+    {
+      "command": "npm run test:e2e",
+      "exit_code": 0,
+      "passed_cases": 20,
+      "last_run": {
+        "status": "passed",
+        "failedTests": []
+      }
+    },
+    {
+      "command": "node tests/production.mjs",
+      "exit_code": 0,
+      "result": {
+        "roads": 5,
+        "routes": 2,
+        "canvas": true,
+        "errors": [],
+        "passed": true
+      }
+    }
+  ],
+  "traffic_stress": {
+    "duration_per_case_simulated_seconds": 120,
+    "source_rate_per_minute": 60,
+    "global_multiplier": 4,
+    "metrics": {
+      "transition": {
+        "completed": 13,
+        "active": 76,
+        "overlaps": 0,
+        "maxMove": 0.8415066514558637,
+        "maxAngle": 0.011158023060059086,
+        "turns": 0
+      },
+      "junction": {
+        "completed": 30,
+        "active": 68,
+        "overlaps": 0,
+        "maxMove": 0.6944444444445139,
+        "maxAngle": 0.05894087336208776,
+        "turns": 2025
+      },
+      "merge": {
+        "completed": 62,
+        "active": 96,
+        "overlaps": 0,
+        "maxMove": 0.8421826583772651,
+        "maxAngle": 0.01047470404421838,
+        "turns": 0
+      }
+    },
+    "scope": "仅覆盖过渡分流、城市四臂路口和汇入三个固定场景；overlaps 为每个 0.05s 观测的车身定向矩形重叠次数。内部以最多 0.025s 时间步执行碰撞检查。"
+  },
+  "interaction_review": {
+    "disposition": "ship",
+    "scope": "独立审查员只复核 F1–F4 和新增单向端点偏移吸附的限定范围，不泛化为任意路网或整个产品无缺陷。",
+    "fixes": {
+      "F1": "resolved：通行口模式一键返回道路资产。",
+      "F2": "resolved：页脚进入手工通行口模式，批量识别仅在面板明确触发。",
+      "F3": "resolved：主要按钮悬停白字对比度 5.7156:1。",
+      "F4": "resolved：先选偏移起点后垂直转向，预览和提交统一回到参考中心节点，两个方向均无额外短段且路径可达。"
+    },
+    "evidence_mode": "审查员查看源码、有效截图、测试及状态记录，未声称亲自执行浏览器。"
+  },
+  "evidence": [
+    "docs/images/editor.png",
+    "docs/images/junction.png",
+    "docs/images/offset-snapping.png",
+    "docs/feature-map.json",
+    "docs/csur-design.md"
+  ],
+  "limitations": [
+    "桌面键鼠为目标平台；窄屏布局不等于完整触控编辑。",
+    "交通为简化模型，未经真实交通数据校准；路口使用保守逐车预约，无信号灯。",
+    "偏移对齐适用于单向且近似平行的端点接口，不覆盖任意位置的平行道路偏移。",
+    "复杂道路的几何和净空检查采用采样。",
+    "本机保存属于当前浏览器与网址，JSON 导出用于可移植备份。"
+  ],
+  "record_type": "功能实现时的验证快照；当前提交的持续验证请查看 GitHub Actions CI。"
+}

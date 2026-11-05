@@ -1,0 +1,950 @@
+import * as T from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { buildJunctions, roadRange, type Junction } from "../core/junctions";
+import {
+  add,
+  arcParameter,
+  arcTable,
+  boundaryPoint,
+  center,
+  dist,
+  laneCount,
+  laneDirection,
+  lanePoint,
+  laneWidth,
+  lerp,
+  mul,
+  nearest,
+  normal,
+  point,
+  smooth,
+  tangent,
+  totalAt,
+} from "../core/math";
+import { connections } from "../core/model";
+import type { Project, Road, Settings, V } from "../core/types";
+import type { Step, Vehicle } from "../simulation/simulation";
+const vec = (p: V) => new T.Vector3(p.x, p.y, p.z);
+export type Hit = {
+  road?: string;
+  knot?: number;
+  part?: "p" | "incoming" | "outgoing";
+  lane?: number;
+  handle?: boolean;
+  position?: V;
+  end?: "start" | "end";
+  port?: boolean;
+};
+export class Scene {
+  renderer: T.WebGLRenderer;
+  scene = new T.Scene();
+  camera: T.PerspectiveCamera;
+  controls: OrbitControls;
+  roads = new T.Group();
+  overlays = new T.Group();
+  details = new T.Group();
+  handles = new T.Group();
+  preview = new T.Group();
+  cars = new T.Group();
+  ground = new T.Group();
+  routePreview = new T.Group();
+  private ray = new T.Raycaster();
+  private mouse = new T.Vector2();
+  private junctionList: Junction[] = [];
+  private ranges = new Map<string, { start: number; end: number }>();
+  private currentProject?: Project;
+  private hoverId?: string;
+  private hoverMode?: string;
+  junctionMesh = new T.Group();
+  hover = new T.Group();
+  buildMarker = new T.Group();
+  portGroup = new T.Group();
+  private bodyInstances!: T.InstancedMesh;
+  private cabinInstances!: T.InstancedMesh;
+  private wheelInstances!: T.InstancedMesh;
+  private mats = {
+    asphalt: new T.MeshStandardMaterial({
+      color: 0x354445,
+      roughness: 0.95,
+      side: T.DoubleSide,
+    }),
+    side: new T.MeshStandardMaterial({
+      color: 0x82918d,
+      roughness: 1,
+      side: T.DoubleSide,
+    }),
+    mark: new T.LineBasicMaterial({ color: 0xf0eed8 }),
+    lane: new T.LineBasicMaterial({
+      color: 0x33a7ac,
+      transparent: true,
+      opacity: 0.8,
+    }),
+    selected: new T.LineBasicMaterial({ color: 0xea7b35 }),
+    ghost: new T.MeshStandardMaterial({
+      color: 0x63baf1,
+      transparent: true,
+      opacity: 0.45,
+      side: T.DoubleSide,
+    }),
+    invalid: new T.MeshStandardMaterial({
+      color: 0xbb4d32,
+      transparent: true,
+      opacity: 0.65,
+      side: T.DoubleSide,
+    }),
+  };
+  private demolition = new T.MeshBasicMaterial({
+    color: 0xf15b48,
+    transparent: true,
+    opacity: 0.72,
+    side: T.DoubleSide,
+  });
+  private hoverBlue = new T.MeshBasicMaterial({
+    color: 0x69caff,
+    transparent: true,
+    opacity: 0.35,
+    side: T.DoubleSide,
+  });
+  constructor(public el: HTMLElement) {
+    this.renderer = new T.WebGLRenderer({ antialias: true, alpha: false });
+    this.renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    this.renderer.setClearColor(0x8ca77c);
+    this.renderer.toneMapping = T.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 1.05;
+    this.renderer.outputColorSpace = T.SRGBColorSpace;
+    this.el.append(this.renderer.domElement);
+    this.camera = new T.PerspectiveCamera(42, 1, 0.2, 3000);
+    this.camera.position.set(135, 210, 240);
+    this.controls = new OrbitControls(this.camera, this.renderer.domElement);
+    this.controls.target.set(0, 0, 10);
+    this.controls.enableDamping = true;
+    this.controls.dampingFactor = 0.12;
+    this.controls.maxPolarAngle = Math.PI * 0.48;
+    this.controls.minDistance = 20;
+    this.controls.maxDistance = 1000;
+    this.controls.mouseButtons = {
+      LEFT: undefined as unknown as T.MOUSE,
+      MIDDLE: T.MOUSE.PAN,
+      RIGHT: undefined as unknown as T.MOUSE,
+    };
+    this.scene.add(new T.HemisphereLight(0xffffff, 0x6b825c, 1.8));
+    const sun = new T.DirectionalLight(0xfff3da, 1.5);
+    sun.position.set(-80, 180, 60);
+    this.scene.add(sun);
+    const plane = new T.Mesh(
+      new T.PlaneGeometry(2000, 2000),
+      new T.MeshStandardMaterial({ color: 0x92aa7e, roughness: 1 }),
+    );
+    plane.rotation.x = -Math.PI / 2;
+    plane.position.y = -0.16;
+    this.ground.add(plane);
+    const grid = new T.GridHelper(1000, 100, 0xb8c5b0, 0xcdd7c4);
+    grid.position.y = -0.12;
+    (grid.material as T.Material).transparent = true;
+    (grid.material as T.Material).opacity = 0.3;
+    this.ground.add(grid);
+    this.scene.add(
+      this.ground,
+      this.roads,
+      this.overlays,
+      this.details,
+      this.handles,
+      this.preview,
+      this.cars,
+      this.routePreview,
+    );
+    this.scene.add(
+      this.junctionMesh,
+      this.hover,
+      this.buildMarker,
+      this.portGroup,
+    );
+    this.renderer.domElement.addEventListener(
+      "pointerdown",
+      (e) => {
+        if (e.button === 1)
+          this.controls.mouseButtons.MIDDLE = e.altKey
+            ? T.MOUSE.ROTATE
+            : T.MOUSE.PAN;
+      },
+      { capture: true },
+    );
+    this.initializeCars();
+    this.el.addEventListener("contextmenu", (e) => e.preventDefault());
+    this.renderer.domElement.addEventListener("pointerdown", () =>
+      this.el.focus({ preventScroll: true }),
+    );
+    new ResizeObserver(() => this.resize()).observe(el);
+    this.resize();
+  }
+  resize() {
+    const w = this.el.clientWidth,
+      h = this.el.clientHeight;
+    this.renderer.setSize(w, h);
+    this.camera.aspect = w / h;
+    this.camera.updateProjectionMatrix();
+  }
+  clear(group: T.Group) {
+    for (const obj of [...group.children]) {
+      group.remove(obj);
+      obj.traverse((child) => {
+        if (child instanceof T.Mesh || child instanceof T.Line) {
+          child.geometry.dispose();
+          const mats = Array.isArray(child.material)
+            ? child.material
+            : [child.material];
+          for (const m of mats)
+            if (
+              ![
+                ...Object.values(this.mats),
+                this.demolition,
+                this.hoverBlue,
+              ].includes(m as never)
+            )
+              m.dispose();
+        }
+      });
+    }
+  }
+  line(points: V[], material: T.LineBasicMaterial, group: T.Group, hit?: Hit) {
+    const g = new T.BufferGeometry().setFromPoints(
+      points.map((p) => vec({ ...p, y: p.y + 0.065 })),
+    );
+    const l = new T.Line(g, material);
+    if (hit) l.userData = hit;
+    group.add(l);
+    return l;
+  }
+  roadMesh(
+    r: Road,
+    group: T.Group,
+    material: T.Material = this.mats.asphalt,
+    range = { start: 0, end: 1 },
+  ) {
+    const n = Math.max(60, r.knots.length * 35),
+      positions: number[] = [],
+      indices: number[] = [];
+    for (let i = 0; i <= n; i++) {
+      const t = range.start + ((range.end - range.start) * i) / n,
+        c = center(r, t),
+        norm = normal(r, t),
+        half = (totalAt(r, t) * r.width) / 2 + 0.35;
+      for (const sign of [-1, 1]) {
+        const q = add(c, mul(norm, half * sign));
+        positions.push(q.x, q.y, q.z);
+      }
+    }
+    for (let i = 0; i < n; i++) {
+      const j = i * 2;
+      indices.push(j, j + 2, j + 1, j + 1, j + 2, j + 3);
+    }
+    const g = new T.BufferGeometry();
+    g.setAttribute("position", new T.Float32BufferAttribute(positions, 3));
+    g.setIndex(indices);
+    g.computeVertexNormals();
+    const mesh = new T.Mesh(g, material);
+    mesh.userData = { road: r.id };
+    group.add(mesh);
+    if (material !== this.mats.asphalt) return;
+    // A thin deck gives elevated roads a readable edge; columns are visual only.
+    for (const sign of [-1, 1]) {
+      const side: number[] = [];
+      for (let i = 0; i <= n; i++) {
+        const t = range.start + ((range.end - range.start) * i) / n,
+          c = center(r, t),
+          norm = normal(r, t),
+          q = add(c, mul(norm, ((totalAt(r, t) * r.width) / 2 + 0.35) * sign));
+        side.push(q.x, q.y - 0.02, q.z, q.x, q.y - 0.45, q.z);
+      }
+      const sg = new T.BufferGeometry();
+      sg.setAttribute("position", new T.Float32BufferAttribute(side, 3));
+      sg.setIndex(indices);
+      sg.computeVertexNormals();
+      group.add(new T.Mesh(sg, this.mats.side));
+    }
+    for (let t = 0.12; t < 1; t += 0.18) {
+      const p = center(r, range.start + (range.end - range.start) * t);
+      if (p.y > 3) {
+        const column = new T.Mesh(
+          new T.CylinderGeometry(0.55, 0.65, p.y, 8),
+          new T.MeshStandardMaterial({ color: 0x9ca89a }),
+        );
+        column.position.set(p.x, p.y / 2 - 0.25, p.z);
+        group.add(column);
+      }
+    }
+  }
+  rebuild(
+    p: Project,
+    selected: Set<string>,
+    settings: Settings,
+    showHandles = true,
+  ) {
+    this.currentProject = p;
+    this.junctionList = buildJunctions(p);
+    this.ranges = new Map(
+      p.roads.map((r) => [r.id, roadRange(r, this.junctionList)]),
+    );
+    this.clear(this.junctionMesh);
+    this.clear(this.portGroup);
+    this.clear(this.hover);
+    this.hoverId = undefined;
+    this.clear(this.roads);
+    this.clear(this.overlays);
+    this.clear(this.details);
+    this.clear(this.handles);
+    this.clear(this.routePreview);
+    this.ground.children[1].visible = settings.grid;
+    for (const r of p.roads) {
+      const group = new T.Group();
+      const height = (point(r, 0).y + point(r, 1).y) / 2;
+      const hidden =
+        settings.layer !== -1 && Math.abs(height - settings.layer * 8) > 5;
+      if (hidden && !settings.ghost) continue;
+      const range = this.ranges.get(r.id)!;
+      this.roadMesh(
+        r,
+        group,
+        hidden ? this.mats.ghost : this.mats.asphalt,
+        range,
+      );
+      if (hidden) {
+        group.traverse((obj) => (obj.userData.noPick = true));
+        this.roads.add(group);
+        continue;
+      }
+      this.roads.add(group);
+      for (const side of [-1, 1]) {
+        const pts: V[] = [];
+        for (let i = 0; i <= 100; i++) {
+          const t = range.start + ((range.end - range.start) * i) / 100;
+          pts.push(
+            add(
+              center(r, t),
+              mul(normal(r, t), ((totalAt(r, t) * r.width) / 2 - 0.12) * side),
+            ),
+          );
+        }
+        this.line(
+          pts,
+          selected.has(r.id) ? this.mats.selected : this.mats.mark,
+          this.overlays,
+        );
+      }
+      const max = laneCount(r);
+      for (let l = 1; l < max; l++) {
+        for (let j = 0; j < 100; j += 5) {
+          const pts: V[] = [];
+          for (let k = j; k <= j + 2; k++) {
+            const t = range.start + ((range.end - range.start) * k) / 100;
+            if (laneWidth(r, l, t) < 0.15 || laneWidth(r, l - 1, t) < 0.15)
+              continue;
+            const q = boundaryPoint(r, l, t);
+            if (r.twoWay && l === max / 2) q.y += 0.012;
+            pts.push(q);
+          }
+          if (pts.length > 1) this.line(pts, this.mats.mark, this.details);
+        }
+      }
+      for (let l = 0; l < max; l++) {
+        if (settings.paths) {
+          const pts: V[] = [];
+          for (let i = 0; i <= 100; i++)
+            if (
+              laneWidth(
+                r,
+                l,
+                range.start + ((range.end - range.start) * i) / 100,
+              ) >
+              r.width * 0.75
+            )
+              pts.push(
+                lanePoint(
+                  r,
+                  l,
+                  range.start + ((range.end - range.start) * i) / 100,
+                ),
+              );
+          if (pts.length > 1) this.line(pts, this.mats.lane, this.overlays);
+        }
+        if (settings.arrows)
+          for (const t of [0.22, 0.55, 0.83]) {
+            if (t < range.start + 0.01 || t > range.end - 0.01) continue;
+            if (laneWidth(r, l, t) < r.width * 0.8) continue;
+            const p = lanePoint(r, l, t),
+              d = mul(tangent(r, t), laneDirection(r, l)),
+              n = normal(r, t),
+              tip = add(p, mul(d, 1.7));
+            this.line(
+              [
+                add(p, mul(d, -1.7)),
+                tip,
+                add(add(p, mul(d, 0.2)), mul(n, 0.75)),
+                tip,
+                add(add(p, mul(d, 0.2)), mul(n, -0.75)),
+              ],
+              this.mats.mark,
+              this.details,
+            );
+          }
+      }
+      if (selected.has(r.id) && showHandles)
+        for (let i = 0; i < r.knots.length; i++) {
+          const k = r.knots[i];
+          for (const part of ["p", "incoming", "outgoing"] as const) {
+            if (
+              (part === "incoming" && i === 0) ||
+              (part === "outgoing" && i === r.knots.length - 1)
+            )
+              continue;
+            if (part !== "p")
+              this.line(
+                [k.p, k[part]],
+                new T.LineBasicMaterial({
+                  color: 0xc97537,
+                  transparent: true,
+                  opacity: 0.7,
+                }),
+                this.handles,
+              );
+            const m = new T.Mesh(
+              new T.SphereGeometry(part === "p" ? 1.4 : 1, 12, 8),
+              new T.MeshBasicMaterial({
+                color: part === "p" ? 0xf08740 : 0xfff5dd,
+                depthTest: false,
+              }),
+            );
+            m.position.copy(vec(k[part]));
+            m.position.y += 0.3;
+            m.renderOrder = 20;
+            m.userData = {
+              road: r.id,
+              knot: i,
+              part,
+              handle: true,
+              radius: part === "p" ? 1.4 : 1,
+            };
+            this.handles.add(m);
+          }
+        }
+    }
+    const cs = connections(p).filter((x) => x.enabled);
+    if (settings.paths) {
+      for (const c of cs) {
+        const a = p.roads.find((r) => r.id === c.from.road),
+          b = p.roads.find((r) => r.id === c.to.road);
+        if (!a || !b) continue;
+        const ap = lanePoint(
+            a,
+            c.from.lane,
+            laneDirection(a, c.from.lane) === 1 ? 1 : 0,
+          ),
+          bp = lanePoint(
+            b,
+            c.to.lane,
+            laneDirection(b, c.to.lane) === 1 ? 0 : 1,
+          );
+        if (dist(ap, bp) > 0.1)
+          this.line([ap, bp], this.mats.lane, this.overlays);
+      }
+    }
+    for (const ramp of p.roads.filter((r) => r.kind === "ramp")) {
+      const parent = cs.find((c) => c.to.road === ramp.id),
+        child = cs.find((c) => c.from.road === ramp.id),
+        incoming = !parent && !!child;
+      const main = parent
+        ? p.roads.find(
+            (r) =>
+              r.id !== ramp.id &&
+              cs.some(
+                (c) => c.from.road === parent.from.road && c.to.road === r.id,
+              ),
+          )
+        : child
+          ? p.roads.find(
+              (r) =>
+                r.id !== ramp.id &&
+                cs.some(
+                  (c) => c.to.road === child.to.road && c.from.road === r.id,
+                ),
+            )
+          : undefined;
+      if (main) {
+        const t0 = incoming ? 1 : 0,
+          delta = center(ramp, t0),
+          mp0 = center(main, t0),
+          n = normal(main, t0),
+          sign =
+            (delta.x - mp0.x) * n.x + (delta.z - mp0.z) * n.z >= 0 ? 1 : -1;
+        for (let i = 2; i < 26; i += 2) {
+          const t = incoming ? 1 - i / 100 : i / 100,
+            rp = add(
+              center(ramp, t),
+              mul(normal(ramp, t), (-sign * totalAt(ramp, t) * ramp.width) / 2),
+            ),
+            near = nearest(main, rp),
+            mp = add(
+              center(main, near.t),
+              mul(
+                normal(main, near.t),
+                (sign * totalAt(main, near.t) * main.width) / 2,
+              ),
+            );
+          if (
+            dist(mp, rp) > 0.6 &&
+            dist(mp, rp) < 12 &&
+            Math.abs(mp.y - rp.y) < 0.3
+          )
+            this.line([mp, rp], this.mats.mark, this.overlays);
+        }
+      }
+    }
+    for (const j of this.junctionList) {
+      const vertices = j.polygon.map((p) => new T.Vector2(p.x, p.z)),
+        triangles = T.ShapeUtils.triangulateShape(vertices, []).flat(),
+        positions = j.polygon.flatMap((p) => [p.x, j.position.y + 0.018, p.z]);
+      const geometry = new T.BufferGeometry();
+      geometry.setAttribute(
+        "position",
+        new T.Float32BufferAttribute(positions, 3),
+      );
+      geometry.setIndex(triangles);
+      geometry.computeVertexNormals();
+      const mesh = new T.Mesh(geometry, this.mats.asphalt);
+      mesh.userData = { junction: j.id };
+      this.junctionMesh.add(mesh);
+      if (j.crosswalks)
+        for (const arm of j.arms) {
+          const r = p.roads.find((r) => r.id === arm.road)!,
+            table = arcTable(r),
+            length = table.at(-1)!.s,
+            offset = Math.min(arm.trim + 2, length * 0.48),
+            t = arcParameter(table, arm.end === 0 ? offset : length - offset),
+            c = center(r, t),
+            d = tangent(r, t),
+            n = normal(r, t),
+            half = (totalAt(r, t) * r.width) / 2 - 0.2;
+          for (let x = -half + 0.35; x < half - 0.2; x += 1) {
+            const mid = add(c, mul(n, x)),
+              points = [
+                add(add(mid, mul(d, -1.5)), mul(n, -0.24)),
+                add(add(mid, mul(d, 1.5)), mul(n, -0.24)),
+                add(add(mid, mul(d, 1.5)), mul(n, 0.24)),
+                add(add(mid, mul(d, -1.5)), mul(n, 0.24)),
+              ];
+            const g = new T.BufferGeometry();
+            g.setAttribute(
+              "position",
+              new T.Float32BufferAttribute(
+                points.flatMap((p) => [p.x, p.y + 0.055, p.z]),
+                3,
+              ),
+            );
+            g.setIndex([0, 1, 2, 0, 2, 3]);
+            g.computeVertexNormals();
+            const m = new T.Mesh(
+              g,
+              new T.MeshBasicMaterial({ color: 0xf5f5e9, side: T.DoubleSide }),
+            );
+            m.userData = { crosswalk: j.id };
+            this.junctionMesh.add(m);
+          }
+        }
+    }
+    for (const port of p.ports) {
+      const r = p.roads.find((r) => r.id === port.road);
+      if (!r) continue;
+      const t = port.end === "start" ? 0 : 1,
+        q = center(r, t),
+        radius = (totalAt(r, t) * r.width) / 2 + 1.2,
+        ring = new T.Mesh(
+          new T.TorusGeometry(radius, 0.35, 6, 36),
+          new T.MeshBasicMaterial({
+            color:
+              port.type === "both"
+                ? 0x56c8ee
+                : port.type === "source"
+                  ? 0x7ee276
+                  : 0xffb563,
+            depthTest: false,
+          }),
+        );
+      ring.rotation.x = Math.PI / 2;
+      ring.position.copy(vec(q));
+      ring.position.y += 0.2;
+      ring.renderOrder = 30;
+      ring.userData = { road: r.id, end: port.end, port: true };
+      this.portGroup.add(ring);
+      const direction = mul(tangent(r, t), port.end === "start" ? 1 : -1),
+        n = normal(r, t);
+      for (const sign of port.type === "both"
+        ? [1, -1]
+        : [port.type === "source" ? 1 : -1]) {
+        const c = add(q, mul(n, sign * radius * 0.4)),
+          d = mul(direction, sign),
+          tip = add(c, mul(d, 2));
+        const line = this.line(
+          [
+            add(c, mul(d, -2)),
+            tip,
+            add(add(c, mul(d, 0.4)), mul(n, 0.9)),
+            tip,
+            add(add(c, mul(d, 0.4)), mul(n, -0.9)),
+          ],
+          new T.LineBasicMaterial({
+            color: sign === 1 ? 0x7ee276 : 0xffb563,
+            depthTest: false,
+          }),
+          this.portGroup,
+        );
+        line.userData = { road: r.id, end: port.end, port: true };
+        line.renderOrder = 31;
+      }
+    }
+    this.batchLines(this.overlays);
+    this.batchLines(this.details);
+  }
+  batchLines(group: T.Group) {
+    const batches = new Map<T.Material, number[]>();
+    for (const obj of [...group.children])
+      if (obj instanceof T.Line && !(obj instanceof T.LineSegments)) {
+        const material = obj.material as T.Material,
+          positions = batches.get(material) || [],
+          a = obj.geometry.getAttribute("position");
+        for (let i = 0; i < a.count - 1; i++)
+          for (const j of [i, i + 1])
+            positions.push(a.getX(j), a.getY(j), a.getZ(j));
+        batches.set(material, positions);
+        group.remove(obj);
+        obj.geometry.dispose();
+      }
+    for (const [mat, positions] of batches) {
+      const g = new T.BufferGeometry();
+      g.setAttribute("position", new T.Float32BufferAttribute(positions, 3));
+      group.add(new T.LineSegments(g, mat));
+    }
+  }
+  showPreviews(roads: Road[], invalid = false) {
+    this.clear(this.preview);
+    for (const r of roads) {
+      this.roadMesh(
+        r,
+        this.preview,
+        invalid ? this.mats.invalid : this.mats.ghost,
+      );
+      const color = new T.LineBasicMaterial({
+        color: invalid ? 0xff7765 : 0x9de2ff,
+        depthTest: false,
+      });
+      for (const side of [-1, 1]) {
+        const points: V[] = [];
+        for (let i = 0; i <= 50; i++) {
+          const t = i / 50;
+          points.push(
+            add(
+              center(r, t),
+              mul(normal(r, t), (side * totalAt(r, t) * r.width) / 2),
+            ),
+          );
+        }
+        this.line(points, color, this.preview);
+      }
+      for (let l = 0; l < laneCount(r); l++) {
+        if (laneWidth(r, l, 0.5) < r.width * 0.8) continue;
+        const c = lanePoint(r, l, 0.5),
+          d = mul(tangent(r, 0.5), laneDirection(r, l)),
+          n = normal(r, 0.5);
+        this.line(
+          [
+            add(c, mul(d, -3)),
+            add(c, mul(d, 3)),
+            add(add(c, mul(d, 1)), mul(n, 1)),
+            add(c, mul(d, 3)),
+            add(add(c, mul(d, 1)), mul(n, -1)),
+          ],
+          color,
+          this.preview,
+        );
+      }
+    }
+  }
+  showPreview(r?: Road, invalid = false) {
+    this.showPreviews(r ? [r] : [], invalid);
+  }
+  showBuildMarker(p?: V, snapped = false, reference?: V) {
+    this.clear(this.buildMarker);
+    if (!p) return;
+    const group = new T.Group(),
+      ring = new T.Mesh(
+        new T.TorusGeometry(1, 0.07, 6, 40),
+        new T.MeshBasicMaterial({
+          color: snapped ? 0xffcf70 : 0xa3e5ff,
+          depthTest: false,
+        }),
+      );
+    ring.rotation.x = -Math.PI / 2;
+    const dot = new T.Mesh(
+      new T.SphereGeometry(0.14, 10, 8),
+      new T.MeshBasicMaterial({ color: 0xffffff, depthTest: false }),
+    );
+    group.add(ring, dot);
+    group.position.set(p.x, p.y + 0.18, p.z);
+    group.renderOrder = 40;
+    group.userData.marker = true;
+    this.buildMarker.add(group);
+    if (reference && dist(reference, p) > 0.05) {
+      const material = new T.LineBasicMaterial({
+        color: 0xffcf70,
+        depthTest: false,
+      });
+      const guide = this.line([reference, p], material, this.buildMarker);
+      guide.renderOrder = 40;
+      const dot = new T.Mesh(
+        new T.SphereGeometry(0.25, 8, 6),
+        new T.MeshBasicMaterial({ color: 0xffcf70, depthTest: false }),
+      );
+      dot.position.copy(vec(reference));
+      dot.position.y += 0.16;
+      dot.renderOrder = 40;
+      this.buildMarker.add(dot);
+    }
+  }
+  setHover(id?: string, mode = "select") {
+    if (this.hoverId === id && this.hoverMode === mode) return;
+    this.hoverId = id;
+    this.hoverMode = mode;
+    this.clear(this.hover);
+    const r = this.currentProject?.roads.find((r) => r.id === id);
+    if (!r) return;
+    this.roadMesh(
+      r,
+      this.hover,
+      mode === "delete" ? this.demolition : this.hoverBlue,
+      this.ranges.get(r.id),
+    );
+    this.hover.position.y = 0.035;
+  }
+  portHit(
+    x: number,
+    y: number,
+  ): { road: string; end: "start" | "end" } | undefined {
+    this.setRay(x, y);
+    const hit = this.ray
+      .intersectObjects(this.portGroup.children, true)
+      .find((x) => x.object.userData.port);
+    return hit
+      ? { road: hit.object.userData.road, end: hit.object.userData.end }
+      : undefined;
+  }
+  showRoute(project: Project, steps: Step[]) {
+    this.clear(this.routePreview);
+    const material = new T.LineBasicMaterial({
+      color: 0xd85e20,
+      depthTest: false,
+    });
+    const points: V[] = [];
+    for (const step of steps) {
+      const r = project.roads.find((r) => r.id === step.road)!;
+      for (let i = 0; i <= 100; i++) {
+        const travel = i / 100,
+          t = step.direction === 1 ? travel : 1 - travel,
+          available = laneWidth(r, step.outLane, t) > r.width * 0.8;
+        const blend = available ? smooth((travel - 0.12) / 0.7) : 0,
+          q = lerp(
+            lanePoint(r, step.inLane, t),
+            lanePoint(r, step.outLane, t),
+            blend,
+          );
+        points.push({ ...q, y: q.y + 0.2 });
+      }
+    }
+    const line = this.line(points, material, this.routePreview);
+    line.renderOrder = 30;
+  }
+  hit(clientX: number, clientY: number): Hit | undefined {
+    this.setRay(clientX, clientY);
+    const handle = this.ray
+      .intersectObjects(this.handles.children, true)
+      .find((x) => x.object.userData.handle);
+    if (handle)
+      return {
+        ...handle.object.userData,
+        position: { x: handle.point.x, y: handle.point.y, z: handle.point.z },
+      } as Hit;
+    const road = this.ray
+      .intersectObjects(this.roads.children, true)
+      .find((x) => x.object.userData.road && !x.object.userData.noPick);
+    return road
+      ? ({
+          ...road.object.userData,
+          position: { x: road.point.x, y: road.point.y, z: road.point.z },
+        } as Hit)
+      : undefined;
+  }
+  setRay(x: number, y: number) {
+    const b = this.renderer.domElement.getBoundingClientRect();
+    this.mouse.set(
+      ((x - b.left) / b.width) * 2 - 1,
+      (-(y - b.top) / b.height) * 2 + 1,
+    );
+    this.ray.setFromCamera(this.mouse, this.camera);
+  }
+  groundPoint(x: number, y: number, height = 0): V | undefined {
+    this.setRay(x, y);
+    const plane = new T.Plane(new T.Vector3(0, 1, 0), -height),
+      p = new T.Vector3();
+    if (this.ray.ray.intersectPlane(plane, p))
+      return { x: p.x, y: p.y, z: p.z };
+  }
+  project(p: V) {
+    const q = vec(p).project(this.camera),
+      rect = this.el.getBoundingClientRect();
+    return {
+      x: rect.left + ((q.x + 1) * rect.width) / 2,
+      y: rect.top + ((-q.y + 1) * rect.height) / 2,
+    };
+  }
+  top() {
+    const t = this.controls.target.clone(),
+      d = this.camera.position.distanceTo(t);
+    this.camera.position.copy(t).add(new T.Vector3(0, d, 0.01));
+    this.controls.update();
+  }
+  perspective() {
+    const t = this.controls.target.clone(),
+      d = this.camera.position.distanceTo(t);
+    this.camera.position
+      .copy(t)
+      .add(new T.Vector3(0.25, 0.7, 0.7).normalize().multiplyScalar(d));
+    this.controls.update();
+  }
+  fit(roads: Road[]) {
+    if (!roads.length) {
+      this.controls.target.set(0, 0, 0);
+      this.camera.position.set(100, 180, 200);
+      return;
+    }
+    const b = new T.Box3();
+    for (const r of roads) for (const k of r.knots) b.expandByPoint(vec(k.p));
+    b.expandByScalar(12);
+    const c = b.getCenter(new T.Vector3()),
+      size = b.getSize(new T.Vector3()),
+      tan = Math.tan(T.MathUtils.degToRad(21)),
+      d = Math.max(
+        55,
+        Math.max(
+          size.x / (2 * tan * this.camera.aspect),
+          (size.z * 0.85 + size.y * 0.6) / (2 * tan),
+        ) * 1.2,
+      );
+    this.controls.target.copy(c);
+    this.camera.position
+      .copy(c)
+      .add(new T.Vector3(0.02, 0.86, 0.51).normalize().multiplyScalar(d));
+    this.controls.update();
+  }
+  private initializeCars() {
+    const body = new T.BoxGeometry(3.8, 1, 1.65),
+      cabin = new T.BoxGeometry(1.8, 0.55, 1.35),
+      wheel = new T.CylinderGeometry(0.3, 0.3, 0.2, 8);
+    wheel.rotateX(Math.PI / 2);
+    this.bodyInstances = new T.InstancedMesh(
+      body,
+      new T.MeshStandardMaterial({ color: 0xffffff, roughness: 0.55 }),
+      350,
+    );
+    this.cabinInstances = new T.InstancedMesh(
+      cabin,
+      new T.MeshStandardMaterial({ color: 0x304953, roughness: 0.3 }),
+      350,
+    );
+    this.wheelInstances = new T.InstancedMesh(
+      wheel,
+      new T.MeshStandardMaterial({ color: 0x202728 }),
+      1400,
+    );
+    for (const mesh of [
+      this.bodyInstances,
+      this.cabinInstances,
+      this.wheelInstances,
+    ]) {
+      mesh.count = 0;
+      mesh.frustumCulled = false;
+      mesh.instanceMatrix.setUsage(T.DynamicDrawUsage);
+      this.cars.add(mesh);
+    }
+  }
+  updateCars(vehicles: Vehicle[]) {
+    const object = new T.Object3D(),
+      matrix = new T.Matrix4(),
+      local = new T.Matrix4(),
+      colors = [0xf3c96f, 0xbcdde0, 0xeb855e, 0xf4f1da, 0x7daba1];
+    this.bodyInstances.count = vehicles.length;
+    this.cabinInstances.count = vehicles.length;
+    this.wheelInstances.count = vehicles.length * 4;
+    for (let i = 0; i < vehicles.length; i++) {
+      const c = vehicles[i];
+      object.position.set(c.position.x, c.position.y + 0.025, c.position.z);
+      object.rotation.set(0, -c.heading, c.pitch || 0, "YXZ");
+      object.updateMatrix();
+      this.bodyInstances.setMatrixAt(
+        i,
+        matrix.multiplyMatrices(
+          object.matrix,
+          local.makeTranslation(0, 0.82, 0),
+        ),
+      );
+      this.bodyInstances.setColorAt(i, new T.Color(colors[c.color]));
+      this.cabinInstances.setMatrixAt(
+        i,
+        matrix.multiplyMatrices(
+          object.matrix,
+          local.makeTranslation(-0.35, 1.4, 0),
+        ),
+      );
+      let w = 0;
+      for (const x of [-1.15, 1.15])
+        for (const z of [-0.78, 0.78])
+          this.wheelInstances.setMatrixAt(
+            i * 4 + w++,
+            matrix.multiplyMatrices(
+              object.matrix,
+              local.makeTranslation(x, 0.31, z),
+            ),
+          );
+    }
+    for (const mesh of [
+      this.bodyInstances,
+      this.cabinInstances,
+      this.wheelInstances,
+    ])
+      mesh.instanceMatrix.needsUpdate = true;
+    if (this.bodyInstances.instanceColor)
+      this.bodyInstances.instanceColor.needsUpdate = true;
+  }
+  render() {
+    this.controls.update();
+    const tan = Math.tan(T.MathUtils.degToRad(this.camera.fov / 2)),
+      height = this.el.clientHeight;
+    const distance = this.camera.position.distanceTo(this.controls.target);
+    this.details.visible = (3.6 * height) / (2 * distance * tan) > 4;
+    for (const object of this.handles.children) {
+      if (!(object instanceof T.Mesh)) continue;
+      const d = this.camera.position.distanceTo(object.position),
+        pixelWorld = (2 * d * tan) / height,
+        radius = object.userData.radius || 1;
+      object.scale.setScalar(
+        Math.max(
+          0.5,
+          (pixelWorld * (object.userData.part === "p" ? 6 : 5)) / radius,
+        ),
+      );
+    }
+    for (const marker of this.buildMarker.children) {
+      if (!marker.userData.marker) continue;
+      const d = this.camera.position.distanceTo(marker.position);
+      marker.scale.setScalar(((2 * d * tan) / height) * 12);
+    }
+    this.renderer.render(this.scene, this.camera);
+  }
+}

@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - name: Format, build, types and core tests
+        run: npm run check
+      - name: Install browser
+        run: npx playwright install --with-deps chromium
+      - name: Browser interactions
+        run: npm run test:e2e
+      - name: Production build smoke test
+        run: npm run test:smoke
+      - name: Build Docker image
+        run: docker build -t roadlab:ci .
+      - name: Run Docker image
+        run: docker run --detach --rm --name roadlab-ci --publish 127.0.0.1:8080:80 roadlab:ci
+      - name: Docker browser smoke test
+        run: npm run test:smoke
+        env:
+          SMOKE_URL: http://127.0.0.1:8080/
+      - name: Stop test container
+        if: always()
+        run: docker stop roadlab-ci || true
+      - name: Upload diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: test-diagnostics
+          path: |
+            artifacts/
+            test-results/
+          retention-days: 7

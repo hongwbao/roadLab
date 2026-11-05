@@ -1,0 +1,39 @@
+{
+  "name": "roadlab",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "npm run typecheck && vite build",
+    "preview": "vite preview --host 0.0.0.0",
+    "test": "vitest run",
+    "test:e2e": "playwright test",
+    "typecheck": "tsc --noEmit",
+    "test:smoke": "node tests/production.mjs",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "check": "npm run format:check && npm run build && npm test"
+  },
+  "dependencies": {
+    "lucide": "^0.468.0",
+    "three": "^0.187.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.56.0",
+    "@types/node": "^24.19.2",
+    "@types/three": "^0.183.0",
+    "prettier": "^3.9.10",
+    "typescript": "^5.9.3",
+    "vite": "^8.0.0",
+    "vitest": "^4.0.0"
+  },
+  "description": "三维道路与立交规划实验：平滑车道过渡、道路编辑和交通模拟",
+  "engines": {
+    "node": ">=24"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hongwbao/roadLab.git"
+  }
+}
