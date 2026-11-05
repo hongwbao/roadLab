@@ -89,5 +89,17 @@
     "复杂道路的几何和净空检查采用采样。",
     "本机保存属于当前浏览器与网址，JSON 导出用于可移植备份。"
   ],
-  "record_type": "功能实现时的验证快照；当前提交的持续验证请查看 GitHub Actions CI。"
+  "record_type": "功能实现时的验证快照；当前提交的持续验证请查看 GitHub Actions CI。",
+  "repository_setup_validation": {
+    "recorded_at": "2026-11-05T12:25:34.654345+00:00",
+    "application_commit": "6c3d681a240b67ec5510d874a6f321d81bc52c9c",
+    "ci_url": "https://github.com/hongwbao/roadLab/actions/runs/42026402295",
+    "clean_install": "npm ci、格式、类型、构建、46项核心测试与20项浏览器测试通过。",
+    "deployment_checks": [
+      "根路径构建浏览器检查通过。",
+      "/roadLab/ 子路径构建浏览器检查通过。",
+      "GitHub Actions 实际构建 Docker 镜像、运行容器及容器浏览器检查通过。"
+    ],
+    "pages_status": "提供手动发布及 PAGES_ENABLED 自动发布配置；未启用公开网站。"
+  }
 }
