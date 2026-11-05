@@ -1,7 +1,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { expect, it } from "vitest";
 import { buildJunctions, roadRange } from "../src/core/junctions";
-import { center, dist, nearest, v } from "../src/core/math";
+import { center, dist, lanePoint, nearest, v } from "../src/core/math";
 import {
   autoBoundaries,
   connections,
@@ -16,9 +16,267 @@ import {
   setBoundary,
   setHeight,
 } from "../src/core/model";
-import { isSink, isSource } from "../src/core/types";
+import { isSink, isSource, type Connection } from "../src/core/types";
 import { bodiesOverlap } from "../src/simulation/collision";
-import { Simulation } from "../src/simulation/simulation";
+import {
+  findRoute,
+  Simulation,
+  type Vehicle,
+} from "../src/simulation/simulation";
+
+it("spawns cars at a rolling speed and waits for a safe entry gap", () => {
+  const p = emptyProject(),
+    road = makeRoad(v(0, 0), v(140, 0), {
+      lanesStart: 1,
+      lanesEnd: 1,
+      speed: 50,
+    });
+  p.roads = [road];
+  p.ports = [
+    { road: road.id, end: "start", type: "source", rate: 60 },
+    { road: road.id, end: "end", type: "sink", rate: 1 },
+  ];
+  const free = new Simulation();
+  free.configure(p);
+  free.running = true;
+  for (let i = 0; i < 20; i++) free.update(0.05);
+  expect(free.entered).toBe(1);
+  expect(free.vehicles[0].speed).toBeGreaterThan(4);
+
+  const busy = new Simulation();
+  busy.configure(p);
+  busy.running = true;
+  busy.vehicles = [
+    {
+      id: 999,
+      route: [{ road: road.id, direction: 1, inLane: 0, outLane: 0 }],
+      step: 0,
+      s: 6,
+      lane: 0,
+      speed: 0,
+      age: 0,
+      color: 0,
+      position: lanePoint(road, 0, 6 / 140),
+      heading: 0,
+      pitch: 0,
+    },
+  ];
+  for (let i = 0; i < 20; i++) busy.update(0.05);
+  expect(busy.entered).toBe(0);
+  expect(busy.waiting).toBe(1);
+  busy.vehicles = [];
+  for (let i = 0; i < 4; i++) busy.update(0.05);
+  expect(busy.entered).toBe(1);
+  expect(busy.vehicles[0].speed).toBeGreaterThan(4);
+});
+
+it("chooses a drivable lane before a short node and avoids a congested route", () => {
+  const p = emptyProject(),
+    start = makeRoad(v(0, 0), v(50, 0), { lanesStart: 1, lanesEnd: 1 }),
+    fast = makeRoad(v(50, 0), v(150, 0), {
+      lanesStart: 1,
+      lanesEnd: 1,
+      speed: 80,
+    }),
+    slow = makeRoad(v(50, 0), v(150, 0), {
+      lanesStart: 1,
+      lanesEnd: 1,
+      speed: 20,
+    }),
+    end = makeRoad(v(150, 0), v(200, 0), {
+      lanesStart: 1,
+      lanesEnd: 1,
+    });
+  p.roads = [start, fast, slow, end];
+  const source = {
+      road: start.id,
+      end: "start",
+      type: "source",
+      rate: 1,
+    } as const,
+    sink = { road: end.id, end: "end", type: "sink", rate: 1 } as const,
+    cs: Connection[] = [
+      [start, fast],
+      [start, slow],
+      [fast, end],
+      [slow, end],
+    ].map(([a, b]) => ({
+      id: `${a.id}>${b.id}`,
+      from: { road: a.id, lane: 0 },
+      to: { road: b.id, lane: 0 },
+      enabled: true,
+    }));
+  expect(findRoute(p, source, sink, cs)![1].road).toBe(fast.id);
+  expect(
+    findRoute(
+      p,
+      source,
+      sink,
+      cs,
+      undefined,
+      new Map([[`${fast.id}:1:0`, 50]]),
+    )![1].road,
+  ).toBe(slow.id);
+
+  const short = makeRoad(v(0, 0), v(20, 0), {
+      lanesStart: 2,
+      lanesEnd: 2,
+    }),
+    next = makeRoad(v(20, 0), v(70, 0), {
+      lanesStart: 1,
+      lanesEnd: 1,
+    });
+  p.roads = [short, next];
+  const onlyLaneOne: Connection[] = [
+    {
+      id: "lane-one",
+      from: { road: short.id, lane: 1 },
+      to: { road: next.id, lane: 0 },
+      enabled: true,
+    },
+  ];
+  const route = findRoute(
+    p,
+    { ...source, road: short.id },
+    { ...sink, road: next.id },
+    onlyLaneOne,
+    0,
+  )!;
+  expect(route[0].inLane).toBe(1);
+  expect(route[0].outLane).toBe(1);
+  expect(
+    findRoute(
+      p,
+      { ...source, road: short.id },
+      { ...sink, road: next.id },
+      onlyLaneOne,
+      0,
+      undefined,
+      15,
+    ),
+  ).toBeUndefined();
+});
+
+for (const initialS of [100, 132, 136])
+  it(`resolves two adjacent cars that need to exchange lanes from ${initialS} m`, () => {
+    const p = emptyProject(),
+      first = makeRoad(v(0, 0), v(140, 0), {
+        lanesStart: 2,
+        lanesEnd: 2,
+      }),
+      second = makeRoad(v(140, 0), v(280, 0), {
+        lanesStart: 2,
+        lanesEnd: 2,
+      });
+    p.roads = [first, second];
+    const sim = new Simulation();
+    sim.configure(p);
+    sim.running = true;
+    sim.vehicles = [0, 1].map((lane): Vehicle => ({
+      id: lane + 1,
+      route: [
+        {
+          road: first.id,
+          direction: 1,
+          inLane: lane,
+          outLane: 1 - lane,
+        },
+        {
+          road: second.id,
+          direction: 1,
+          inLane: 1 - lane,
+          outLane: 1 - lane,
+        },
+      ],
+      step: 0,
+      s: initialS,
+      lane,
+      speed: 0,
+      age: 0,
+      color: 0,
+      position: lanePoint(first, lane, initialS / 140),
+      heading: 0,
+      pitch: 0,
+    }));
+    for (let i = 0; i < 2400 && sim.completed < 2; i++) {
+      sim.update(0.05);
+      if (sim.vehicles.length === 2)
+        expect(bodiesOverlap(sim.vehicles[0], sim.vehicles[1], 0)).toBe(false);
+    }
+    expect(sim.completed).toBe(2);
+  });
+it("changes lanes before the junction with a gradual heading and yields to faster traffic", () => {
+  const p = emptyProject(),
+    first = makeRoad(v(0, 0), v(140, 0), {
+      lanesStart: 2,
+      lanesEnd: 2,
+    }),
+    second = makeRoad(v(140, 0), v(280, 0), {
+      lanesStart: 2,
+      lanesEnd: 2,
+    });
+  p.roads = [first, second];
+  const sim = new Simulation();
+  sim.configure(p);
+  sim.running = true;
+  sim.vehicles = [
+    {
+      id: 1,
+      route: [
+        { road: first.id, direction: 1, inLane: 0, outLane: 1 },
+        { road: second.id, direction: 1, inLane: 1, outLane: 1 },
+      ],
+      step: 0,
+      s: 20,
+      lane: 0,
+      speed: 9,
+      age: 0,
+      color: 0,
+      position: lanePoint(first, 0, 20 / 140),
+      heading: 0,
+      pitch: 0,
+    },
+    {
+      id: 2,
+      route: [
+        { road: first.id, direction: 1, inLane: 1, outLane: 1 },
+        { road: second.id, direction: 1, inLane: 1, outLane: 1 },
+      ],
+      step: 0,
+      s: 14,
+      lane: 1,
+      speed: 15,
+      age: 0,
+      color: 0,
+      position: lanePoint(first, 1, 14 / 140),
+      heading: 0,
+      pitch: 0,
+    },
+  ];
+  sim.update(0.05);
+  expect(sim.vehicles[0].laneChange).toBeUndefined();
+  let changedAt = Infinity,
+    completedAt = Infinity,
+    maxTurn = 0,
+    previousHeading = sim.vehicles[0].heading;
+  for (let i = 0; i < 1000 && sim.completed < 2; i++) {
+    sim.update(0.05);
+    const changing = sim.vehicles.find((c) => c.id === 1);
+    if (!changing) continue;
+    if (changing.step === 0 && changing.laneChange)
+      changedAt = Math.min(changedAt, changing.laneChange.start);
+    if (changing.step === 0 && changing.lane > 0.99)
+      completedAt = Math.min(completedAt, changing.s);
+    maxTurn = Math.max(maxTurn, Math.abs(changing.heading - previousHeading));
+    previousHeading = changing.heading;
+    if (sim.vehicles.length === 2)
+      expect(bodiesOverlap(sim.vehicles[0], sim.vehicles[1], 0)).toBe(false);
+  }
+  expect(changedAt).toBeLessThan(55);
+  expect(completedAt).toBeLessThan(110);
+  expect(maxTurn).toBeLessThan(0.2);
+  expect(sim.completed).toBe(2);
+});
 it("creates a four-arm shared junction with road cuts and zebra crossings", () => {
   const p = example("junction"),
     js = buildJunctions(p);
@@ -124,8 +382,10 @@ for (const kind of ["transition", "junction", "merge"])
       maxAngle = 0,
       turns = 0,
       previous = new Map<number, { p: any; h: number }>();
-    for (let i = 0; i < 2400; i++) {
+    const checkpoints: number[] = [];
+    for (let i = 0; i < 7200; i++) {
       s.update(0.05);
+      if (i % 2400 === 2399) checkpoints.push(s.completed);
       for (let a = 0; a < s.vehicles.length; a++) {
         const c = s.vehicles[a];
         for (let b = a + 1; b < s.vehicles.length; b++)
@@ -157,13 +417,18 @@ for (const kind of ["transition", "junction", "merge"])
       maxMove,
       maxAngle,
       turns,
+      checkpoints,
     };
     writeFileSync(
       `artifacts/traffic-${kind}-metrics.json`,
       JSON.stringify(metrics, null, 2),
     );
     expect(overlaps).toBe(0);
-    expect(s.completed).toBeGreaterThan(10);
+    expect(s.completed).toBeGreaterThan(kind === "transition" ? 35 : 10);
+    const minimumProgress = kind === "junction" ? 15 : 30;
+    expect(checkpoints[1] - checkpoints[0]).toBeGreaterThan(minimumProgress);
+    expect(checkpoints[2] - checkpoints[1]).toBeGreaterThan(minimumProgress);
+    if (kind === "merge") expect(s.queued).toBeLessThan(20);
     expect(maxMove).toBeLessThan(2);
     expect(maxAngle).toBeLessThan(0.5);
     if (kind === "junction") expect(turns).toBeGreaterThan(20);

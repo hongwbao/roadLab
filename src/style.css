@@ -132,6 +132,17 @@ h3 {
   gap: 10px;
   margin-bottom: 12px;
 }
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
 .game-workspace {
   height: 100dvh;
   position: relative;
@@ -220,10 +231,14 @@ h3 {
 .map-menu {
   top: 72px;
   left: 18px;
-  width: 310px;
+  width: min(360px, calc(100vw - 36px));
+  max-height: calc(100dvh - 165px);
+  overflow-y: auto;
 }
-.map-menu h2 {
-  margin-bottom: 12px;
+.map-menu-note,
+#save-count {
+  color: var(--muted);
+  font-size: 10px;
 }
 .menu-grid {
   display: grid;
@@ -233,6 +248,85 @@ h3 {
 .menu-grid button {
   justify-content: flex-start;
   font-size: 11px;
+}
+.map-saves {
+  border-top: 1px solid var(--line);
+  margin-top: 16px;
+  padding-top: 15px;
+}
+.map-saves .panel-heading {
+  margin-bottom: 9px;
+}
+#save-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 7px;
+}
+#save-name {
+  min-width: 0;
+  width: 100%;
+}
+#save-submit {
+  font-size: 11px;
+  white-space: nowrap;
+}
+.save-list {
+  max-height: 178px;
+  overflow-y: auto;
+  margin: 10px 0 5px;
+}
+.save-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 5px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--line);
+}
+.save-row:last-child {
+  border-bottom: 0;
+}
+.save-row strong,
+.save-row small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.save-row strong {
+  font-size: 12px;
+  font-weight: 500;
+}
+.save-row small {
+  color: var(--muted);
+  font-size: 10px;
+  margin-top: 2px;
+  font-variant-numeric: tabular-nums;
+}
+.save-row button {
+  min-height: 30px;
+  padding: 5px 7px;
+  font-size: 11px;
+}
+.save-row button.icon-only {
+  width: 30px;
+}
+.save-row button svg {
+  width: 14px;
+  height: 14px;
+}
+.map-files {
+  border-top: 1px solid var(--line);
+  margin-top: 14px;
+  padding-top: 10px;
+}
+.map-files summary {
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 11px;
+}
+.map-files .menu-grid {
+  margin-top: 9px;
 }
 .view-controls {
   position: absolute;
@@ -1027,7 +1121,8 @@ dialog dd {
   .map-menu {
     left: 9px;
     top: 61px;
-    width: 290px;
+    width: min(360px, calc(100vw - 18px));
+    max-height: calc(100dvh - 190px);
   }
   .templates-panel {
     right: 9px;

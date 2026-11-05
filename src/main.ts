@@ -40,6 +40,13 @@ import {
 } from "./core/assets";
 import { point, roadLength } from "./core/math";
 import { emptyProject, example, parseProject } from "./core/model";
+import {
+  deleteNamedMap,
+  listSavedMaps,
+  loadNamedMap,
+  saveNamedMap,
+} from "./core/saved-maps";
+import { sharedRoadMap } from "./core/shared-map";
 import { copy, isSource, type Project, type Tool } from "./core/types";
 import { Editor } from "./editor/editor";
 import "./style.css";
@@ -113,7 +120,7 @@ function thumbnail(asset: RoadAsset) {
 document.querySelector("#app")!.innerHTML = `
  <main class="game-workspace"><div id="viewport" tabindex="0" aria-label="道路地图"></div>
  <header class="game-header"><div class="project-brand">${icon("route")}<strong>路网工坊</strong></div><input id="project-name" aria-label="项目名称" maxlength="120"><span id="save-state" role="status">已保存</span><div class="header-actions">${button("undo", "撤销", "undo-2", "icon-only")}${button("redo", "重做", "redo-2", "icon-only")}${button("menu", "地图菜单", "menu", "icon-only")}${button("help", "操作帮助", "help-circle", "icon-only")}</div></header>
- <section id="map-menu" class="floating-panel map-menu" hidden><h2>地图</h2><div class="menu-grid">${button("save", "保存地图", "save")}${button("export", "导出地图", "download")}${button("import", "导入地图", "folder-open")}${button("new", "空白地图", "plus")}${button("example-transition", "立交过渡示例", "route")}${button("example-junction", "城市路口示例", "grid-2x2")}${button("example-elevated", "高架交叉示例", "layers")}${button("templates", "我的路网模板", "copy")}</div></section>
+ <section id="map-menu" class="floating-panel map-menu" hidden><div class="panel-heading"><h2>地图</h2><span class="map-menu-note">当前进度自动保存</span></div><div class="menu-grid">${button("new", "重置为空白地图", "rotate-ccw")}${button("example-shared", "载入测试地图", "route")}${button("example-transition", "立交过渡示例", "route")}${button("example-junction", "城市路口示例", "grid-2x2")}${button("example-elevated", "高架交叉示例", "layers")}${button("templates", "我的路网模板", "copy")}</div><section class="map-saves"><div class="panel-heading"><h3>本机存档</h3><span id="save-count"></span></div><form id="save-form"><label for="save-name" class="visually-hidden">存档名称</label><input id="save-name" name="name" maxlength="80" autocomplete="off" placeholder="给存档起个名字" required><button id="save-submit" type="submit" class="primary">${icon("save")}<span>保存新存档</span></button></form><div id="save-list" class="save-list"></div><p class="muted">存档保存在当前浏览器；打开此地址可随时载入。</p></section><details class="map-files"><summary>导入与备份文件</summary><div class="menu-grid">${button("import", "导入 JSON", "folder-open")}${button("export", "导出 JSON", "download")}</div></details></section>
  <div class="view-controls">${button("top", "俯视", "arrow-down-to-line")}${button("perspective", "立体", "layers")}${button("fit", "查看全图", "focus")}${button("grid", "网格", "grid-2x2", "icon-only")}${button("focus-transition", "查看过渡段", "spline", "icon-only")}</div>
  <div class="map-title"><strong id="scene-name">道路实验</strong><span id="scene-summary"></span></div>
  <div id="snap-feedback" class="snap-feedback" hidden></div><div id="selection-box" hidden></div><div id="empty-hint" hidden>选择下方的道路资产，开始建造。</div>
@@ -125,8 +132,8 @@ document.querySelector("#app")!.innerHTML = `
  <div class="map-status"><span id="tool-hint">选择道路资产开始建造。</span><span id="mode-badge">选择</span></div></main>
  <footer class="simulation-bar"><div class="simulation-actions">${button("play", "开始测试", "play", "primary")}${button("reset-sim", "重置测试", "rotate-ccw", "icon-only")}<div class="speed-buttons" aria-label="模拟速度"><button data-speed="1" class="active">1×</button><button data-speed="2">2×</button><button data-speed="4">4×</button></div></div><div class="traffic-control"><div class="traffic-heading"><label for="traffic-range">车流量</label><output id="traffic-total" aria-live="off">目标 24 辆/分</output></div><div class="traffic-inputs"><input id="traffic-range" type="range" min="0" max="400" step="1" value="100" aria-label="车流强度"><label class="traffic-percentage"><input id="traffic-level" type="number" min="0" max="400" step="1" value="100" aria-label="车流百分比"><span>%</span></label></div></div><div class="sim-stat"><span>在途</span><strong id="stat-active">0</strong></div><div class="sim-stat"><span>已通过</span><strong id="stat-completed">0</strong></div><div class="sim-stat"><span>排队</span><strong id="stat-queued">0</strong></div><div class="sim-stat average-stat"><span>平均通行</span><strong id="stat-average">—</strong></div><span id="sim-note">基础车流</span><button data-tool="boundary" class="footer-ports">${icon("log-in")}设置通行口</button></footer>
  <input id="import-file" type="file" accept=".json,application/json" hidden><div id="toast" role="status" hidden></div>
- <dialog id="confirm-dialog"><h2>载入其他地图？</h2><p>当前路网会被替换，可以撤销或先导出备份。</p><div class="dialog-actions"><button data-action="cancel-dialog">取消</button><button id="confirm-yes" class="primary">确认载入</button></div></dialog>
- <dialog id="help-dialog"><div class="panel-heading"><h2>道路建造</h2>${button("close-help", "关闭", "x", "icon-only")}</div><ol><li>在下方选择道路资产，鼠标会立即显示蓝色道路预览。</li><li>直线依次点击起点、终点；曲线再增加一个弯曲控制位置。</li><li>靠近道路端点或路段时会吸附，显示圆环和文字。单向接口支持左右路缘偏移对齐；在地图中按 Tab 切换。交叉处自动生成路口。</li><li>按 B 切换拆除，悬停预览，左键删除；右键或 Esc 退出。</li><li>按 I 设置通行口，双向道路同时进出；右键取消通行口。</li></ol><dl><dt>中键拖动 / Alt＋中键 / 滚轮</dt><dd>平移 / 旋转 / 缩放</dd><dt>L / C / U / V</dt><dd>直线 / 曲线 / 升级 / 选择</dd><dt>PageUp / PageDown</dt><dd>抬高 / 降低道路</dd><dt>Ctrl Z / Ctrl Shift Z / Ctrl S</dt><dd>撤销 / 重做 / 保存</dd><dt>Shift＋拖动空白</dt><dd>框选道路</dd><dt>右键 / Esc / Space</dt><dd>取消当前建造 / 退出工具 / 测试暂停</dd></dl></dialog>`;
+ <dialog id="confirm-dialog"><h2 id="confirm-title">载入其他地图？</h2><p id="confirm-message">当前路网会被替换，可以撤销或先保存存档。</p><div class="dialog-actions"><button data-action="cancel-dialog">取消</button><button id="confirm-yes" class="primary">确认载入</button></div></dialog>
+ <dialog id="help-dialog"><div class="panel-heading"><h2>道路建造</h2>${button("close-help", "关闭", "x", "icon-only")}</div><ol><li>在下方选择道路资产，鼠标会立即显示蓝色道路预览。</li><li>左键单击起点、终点建造直线；曲线再增加一个弯曲控制位置。左键拖动用于旋转镜头。</li><li>靠近道路端点或路段时会吸附，显示圆环和文字。单向接口支持左右路缘偏移对齐；在地图中按 Tab 切换。交叉处自动生成路口。</li><li>按 B 切换拆除，悬停预览，左键删除；右键或 Esc 退出。</li><li>按 I 设置通行口，双向道路同时进出；右键取消通行口。</li></ol><dl><dt>WASD / 方向键 / 画面边缘</dt><dd>移动地图；按住 Shift 加速</dd><dt>左键拖动 / 右键拖动</dt><dd>旋转俯仰 / 移动地图</dd><dt>滚轮 / 中键上下拖动 / 中键单击</dt><dd>缩放 / 连续缩放 / 拉近一级</dd><dt>Q / E · T / G · 滚轮或 R / F</dt><dd>旋转 / 俯仰 / 缩放</dd><dt>Shift＋F / H</dt><dd>查看全图 / 俯视</dd><dt>L / C / U / V</dt><dd>直线 / 曲线 / 升级 / 选择</dd><dt>PageUp / PageDown</dt><dd>抬高 / 降低道路</dd><dt>Ctrl Z / Ctrl Shift Z / Ctrl S</dt><dd>撤销 / 重做 / 保存</dd><dt>Shift＋拖动空白</dt><dd>框选道路</dd><dt>右键单击 / Esc / Space</dt><dd>返回上一步 / 退出工具 / 测试暂停</dd></dl></dialog>`;
 const editor = new Editor(document.querySelector("#viewport")!);
 let category: RoadAsset["category"] = "city",
   dockOpen = true,
@@ -155,7 +162,7 @@ function selectedPanel() {
   if (!r) return "";
   const asset = assetForRoad(r),
     ports = editor.project.ports.filter((p) => p.road === r.id);
-  return `<div class="panel-heading"><h2>${esc(asset?.name || r.name)}</h2>${button("deselect", "关闭", "x", "icon-only")}</div><div class="road-information"><span>${roadLength(r).toFixed(0)} m</span><span>${r.speed} km/h</span><span>${point(r, 0).y.toFixed(0)} → ${point(r, 1).y.toFixed(0)} m</span></div><p class="muted">拖动端点和曲线柄调整道路。${editor.selected.size > 1 ? `已选择 ${editor.selected.size} 段道路。` : ""}</p><div class="selection-actions">${button("duplicate", "复制", "copy")}${!r.twoWay ? button("reverse", "反向", "rotate-ccw") : ""}${button("delete", "拆除", "trash-2", "danger")}</div><details><summary>更多操作</summary><div class="selection-actions">${button("rotate", "旋转", "rotate-cw")}${button("mirror", "镜像", "flip-horizontal")}${button("add-knot", "增加控制点", "plus")}${button("template", "保存模板", "copy")}</div></details>${ports.length ? `<div class="port-settings"><h3>通行口基准流量</h3>${ports.map((p) => `<div class="port-row"><span>${p.end === "start" ? "起点" : "终点"} · ${p.type === "both" ? "双向进出" : p.type === "source" ? "入口" : "出口"}</span>${isSource(p) ? `<label><input type="number" min="0" max="240" value="${p.rate}" data-port="${editor.project.ports.indexOf(p)}" aria-label="入口基准流量"><span>辆/分</span></label>` : ""}<button data-remove-port="${editor.project.ports.indexOf(p)}" class="icon-only" title="取消通行口">${icon("x")}</button></div>`).join("")}<p class="muted">运行中调整流量会保留现有车辆。</p></div>` : ""}`;
+  return `<div class="panel-heading"><h2>${esc(asset?.name || r.name)}</h2>${button("deselect", "关闭", "x", "icon-only")}</div><div class="road-information"><span>${roadLength(r).toFixed(0)} m</span><span>${r.speed} km/h</span><span>${point(r, 0).y.toFixed(0)} → ${point(r, 1).y.toFixed(0)} m</span></div><p class="muted">拖动端点和曲线柄调整道路；Alt＋拖动道路可整体移动。${editor.selected.size > 1 ? `已选择 ${editor.selected.size} 段道路。` : ""}</p><div class="selection-actions">${button("duplicate", "复制", "copy")}${!r.twoWay ? button("reverse", "反向", "rotate-ccw") : ""}${button("delete", "拆除", "trash-2", "danger")}</div><details><summary>更多操作</summary><div class="selection-actions">${button("rotate", "旋转", "rotate-cw")}${button("mirror", "镜像", "flip-horizontal")}${button("add-knot", "增加控制点", "plus")}${button("template", "保存模板", "copy")}</div></details>${ports.length ? `<div class="port-settings"><h3>通行口基准流量</h3>${ports.map((p) => `<div class="port-row"><span>${p.end === "start" ? "起点" : "终点"} · ${p.type === "both" ? "双向进出" : p.type === "source" ? "入口" : "出口"}</span>${isSource(p) ? `<label><input type="number" min="0" max="240" value="${p.rate}" data-port="${editor.project.ports.indexOf(p)}" aria-label="入口基准流量"><span>辆/分</span></label>` : ""}<button data-remove-port="${editor.project.ports.indexOf(p)}" class="icon-only" title="取消通行口">${icon("x")}</button></div>`).join("")}<p class="muted">运行中调整流量会保留现有车辆。</p></div>` : ""}`;
 }
 function syncTraffic(inputs = true) {
   const m = editor.project.trafficMultiplier ?? 1;
@@ -175,6 +182,35 @@ function syncTraffic(inputs = true) {
   const out = document.querySelector("#traffic-total")!;
   if (out.textContent !== text) out.textContent = text;
 }
+function renderSavedMaps() {
+  const list = document.querySelector<HTMLElement>("#save-list")!,
+    count = document.querySelector<HTMLElement>("#save-count")!,
+    input = document.querySelector<HTMLInputElement>("#save-name")!,
+    submit = document.querySelector<HTMLButtonElement>("#save-submit")!;
+  if (document.activeElement !== input && !input.dataset.edited)
+    input.value = editor.project.name;
+  try {
+    const saves = listSavedMaps(localStorage);
+    count.textContent = `${saves.length} 个`;
+    list.innerHTML = saves.length
+      ? saves
+          .map(
+            (save) =>
+              `<div class="save-row"><div title="${esc(save.name)}"><strong>${esc(save.name)}</strong><small>${save.roads} 段道路 · ${new Date(save.savedAt).toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}</small></div><button type="button" data-save-load="${esc(save.id)}" aria-label="载入${esc(save.name)}">载入</button><button type="button" class="icon-only danger" data-save-delete="${esc(save.id)}" title="删除${esc(save.name)}" aria-label="删除${esc(save.name)}">${icon("trash-2")}</button></div>`,
+          )
+          .join("")
+      : '<p class="muted">还没有存档。输入名称后点击保存即可创建。</p>';
+    submit.querySelector("span")!.textContent = saves.some(
+      (save) => save.name === input.value.trim(),
+    )
+      ? "覆盖存档"
+      : "保存新存档";
+  } catch (error) {
+    count.textContent = "读取失败";
+    list.textContent = (error as Error).message;
+    submit.querySelector("span")!.textContent = "保存存档";
+  }
+}
 function render() {
   const name = document.querySelector<HTMLInputElement>("#project-name")!;
   if (document.activeElement !== name) name.value = editor.project.name;
@@ -184,6 +220,7 @@ function render() {
   document.querySelector<HTMLElement>("#road-dock")!.hidden =
     !dockOpen || editor.tool === "boundary" || editor.tool === "delete";
   document.querySelector<HTMLElement>("#map-menu")!.hidden = !menuOpen;
+  if (menuOpen) renderSavedMaps();
   document.querySelector<HTMLElement>("#empty-hint")!.hidden =
     !!editor.project.roads.length || editor.building;
   document.querySelector<HTMLElement>("#boundary-panel")!.hidden =
@@ -251,9 +288,26 @@ editor.onToast = (s) => {
   toastTimer = setTimeout(() => (toast.hidden = true), 3200);
 };
 editor.refresh();
-function confirmLoad(fn: () => void) {
+function confirmLoad(
+  fn: () => void,
+  title = "载入其他地图？",
+  message = "当前路网会被替换，可以撤销或先保存存档。",
+  label = "确认载入",
+) {
   pendingConfirm = fn;
+  document.querySelector("#confirm-title")!.textContent = title;
+  document.querySelector("#confirm-message")!.textContent = message;
+  document.querySelector("#confirm-yes")!.textContent = label;
   document.querySelector<HTMLDialogElement>("#confirm-dialog")!.showModal();
+}
+function loadProject(project: Project, saveName?: string) {
+  editor.load(project);
+  menuOpen = false;
+  const name = document.querySelector<HTMLInputElement>("#save-name")!;
+  name.value = saveName ?? project.name;
+  if (saveName) name.dataset.edited = "true";
+  else delete name.dataset.edited;
+  render();
 }
 document.addEventListener("click", (e) => {
   const target = (e.target as HTMLElement).closest<HTMLElement>("button");
@@ -292,6 +346,47 @@ document.addEventListener("click", (e) => {
   }
   if (target.dataset.template) {
     editor.loadTemplate(target.dataset.template);
+    return;
+  }
+  if (target.dataset.saveLoad) {
+    try {
+      const project = loadNamedMap(localStorage, target.dataset.saveLoad),
+        slot = listSavedMaps(localStorage).find(
+          (item) => item.id === target.dataset.saveLoad,
+        );
+      confirmLoad(
+        () => loadProject(project, slot?.name),
+        `载入“${slot?.name ?? project.name}”？`,
+        "当前地图会被替换，可以通过撤销返回。",
+      );
+    } catch (error) {
+      editor.onToast((error as Error).message);
+    }
+    return;
+  }
+  if (target.dataset.saveDelete) {
+    try {
+      const save = listSavedMaps(localStorage).find(
+        (item) => item.id === target.dataset.saveDelete,
+      );
+      if (!save) throw new Error("存档不存在，请刷新列表后重试。");
+      confirmLoad(
+        () => {
+          try {
+            deleteNamedMap(localStorage, save.id);
+            render();
+            editor.onToast(`已删除存档“${save.name}”。`);
+          } catch (error) {
+            editor.onToast((error as Error).message);
+          }
+        },
+        `删除“${save.name}”？`,
+        "删除后无法恢复。当前画布中的地图不会被修改。",
+        "确认删除",
+      );
+    } catch (error) {
+      editor.onToast((error as Error).message);
+    }
     return;
   }
   if (target.dataset.removePort !== undefined) {
@@ -344,12 +439,18 @@ document.addEventListener("click", (e) => {
     return;
   }
   if (action === "new" || action.startsWith("example-")) {
-    confirmLoad(() => {
-      const kind = action.replace("example-", "");
-      editor.load(action === "new" ? emptyProject() : example(kind));
-      menuOpen = false;
-      render();
-    });
+    const project =
+      action === "new"
+        ? emptyProject()
+        : action === "example-shared"
+          ? sharedRoadMap()
+          : example(action.replace("example-", ""));
+    confirmLoad(
+      () => loadProject(project),
+      action === "new" ? "重置为空白地图？" : `载入“${project.name}”？`,
+      "当前地图会被替换，可以通过撤销返回。",
+      action === "new" ? "确认重置" : "确认载入",
+    );
     return;
   }
   if (action === "help") {
@@ -362,6 +463,7 @@ document.addEventListener("click", (e) => {
   }
   if (action === "cancel-dialog") {
     document.querySelector<HTMLDialogElement>("#confirm-dialog")!.close();
+    pendingConfirm = undefined;
     return;
   }
   if (action === "templates" || action === "close-templates") {
@@ -377,6 +479,40 @@ document.querySelector("#confirm-yes")!.addEventListener("click", () => {
   document.querySelector<HTMLDialogElement>("#confirm-dialog")!.close();
   pendingConfirm?.();
   pendingConfirm = undefined;
+});
+document.querySelector("#save-form")!.addEventListener("submit", (event) => {
+  event.preventDefault();
+  const input = document.querySelector<HTMLInputElement>("#save-name")!,
+    name = input.value.trim();
+  try {
+    const existing = listSavedMaps(localStorage).find(
+      (save) => save.name === name,
+    );
+    const save = () => {
+      try {
+        saveNamedMap(localStorage, editor.project, name);
+        input.dataset.edited = "true";
+        render();
+        editor.onToast(`地图已保存为“${name}”。`);
+      } catch (error) {
+        editor.onToast((error as Error).message);
+      }
+    };
+    if (existing)
+      confirmLoad(
+        save,
+        `覆盖“${name}”？`,
+        "该存档中的旧地图会被当前地图替换。",
+        "确认覆盖",
+      );
+    else save();
+  } catch (error) {
+    editor.onToast((error as Error).message);
+  }
+});
+document.querySelector("#save-name")!.addEventListener("input", (event) => {
+  (event.target as HTMLInputElement).dataset.edited = "true";
+  renderSavedMaps();
 });
 document
   .querySelector("#project-name")!
@@ -396,7 +532,7 @@ document
     try {
       if (file.size > 8 * 1024 * 1024) throw new Error("地图文件超过 8 MB。");
       const p = parseProject(await file.text());
-      confirmLoad(() => editor.load(p));
+      confirmLoad(() => loadProject(p));
     } catch (error) {
       editor.onToast((error as Error).message);
     }

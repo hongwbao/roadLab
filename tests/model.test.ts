@@ -332,6 +332,7 @@ describe("traffic uses actual lane connections", () => {
     for (let i = 0; i < 120; i++) sim.update(0.05);
     const car = sim.vehicles[0],
       id = car.id,
+      previousStep = car.step,
       previous = car.s,
       entered = sim.entered,
       generated = sim.generated;
@@ -339,7 +340,11 @@ describe("traffic uses actual lane connections", () => {
     for (let i = 0; i < 40; i++) sim.update(0.05);
     expect(sim.entered).toBe(entered);
     expect(sim.generated).toBe(generated);
-    expect(sim.vehicles.find((c) => c.id === id)!.s).toBeGreaterThan(previous);
+    const advanced = sim.vehicles.find((c) => c.id === id)!;
+    expect(
+      advanced.step > previousStep ||
+        (advanced.step === previousStep && advanced.s > previous),
+    ).toBe(true);
     expect(sim.running).toBe(true);
   });
   it("changing an inlet rate live preserves vehicles and simulation statistics", () => {

@@ -109,6 +109,13 @@ export class Editor {
     moved: boolean;
     box?: boolean;
   };
+  private pointerPress?: {
+    button: number;
+    pointerId: number;
+    x: number;
+    y: number;
+    moved: boolean;
+  };
   private saveTimer?: ReturnType<typeof setTimeout>;
   get chosen() {
     return [...this.selected]
@@ -209,6 +216,7 @@ export class Editor {
     this.refresh();
   }
   cancel() {
+    this.pointerPress = undefined;
     if (this.drag?.moved && !this.drag.box) {
       this.project = this.drag.snapshot;
       this.stopForEdit();
@@ -247,8 +255,8 @@ export class Editor {
   }
   instructions() {
     return {
-      select: "点击道路查看 · 中键平移 · Alt＋中键旋转 · 滚轮缩放",
-      line: "点击起点，再点击终点 · 右键取消 · PageUp / PageDown 调整高度",
+      select: "左键拖动旋转 · 右键拖动平移 · 滚轮或中键缩放 · 单击道路查看",
+      line: "左键单击起点、终点 · 拖动可移动镜头 · 右键返回一步",
       curve: "依次点击起点、弯曲位置、终点 · 右键返回",
       boundary: "点击端点设置通行口 · 双向道路同时进出 · 右键取消通行口",
       delete: "拆除模式 · 悬停道路预览 · 左键拆除 · B / Esc 退出",
@@ -416,7 +424,7 @@ export class Editor {
     this.onChange();
     if (this.building && this.pointer) this.updatePlacement(this.pointer);
   }
-  private draft(q: V) {
+  private draft(q: V, endSnap?: SnapInfo) {
     let a = this.drawPoints[0] || q;
     const control = this.drawPoints[1];
     // The first click cannot know whether this is a parallel continuation or a turn.
@@ -444,6 +452,44 @@ export class Editor {
             lerp(q, control, 2 / 3),
           )
         : makeRoad(a, q, { ...this.draw });
+    if (this.drawStartSnap?.road) {
+      const reference = this.project.roads.find(
+        (old) => old.id === this.drawStartSnap!.road,
+      );
+      if (reference) {
+        const t = this.drawStartSnap.t || 0,
+          d = mul(tangent(reference, t), t === 0 ? -1 : 1),
+          toward = sub(q, a),
+          length = Math.hypot(toward.x, toward.z);
+        if (length > 8 && (toward.x * d.x + toward.z * d.z) / length > 0.75)
+          r.knots[0].outgoing = add(a, mul(d, Math.min(length / 3, 35)));
+      }
+    }
+    if (
+      (endSnap?.kind === "offset" || endSnap?.kind === "endpoint") &&
+      endSnap.road
+    ) {
+      const reference = this.project.roads.find(
+        (old) => old.id === endSnap.road,
+      );
+      if (reference) {
+        const d = tangent(reference, endSnap.t || 0),
+          toward = sub(q, a),
+          dot = toward.x * d.x + toward.z * d.z,
+          sign = dot >= 0 ? 1 : -1,
+          length = Math.hypot(toward.x, toward.z),
+          handle = Math.min(length / 3, 35);
+        if (length > 8 && Math.abs(dot) / length > 0.75)
+          r.knots.at(-1)!.incoming = add(q, mul(d, -sign * handle));
+      }
+    }
+    if (endSnap?.contact) {
+      const correction = sub(endSnap.contact, center(r, 1)),
+        last = r.knots.at(-1)!;
+      last.p = add(last.p, correction);
+      last.incoming = add(last.incoming, correction);
+      last.outgoing = add(last.outgoing, correction);
+    }
     if (this.tool === "curve" && control)
       for (const end of [0, 1])
         for (const old of this.project.roads) {
@@ -483,7 +529,7 @@ export class Editor {
       }
       const end = add(q, mul(direction, 32));
       road = makeRoad(q, end, { ...this.draw });
-    } else road = this.draft(q);
+    } else road = this.draft(q, this.snapInfo);
     this.scene.showPreviews(this.draftBundle(road), roadLength(road) < 3);
     this.scene.showBuildMarker(
       this.snapInfo?.contact || q,
@@ -500,7 +546,7 @@ export class Editor {
   }
   private finishDraw() {
     const end = this.drawPoints.at(-1)!,
-      r = this.draft(end);
+      r = this.draft(end, this.snapInfo);
     r.name = getAsset(this.assetId).name;
     if (roadLength(r) < 4) {
       this.onToast("道路过短，请将终点移远一点。");
@@ -535,9 +581,19 @@ export class Editor {
     const keep =
       this.continuous &&
       r.lanesStart === r.lanesEnd &&
-      !getAsset(this.assetId).action;
+      !getAsset(this.assetId).action &&
+      this.project.roads.some((road) => road.id === r.id);
     this.drawPoints = keep ? [copy(center(r, 1))] : [];
-    this.drawStartSnap = undefined;
+    this.drawStartSnap = keep
+      ? {
+          kind: "endpoint",
+          position: copy(center(r, 1)),
+          contact: copy(center(r, 1)),
+          road: r.id,
+          t: 1,
+          text: "继续建造道路",
+        }
+      : undefined;
     this.scene.showPreviews([]);
     this.scene.showBuildMarker();
     this.onStatus(this.instructions());
@@ -559,122 +615,156 @@ export class Editor {
     return best;
   }
 
+  private leftClick(e: PointerEvent) {
+    const hit = this.scene.hit(e.clientX, e.clientY),
+      raw = this.scene.groundPoint(
+        e.clientX,
+        e.clientY,
+        this.drawPoints.length ? this.draw.endHeight : this.draw.height,
+      );
+    if (!raw) return;
+    if (this.building) {
+      const q = this.snapped(raw, undefined, e.altKey);
+      if (!this.drawPoints.length)
+        this.drawStartSnap = this.snapInfo ? copy(this.snapInfo) : undefined;
+      this.drawPoints.push(q);
+      if (this.drawPoints.length === (this.tool === "line" ? 2 : 3))
+        this.finishDraw();
+      else this.updatePlacement(raw, e.altKey);
+      return;
+    }
+    if (this.tool === "delete") {
+      if (hit?.road)
+        this.edit(() => {
+          removeRoads(this.project, new Set([hit.road!]));
+          this.selected.delete(hit.road!);
+        }, "道路已拆除");
+      this.scene.setHover();
+      return;
+    }
+    if (this.tool === "boundary") {
+      const port = this.boundaryHit(e.clientX, e.clientY);
+      if (!port) {
+        this.onToast("请点击道路的端点。");
+        return;
+      }
+      this.edit(
+        () => setBoundary(this.project, port.road, port.end),
+        "已设置通行口；双向道路可同时进出",
+      );
+      return;
+    }
+    if (this.tool === "upgrade") {
+      if (!hit?.road) return;
+      this.edit(() => {
+        const r = this.project.roads.find((r) => r.id === hit.road)!;
+        Object.assign(r, getAsset(this.assetId).options);
+        r.name = getAsset(this.assetId).name;
+        delete r.profile;
+        delete r.widthOrigin;
+        reconnectIntersections(this.project);
+      }, "道路已替换");
+      return;
+    }
+    if (hit?.road) this.select(hit.road, e.shiftKey);
+    else if (!e.shiftKey) {
+      this.selected.clear();
+      this.refresh();
+    }
+  }
+
+  private rightClick(e: PointerEvent) {
+    const port = this.boundaryHit(e.clientX, e.clientY);
+    if (
+      (this.tool === "boundary" || this.tool === "select") &&
+      port &&
+      this.project.ports.some((p) => p.road === port.road && p.end === port.end)
+    ) {
+      this.edit(
+        () => removeBoundary(this.project, port.road, port.end),
+        "已取消此处通行口",
+      );
+      return;
+    }
+    if (this.building && this.drawPoints.length) {
+      this.drawPoints.pop();
+      if (!this.drawPoints.length) this.drawStartSnap = undefined;
+      const raw = this.scene.groundPoint(e.clientX, e.clientY);
+      if (raw) this.updatePlacement(raw, e.altKey);
+      else this.scene.showPreviews([]);
+      this.onStatus(
+        this.drawPoints.length
+          ? "已返回上一个绘制点。"
+          : "已取消当前道路，继续选择起点。",
+      );
+      return;
+    }
+    if (this.tool !== "select") this.setTool("select");
+    else if (this.selected.size) {
+      this.selected.clear();
+      this.refresh();
+    }
+  }
+
   bind() {
     const canvas = this.scene.renderer.domElement;
-    canvas.addEventListener("pointerdown", (e) => {
-      if (e.button === 2) {
-        const port = this.boundaryHit(e.clientX, e.clientY);
-        if (
-          (this.tool === "boundary" || this.tool === "select") &&
-          port &&
-          this.project.ports.some(
-            (p) => p.road === port.road && p.end === port.end,
-          )
-        ) {
-          this.edit(
-            () => removeBoundary(this.project, port.road, port.end),
-            "已取消此处通行口",
-          );
-          return;
-        }
-        if (this.building && this.drawPoints.length) {
-          this.drawPoints = [];
-          this.drawStartSnap = undefined;
-          this.scene.showPreviews([]);
-          this.onStatus("已取消当前道路，继续选择起点。");
-          return;
-        }
-        this.setTool("select");
-        return;
-      }
-      if (e.button !== 0) return;
-      const hit = this.scene.hit(e.clientX, e.clientY),
-        raw = this.scene.groundPoint(
-          e.clientX,
-          e.clientY,
-          this.drawPoints.length ? this.draw.endHeight : this.draw.height,
-        );
-      if (!raw) return;
-      if (this.building) {
-        const q = this.snapped(raw, undefined, e.altKey);
-        if (!this.drawPoints.length)
-          this.drawStartSnap = this.snapInfo ? copy(this.snapInfo) : undefined;
-        this.drawPoints.push(q);
-        if (this.drawPoints.length === (this.tool === "line" ? 2 : 3))
-          this.finishDraw();
-        else this.updatePlacement(raw, e.altKey);
-        return;
-      }
-      if (this.tool === "delete") {
-        if (hit?.road)
-          this.edit(() => {
-            removeRoads(this.project, new Set([hit.road!]));
-            this.selected.delete(hit.road!);
-          }, "道路已拆除");
-        this.scene.setHover();
-        return;
-      }
-      if (this.tool === "boundary") {
-        const port = this.boundaryHit(e.clientX, e.clientY);
-        if (!port) {
-          this.onToast("请点击道路的端点。");
-          return;
-        }
-        this.edit(
-          () => setBoundary(this.project, port.road, port.end),
-          "已设置通行口；双向道路可同时进出",
-        );
-        return;
-      }
-      if (this.tool === "upgrade") {
-        if (!hit?.road) return;
-        this.edit(() => {
-          const r = this.project.roads.find((r) => r.id === hit.road)!;
-          Object.assign(r, getAsset(this.assetId).options);
-          r.name = getAsset(this.assetId).name;
-          delete r.profile;
-          delete r.widthOrigin;
-          reconnectIntersections(this.project);
-        }, "道路已替换");
-        return;
-      }
-      if (hit?.road) {
-        if (!this.selected.has(hit.road) || e.shiftKey)
-          this.select(hit.road, e.shiftKey);
-        const handle = hit.handle ? hit : undefined,
-          height = handle
-            ? this.project.roads.find((r) => r.id === handle.road)!.knots[
-                handle.knot!
-              ][handle.part!].y
-            : (hit.position?.y ?? 0);
-        this.drag = {
-          snapshot: copy(this.project),
-          hit: handle,
-          start: this.scene.groundPoint(e.clientX, e.clientY, height)!,
+    canvas.addEventListener(
+      "pointerdown",
+      (e) => {
+        if (![0, 1, 2].includes(e.button)) return;
+        this.pointerPress = {
+          button: e.button,
+          pointerId: e.pointerId,
           x: e.clientX,
           y: e.clientY,
-          height,
           moved: false,
         };
-      } else if (e.shiftKey)
-        this.drag = {
-          snapshot: copy(this.project),
-          start: raw,
-          x: e.clientX,
-          y: e.clientY,
-          height: 0,
-          moved: false,
-          box: true,
-        };
-      else {
-        this.selected.clear();
-        this.refresh();
-        return;
-      }
-      this.scene.controls.enabled = false;
-      canvas.setPointerCapture(e.pointerId);
-    });
+        if (e.button === 1) e.preventDefault();
+        if (e.button !== 0 || this.building || this.tool !== "select") return;
+        const hit = this.scene.hit(e.clientX, e.clientY),
+          raw = this.scene.groundPoint(e.clientX, e.clientY);
+        if (!raw) return;
+        if (hit?.road && (hit.handle || e.altKey)) {
+          if (!this.selected.has(hit.road)) this.select(hit.road, e.shiftKey);
+          const handle = hit.handle ? hit : undefined,
+            height = handle
+              ? this.project.roads.find((r) => r.id === handle.road)!.knots[
+                  handle.knot!
+                ][handle.part!].y
+              : (hit.position?.y ?? 0);
+          this.drag = {
+            snapshot: copy(this.project),
+            hit: handle,
+            start: this.scene.groundPoint(e.clientX, e.clientY, height)!,
+            x: e.clientX,
+            y: e.clientY,
+            height,
+            moved: false,
+          };
+        } else if (!hit?.road && e.shiftKey)
+          this.drag = {
+            snapshot: copy(this.project),
+            start: raw,
+            x: e.clientX,
+            y: e.clientY,
+            height: 0,
+            moved: false,
+            box: true,
+          };
+        if (this.drag) {
+          this.scene.controls.enabled = false;
+          canvas.setPointerCapture(e.pointerId);
+        }
+      },
+      { capture: true },
+    );
     canvas.addEventListener("pointermove", (e) => {
+      if (this.pointerPress?.pointerId === e.pointerId)
+        this.pointerPress.moved ||=
+          Math.hypot(
+            e.clientX - this.pointerPress.x,
+            e.clientY - this.pointerPress.y,
+          ) >= 4;
       const height =
           this.drag?.height ??
           (this.drawPoints.length ? this.draw.endHeight : this.draw.height),
@@ -758,7 +848,13 @@ export class Editor {
             : "select",
       );
       canvas.style.cursor =
-        this.tool === "delete" ? "crosshair" : hit?.handle ? "grab" : "default";
+        this.tool === "delete"
+          ? "crosshair"
+          : hit?.handle
+            ? "move"
+            : hit?.road
+              ? "pointer"
+              : "grab";
       if (this.tool === "boundary") {
         const p = this.boundaryHit(e.clientX, e.clientY);
         if (p) {
@@ -776,7 +872,25 @@ export class Editor {
       }
     });
     canvas.addEventListener("pointerup", (e) => {
-      if (!this.drag) return;
+      const press = this.pointerPress;
+      this.pointerPress = undefined;
+      if (!this.drag) {
+        if (!press || press.pointerId !== e.pointerId) return;
+        const moved =
+          press.moved ||
+          Math.hypot(e.clientX - press.x, e.clientY - press.y) >= 4;
+        if (moved) {
+          if (this.building) {
+            const raw = this.scene.groundPoint(e.clientX, e.clientY);
+            if (raw) this.updatePlacement(raw, e.altKey);
+          }
+          return;
+        }
+        if (press.button === 0) this.leftClick(e);
+        if (press.button === 1) this.scene.controls.dollyIn(1.25);
+        if (press.button === 2) this.rightClick(e);
+        return;
+      }
       const d = this.drag;
       this.drag = undefined;
       this.scene.controls.enabled = true;
@@ -799,11 +913,14 @@ export class Editor {
       this.refresh();
     });
     canvas.addEventListener("pointercancel", () => {
-      this.cancel();
-      this.refresh();
+      this.pointerPress = undefined;
+      if (this.drag) {
+        this.cancel();
+        this.refresh();
+      }
     });
     canvas.addEventListener("pointerleave", () => {
-      if (this.drag) return;
+      if (this.drag || this.pointerPress) return;
       this.scene.setHover();
       this.scene.showBuildMarker();
       this.scene.showPreviews([]);
@@ -837,6 +954,21 @@ export class Editor {
       if (e.ctrlKey || e.metaKey) return;
       if (target.closest("button,a") && (e.key === " " || e.key === "Enter"))
         return;
+      if (
+        /^(Key[WASDQETGRF]|Arrow(Up|Down|Left|Right)|Shift(Left|Right))$/.test(
+          e.code,
+        )
+      ) {
+        if (e.code === "KeyF" && e.shiftKey) {
+          e.preventDefault();
+          this.scene.fit(this.chosen.length ? this.chosen : this.project.roads);
+          return;
+        }
+        this.scene.setCameraKey(e.code, true);
+        if (e.code !== "ShiftLeft" && e.code !== "ShiftRight")
+          e.preventDefault();
+        return;
+      }
       if (e.key === "Tab" && this.building && target === this.scene.el) {
         e.preventDefault();
         this.cycleAlignment();
@@ -869,13 +1001,18 @@ export class Editor {
         e.preventDefault();
         this.action("play");
       }
-      if (key === "f")
-        this.scene.fit(this.chosen.length ? this.chosen : this.project.roads);
       if (key === "h") this.scene.top();
       if (e.key === "PageUp" || e.key === "PageDown") {
         e.preventDefault();
         this.changeHeight(e.key === "PageUp" ? 8 : -8);
       }
+    });
+    window.addEventListener("keyup", (e) =>
+      this.scene.setCameraKey(e.code, false),
+    );
+    window.addEventListener("blur", () => this.scene.clearCameraKeys());
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden) this.scene.clearCameraKeys();
     });
   }
   changeHeight(delta: number) {

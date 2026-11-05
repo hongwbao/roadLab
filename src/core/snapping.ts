@@ -21,10 +21,14 @@ export function endpointAnchors(
 ): EndpointAnchor[] {
   const c = center(reference, end),
     n = normal(proposed, proposedEnd),
+    referenceNormal = normal(reference, end),
     shift = sub(center(proposed, proposedEnd), point(proposed, proposedEnd));
   const rd = tangent(reference, end),
     nd = tangent(proposed, proposedEnd);
-  const parallel = Math.abs(rd.x * nd.x + rd.z * nd.z) > 0.94;
+  // At the destination, a gently angled approach can bend to match the
+  // reference road's tangent. The source preview has no final direction yet.
+  const parallel =
+    Math.abs(rd.x * nd.x + rd.z * nd.z) > (proposedEnd === 1 ? 0.75 : 0.94);
   const canOffset = !reference.twoWay && !proposed.twoWay && parallel;
   const difference =
     (totalAt(proposed, proposedEnd) * proposed.width -
@@ -45,7 +49,14 @@ export function endpointAnchors(
           : alignment === "right"
             ? -difference
             : 0,
-      contact = add(c, mul(n, offset));
+      contact = add(
+        c,
+        mul(
+          referenceNormal,
+          offset *
+            (n.x * referenceNormal.x + n.z * referenceNormal.z >= 0 ? 1 : -1),
+        ),
+      );
     return {
       position: sub(contact, shift),
       contact,

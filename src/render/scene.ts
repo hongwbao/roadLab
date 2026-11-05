@@ -55,6 +55,9 @@ export class Scene {
   private currentProject?: Project;
   private hoverId?: string;
   private hoverMode?: string;
+  private cameraKeys = new Set<string>();
+  private edgeScroll = new T.Vector2();
+  private lastCameraFrame = performance.now();
   junctionMesh = new T.Group();
   hover = new T.Group();
   buildMarker = new T.Group();
@@ -74,6 +77,7 @@ export class Scene {
       side: T.DoubleSide,
     }),
     mark: new T.LineBasicMaterial({ color: 0xf0eed8 }),
+    centerline: new T.LineBasicMaterial({ color: 0xf3c454 }),
     lane: new T.LineBasicMaterial({
       color: 0x33a7ac,
       transparent: true,
@@ -122,10 +126,12 @@ export class Scene {
     this.controls.maxPolarAngle = Math.PI * 0.48;
     this.controls.minDistance = 20;
     this.controls.maxDistance = 1000;
+    this.controls.screenSpacePanning = false;
+    this.controls.zoomToCursor = true;
     this.controls.mouseButtons = {
-      LEFT: undefined as unknown as T.MOUSE,
-      MIDDLE: T.MOUSE.PAN,
-      RIGHT: undefined as unknown as T.MOUSE,
+      LEFT: T.MOUSE.ROTATE,
+      MIDDLE: T.MOUSE.DOLLY,
+      RIGHT: T.MOUSE.PAN,
     };
     this.scene.add(new T.HemisphereLight(0xffffff, 0x6b825c, 1.8));
     const sun = new T.DirectionalLight(0xfff3da, 1.5);
@@ -159,15 +165,28 @@ export class Scene {
       this.buildMarker,
       this.portGroup,
     );
-    this.renderer.domElement.addEventListener(
-      "pointerdown",
-      (e) => {
-        if (e.button === 1)
-          this.controls.mouseButtons.MIDDLE = e.altKey
-            ? T.MOUSE.ROTATE
-            : T.MOUSE.PAN;
-      },
-      { capture: true },
+    this.renderer.domElement.addEventListener("pointermove", (e) => {
+      if (e.buttons) {
+        this.edgeScroll.set(0, 0);
+        return;
+      }
+      const rect = this.renderer.domElement.getBoundingClientRect();
+      const edge = 20;
+      this.edgeScroll.set(
+        e.clientX < rect.left + edge
+          ? -1
+          : e.clientX > rect.right - edge
+            ? 1
+            : 0,
+        e.clientY < rect.top + edge
+          ? 1
+          : e.clientY > rect.bottom - edge
+            ? -1
+            : 0,
+      );
+    });
+    this.renderer.domElement.addEventListener("pointerleave", () =>
+      this.edgeScroll.set(0, 0),
     );
     this.initializeCars();
     this.el.addEventListener("contextmenu", (e) => e.preventDefault());
@@ -183,6 +202,69 @@ export class Scene {
     this.renderer.setSize(w, h);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
+  }
+  setCameraKey(code: string, pressed: boolean) {
+    if (pressed) this.cameraKeys.add(code);
+    else this.cameraKeys.delete(code);
+  }
+  clearCameraKeys() {
+    this.cameraKeys.clear();
+    this.edgeScroll.set(0, 0);
+  }
+  private updateCamera() {
+    const now = performance.now();
+    const dt = Math.min((now - this.lastCameraFrame) / 1000, 0.05);
+    this.lastCameraFrame = now;
+    if (
+      !this.controls.enabled ||
+      document.hidden ||
+      document.querySelector("dialog[open]")
+    )
+      return;
+    const held = (code: string) => Number(this.cameraKeys.has(code));
+    const right =
+      held("KeyD") -
+      held("KeyA") +
+      held("ArrowRight") -
+      held("ArrowLeft") +
+      this.edgeScroll.x;
+    const forward =
+      held("KeyW") -
+      held("KeyS") +
+      held("ArrowUp") -
+      held("ArrowDown") +
+      this.edgeScroll.y;
+    if (right || forward) {
+      const direction = this.controls.target.clone().sub(this.camera.position);
+      direction.y = 0;
+      direction.normalize();
+      const side = new T.Vector3().crossVectors(direction, this.camera.up);
+      const movement = direction
+        .multiplyScalar(forward)
+        .addScaledVector(side, right)
+        .normalize();
+      const speed =
+        Math.max(
+          18,
+          this.camera.position.distanceTo(this.controls.target) * 0.9,
+        ) *
+        dt *
+        (this.cameraKeys.has("ShiftLeft") || this.cameraKeys.has("ShiftRight")
+          ? 2.5
+          : 1);
+      this.camera.position.addScaledVector(movement, speed);
+      this.controls.target.addScaledVector(movement, speed);
+    }
+    const yaw = held("KeyQ") - held("KeyE");
+    if (yaw) this.controls.rotateLeft(yaw * 1.3 * dt);
+    const pitch = held("KeyT") - held("KeyG");
+    if (pitch) this.controls.rotateUp(pitch * 0.8 * dt);
+    const zoom = held("KeyR") - held("KeyF");
+    if (zoom) {
+      const scale = Math.exp(1.4 * dt);
+      if (zoom > 0) this.controls.dollyIn(scale);
+      else this.controls.dollyOut(scale);
+    }
   }
   clear(group: T.Group) {
     for (const obj of [...group.children]) {
@@ -264,7 +346,7 @@ export class Scene {
     }
     for (let t = 0.12; t < 1; t += 0.18) {
       const p = center(r, range.start + (range.end - range.start) * t);
-      if (p.y > 3) {
+      if (p.y > 3 && this.pillarFits(r, p)) {
         const column = new T.Mesh(
           new T.CylinderGeometry(0.55, 0.65, p.y, 8),
           new T.MeshStandardMaterial({ color: 0x9ca89a }),
@@ -273,6 +355,16 @@ export class Scene {
         group.add(column);
       }
     }
+  }
+  private pillarFits(road: Road, p: V) {
+    for (const other of this.currentProject?.roads || []) {
+      if (other.id === road.id) continue;
+      const near = nearest(other, p);
+      if (near.point.y > p.y - 0.5) continue;
+      const clearance = (totalAt(other, near.t) * other.width) / 2 + 1.5;
+      if (near.distance < clearance) return false;
+    }
+    return true;
   }
   rebuild(
     p: Project,
@@ -333,15 +425,22 @@ export class Scene {
       }
       const max = laneCount(r);
       for (let l = 1; l < max; l++) {
+        if (r.twoWay && l === max / 2) {
+          const pts: V[] = [];
+          for (let i = 0; i <= 100; i++) {
+            const t = range.start + ((range.end - range.start) * i) / 100;
+            pts.push(boundaryPoint(r, l, t));
+          }
+          this.line(pts, this.mats.centerline, this.details);
+          continue;
+        }
         for (let j = 0; j < 100; j += 5) {
           const pts: V[] = [];
           for (let k = j; k <= j + 2; k++) {
             const t = range.start + ((range.end - range.start) * k) / 100;
             if (laneWidth(r, l, t) < 0.15 || laneWidth(r, l - 1, t) < 0.15)
               continue;
-            const q = boundaryPoint(r, l, t);
-            if (r.twoWay && l === max / 2) q.y += 0.012;
-            pts.push(q);
+            pts.push(boundaryPoint(r, l, t));
           }
           if (pts.length > 1) this.line(pts, this.mats.mark, this.details);
         }
@@ -923,6 +1022,7 @@ export class Scene {
       this.bodyInstances.instanceColor.needsUpdate = true;
   }
   render() {
+    this.updateCamera();
     this.controls.update();
     const tan = Math.tan(T.MathUtils.degToRad(this.camera.fov / 2)),
       height = this.el.clientHeight;

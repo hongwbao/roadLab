@@ -12,5 +12,6 @@ PRODUCT.md
 !.env.example
 *.local
 *.log
+/deploy/roadlab.service
 .~lock.*#
 .DS_Store

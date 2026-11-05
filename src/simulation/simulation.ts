@@ -12,6 +12,7 @@ import {
   laneWidth,
   lerp,
   mul,
+  smooth,
   tangent,
 } from "../core/math";
 import { connections, normalizePorts } from "../core/model";
@@ -37,6 +38,8 @@ export type Vehicle = {
   step: number;
   s: number;
   lane: number;
+  laneChange?: { from: number; to: number; start: number; length: number };
+  stalledFor?: number;
   speed: number;
   age: number;
   color: number;
@@ -55,12 +58,19 @@ export type Vehicle = {
   };
 };
 const key = (road: string, dir: number) => road + ":" + dir;
+const laneKey = (road: string, dir: number, lane: number) =>
+  `${road}:${dir}:${lane}`;
+const laneChangeLength = (speed: number) =>
+  Math.max(24, Math.min(50, Math.max(speed, 10) * 2.3));
 export function findRoute(
   p: Project,
   source: Port,
   sink: Port,
   cs = connections(p),
   preferredLane?: number,
+  congestion?: ReadonlyMap<string, number>,
+  startDistance = 0,
+  cachedLengths?: ReadonlyMap<string, number>,
 ): Step[] | undefined {
   const roads = new Map(p.roads.map((r) => [r.id, r]));
   const sourceRoad = roads.get(source.road),
@@ -73,119 +83,149 @@ export function findRoute(
     (endDir === -1 && !sinkRoad.twoWay)
   )
     return;
-  const goal = key(sink.road, endDir),
-    start = key(source.road, startDir),
-    queue = [start],
-    visited = new Set([start]),
-    parent = new Map<string, { prev: string; c: Connection }>();
-  while (queue.length) {
-    const at = queue.shift()!;
-    if (at === goal) break;
-    for (const c of cs) {
-      if (!c.enabled) continue;
-      const a = roads.get(c.from.road),
-        b = roads.get(c.to.road);
-      if (!a || !b || key(a.id, laneDirection(a, c.from.lane)) !== at) continue;
-      const dest = key(b.id, laneDirection(b, c.to.lane));
-      if (visited.has(dest)) continue;
-      visited.add(dest);
-      parent.set(dest, { prev: at, c });
-      queue.push(dest);
+  type LaneState = { road: string; direction: 1 | -1; lane: number };
+  const lengths =
+    cachedLengths ?? new Map(p.roads.map((r) => [r.id, arcTable(r).at(-1)!.s]));
+  const links = new Map<string, Connection[]>();
+  for (const c of cs) {
+    if (!c.enabled) continue;
+    const r = roads.get(c.from.road);
+    if (!r || !roads.has(c.to.road)) continue;
+    const k = key(r.id, laneDirection(r, c.from.lane));
+    if (!links.has(k)) links.set(k, []);
+    links.get(k)!.push(c);
+  }
+  const changeCost = (
+    r: Road,
+    direction: 1 | -1,
+    from: number,
+    to: number,
+    offset: number,
+  ) => {
+    if (from === to) return 0;
+    if (laneDirection(r, to) !== direction) return Infinity;
+    const length = lengths.get(r.id)!,
+      minimum = 20 * Math.abs(to - from),
+      lastStart = length - minimum - 6;
+    if (lastStart < offset) return Infinity;
+    for (let s = offset; s <= lastStart + 0.001; s += 2) {
+      const widthAt = (lane: number, at: number) =>
+        laneWidth(r, lane, direction === 1 ? at / length : 1 - at / length);
+      // A lane that tapers away only needs to fit the car at the start of a
+      // merge; the destination lane must fit it when the merge ends.
+      const usable =
+        widthAt(from, s) >= r.width * 0.8 &&
+        widthAt(to, s + minimum) >= r.width * 0.8 &&
+        Array.from(
+          { length: Math.abs(to - from) - 1 },
+          (_, i) => Math.min(from, to) + i + 1,
+        ).every((lane) => widthAt(lane, s + minimum / 2) >= r.width * 0.8);
+      if (usable) return Math.abs(to - from) * 2.5 + (s / length) * 2;
     }
-  }
-  if (!visited.has(goal)) return;
-  const chain: Connection[] = [];
-  let at = goal;
-  while (at !== start) {
-    const n = parent.get(at);
-    if (!n) return;
-    chain.unshift(n.c);
-    at = n.prev;
-  }
-  const steps: Step[] = [];
-  let road = sourceRoad,
-    dir = startDir as 1 | -1;
-  let inLane =
-    Array.from({ length: laneCount(road) }, (_, i) => i).find(
-      (i) =>
-        laneDirection(road, i) === dir &&
-        laneWidth(road, i, dir === 1 ? 0 : 1) > road.width * 0.75,
-    ) ?? 0;
-  for (const c of chain) {
-    steps.push({ road: road.id, direction: dir, inLane, outLane: c.from.lane });
-    road = roads.get(c.to.road)!;
-    dir = laneDirection(road, c.to.lane);
-    inLane = c.to.lane;
-  }
-  const exits = Array.from({ length: laneCount(road) }, (_, i) => i).filter(
-    (i) =>
-      laneDirection(road, i) === dir &&
-      laneWidth(road, i, dir === 1 ? 1 : 0) > road.width * 0.8,
-  );
-  steps.push({
-    road: road.id,
-    direction: dir,
-    inLane,
-    outLane: exits.reduce(
-      (a, b) => (Math.abs(b - inLane) < Math.abs(a - inLane) ? b : a),
-      exits[0] ?? inLane,
-    ),
-  });
-  // Choose lane links over the whole route, minimizing changes, rather than
-  // always funnelling traffic into lane zero at each road segment.
-  const initial = steps[0],
-    initialRoad = roads.get(initial.road)!;
-  let states = new Map<number, { cost: number; steps: Step[] }>();
-  for (let l = 0; l < laneCount(initialRoad); l++)
+    return Infinity;
+  };
+  const states = new Map<string, LaneState>(),
+    costs = new Map<string, number>(),
+    previous = new Map<string, { key: string; outLane: number }>(),
+    open = new Set<string>(),
+    closed = new Set<string>();
+  for (let lane = 0; lane < laneCount(sourceRoad); lane++) {
     if (
-      laneDirection(initialRoad, l) === initial.direction &&
-      laneWidth(initialRoad, l, initial.direction === 1 ? 0 : 1) >
-        initialRoad.width * 0.8
+      (startDistance > 0 &&
+        preferredLane !== undefined &&
+        lane !== preferredLane) ||
+      laneDirection(sourceRoad, lane) !== startDir ||
+      laneWidth(sourceRoad, lane, startDir === 1 ? 0 : 1) <=
+        sourceRoad.width * 0.8
     )
-      states.set(l, {
-        cost:
-          preferredLane === undefined ? 0 : Math.abs(l - preferredLane) * 10,
-        steps: [],
-      });
-  for (let i = 0; i < steps.length - 1; i++) {
-    const a = steps[i],
-      b = steps[i + 1],
-      next = new Map<number, { cost: number; steps: Step[] }>();
-    for (const c of cs) {
-      if (
-        !c.enabled ||
-        c.from.road !== a.road ||
-        c.to.road !== b.road ||
-        laneDirection(roads.get(a.road)!, c.from.lane) !== a.direction ||
-        laneDirection(roads.get(b.road)!, c.to.lane) !== b.direction
-      )
-        continue;
-      for (const [entry, state] of states) {
-        const cost = state.cost + Math.abs(entry - c.from.lane);
-        if (!next.has(c.to.lane) || next.get(c.to.lane)!.cost > cost)
-          next.set(c.to.lane, {
-            cost,
-            steps: [
-              ...state.steps,
-              { ...a, inLane: entry, outLane: c.from.lane },
-            ],
-          });
-      }
-    }
-    states = next;
+      continue;
+    const k = laneKey(sourceRoad.id, startDir, lane);
+    states.set(k, { road: sourceRoad.id, direction: startDir, lane });
+    costs.set(
+      k,
+      preferredLane === undefined ? 0 : Math.abs(lane - preferredLane) * 10,
+    );
+    open.add(k);
   }
-  const final = steps.at(-1)!;
-  let best: { cost: number; steps: Step[] } | undefined;
-  for (const [entry, state] of states)
-    for (const exit of exits) {
-      const cost = state.cost + Math.abs(entry - exit);
-      if (!best || cost < best.cost)
-        best = {
-          cost,
-          steps: [...state.steps, { ...final, inLane: entry, outLane: exit }],
-        };
+  let goal: { key: string; lane: number; cost: number } | undefined;
+  while (open.size) {
+    let current = "";
+    for (const k of open)
+      if (!current || costs.get(k)! < costs.get(current)!) current = k;
+    open.delete(current);
+    if (goal && costs.get(current)! >= goal.cost) break;
+    if (closed.has(current)) continue;
+    closed.add(current);
+    const state = states.get(current)!,
+      r = roads.get(state.road)!,
+      remaining =
+        lengths.get(r.id)! -
+        (r.id === sourceRoad.id && state.direction === startDir
+          ? startDistance
+          : 0),
+      travel = remaining / Math.max(3, r.speed / 3.6),
+      density =
+        congestion?.get(laneKey(r.id, state.direction, state.lane)) ?? 0;
+    if (r.id === sinkRoad.id && state.direction === endDir)
+      for (let lane = 0; lane < laneCount(r); lane++) {
+        if (
+          laneDirection(r, lane) !== state.direction ||
+          laneWidth(r, lane, state.direction === 1 ? 1 : 0) <= r.width * 0.8
+        )
+          continue;
+        const change = changeCost(
+          r,
+          state.direction,
+          state.lane,
+          lane,
+          r.id === sourceRoad.id ? startDistance : 0,
+        );
+        if (!Number.isFinite(change)) continue;
+        const cost = costs.get(current)! + travel + change + density * 0.4;
+        if (!goal || cost < goal.cost) goal = { key: current, lane, cost };
+      }
+    for (const c of links.get(key(r.id, state.direction)) ?? []) {
+      const nextRoad = roads.get(c.to.road)!,
+        nextDir = laneDirection(nextRoad, c.to.lane),
+        change = changeCost(
+          r,
+          state.direction,
+          state.lane,
+          c.from.lane,
+          r.id === sourceRoad.id ? startDistance : 0,
+        );
+      if (!Number.isFinite(change)) continue;
+      const next = laneKey(nextRoad.id, nextDir, c.to.lane),
+        cost = costs.get(current)! + travel + change + density * 0.4;
+      if (cost >= (costs.get(next) ?? Infinity)) continue;
+      states.set(next, {
+        road: nextRoad.id,
+        direction: nextDir,
+        lane: c.to.lane,
+      });
+      costs.set(next, cost);
+      previous.set(next, { key: current, outLane: c.from.lane });
+      open.add(next);
     }
-  return best?.steps || steps;
+  }
+  if (!goal) return;
+  const route: Step[] = [];
+  let at = goal.key,
+    outLane = goal.lane;
+  while (true) {
+    const state = states.get(at)!;
+    route.unshift({
+      road: state.road,
+      direction: state.direction,
+      inLane: state.lane,
+      outLane,
+    });
+    const parent = previous.get(at);
+    if (!parent) break;
+    at = parent.key;
+    outLane = parent.outLane;
+  }
+  return route;
 }
 export class Simulation {
   vehicles: Vehicle[] = [];
@@ -238,7 +278,16 @@ export class Simulation {
     for (const source of p.ports.filter(isSource))
       for (const sink of p.ports.filter(isSink)) {
         if (source.road === sink.road && source.end === sink.end) continue;
-        const route = findRoute(p, source, sink, this.cs);
+        const route = findRoute(
+          p,
+          source,
+          sink,
+          this.cs,
+          undefined,
+          undefined,
+          0,
+          this.lengths,
+        );
         if (route) this.routes.push({ source, sink, route });
         else this.unreachable++;
       }
@@ -275,22 +324,37 @@ export class Simulation {
     const step = car.route[car.step],
       r = this.roads.get(step.road)!,
       len = this.lengths.get(r.id)!,
-      t = arcParameter(
-        this.arcs.get(r.id)!,
-        step.direction === 1 ? car.s : len - car.s,
-      ),
-      lo = Math.floor(car.lane),
-      hi = Math.ceil(car.lane),
-      blend = car.lane - lo;
-    const pos = (t: number) =>
-        lerp(lanePoint(r, lo, t), lanePoint(r, hi, t), blend),
-      a = pos(clamp(t - step.direction * 0.001)),
-      b = pos(clamp(t + step.direction * 0.001));
-    car.position = pos(t);
+      arc = this.arcs.get(r.id)!;
+    const positionAt = (s: number) => {
+      const t = arcParameter(arc, step.direction === 1 ? s : len - s),
+        change = car.laneChange,
+        lane = change
+          ? change.from +
+            (change.to - change.from) *
+              smooth((s - change.start) / change.length)
+          : car.lane,
+        lo = Math.floor(lane),
+        hi = Math.ceil(lane);
+      return lerp(lanePoint(r, lo, t), lanePoint(r, hi, t), lane - lo);
+    };
+    const a = positionAt(Math.max(0, car.s - 0.15)),
+      b = positionAt(Math.min(len, car.s + 0.15));
+    car.position = positionAt(car.s);
     car.heading = Math.atan2(b.z - a.z, b.x - a.x);
     car.pitch = Math.atan2(b.y - a.y, Math.hypot(b.x - a.x, b.z - a.z));
   }
+  private occupancy(exclude?: number) {
+    const result = new Map<string, number>();
+    for (const car of this.vehicles) {
+      if (car.id === exclude || car.connector) continue;
+      const step = car.route[car.step],
+        k = laneKey(step.road, step.direction, Math.round(car.lane));
+      result.set(k, (result.get(k) ?? 0) + (car.speed < 1 ? 2 : 1));
+    }
+    return result;
+  }
   private spawn(index: TrafficIndex<Vehicle>) {
+    const congestion = this.occupancy();
     for (const source of [...new Set(this.routes.map((x) => x.source))]) {
       const rate = source.rate * (this.project?.trafficMultiplier ?? 1);
       if (rate <= 0) {
@@ -322,22 +386,44 @@ export class Simulation {
           option.sink,
           this.cs,
           valid[(k + offset) % valid.length],
+          congestion,
+          0,
+          this.lengths,
         );
         if (!route) continue;
         const step = route[0],
-          car: Vehicle = {
-            id: this.id + 1,
-            route,
-            step: 0,
-            s: this.entry(step),
-            lane: step.inLane,
-            speed: 0,
-            age: 0,
-            color: Math.floor(this.rand() * 5),
-            position: { x: 0, y: 0, z: 0 },
-            heading: 0,
-            pitch: 0,
-          };
+          entry = this.entry(step),
+          gapAhead = this.vehicles
+            .filter(
+              (o) =>
+                !o.connector &&
+                o.route[o.step].road === step.road &&
+                o.route[o.step].direction === step.direction &&
+                (Math.abs(o.lane - step.inLane) < 0.85 ||
+                  (o.laneChange &&
+                    Math.abs(o.laneChange.to - step.inLane) < 0.85)) &&
+                o.s >= entry,
+            )
+            .reduce((nearest, o) => Math.min(nearest, o.s - entry), Infinity),
+          cruiseSpeed = Math.min((r.speed / 3.6) * 0.5, 10),
+          initialSpeed = Math.min(
+            cruiseSpeed,
+            Math.max(0, (gapAhead - 4.8) / 1.4),
+          );
+        if (initialSpeed < Math.min(2.5, cruiseSpeed)) continue;
+        const car: Vehicle = {
+          id: this.id + 1,
+          route,
+          step: 0,
+          s: entry,
+          lane: step.inLane,
+          speed: initialSpeed,
+          age: 0,
+          color: Math.floor(this.rand() * 5),
+          position: { x: 0, y: 0, z: 0 },
+          heading: 0,
+          pitch: 0,
+        };
         this.pose(car);
         if (index.blocked(car)) continue;
         this.id++;
@@ -386,6 +472,49 @@ export class Simulation {
     )?.id;
     return { from, to, c1, c2, arc, length: s, progress: 0, junction };
   }
+  private reroute(car: Vehicle) {
+    if (!this.project || car.connector || car.laneChange) return;
+    const current = car.route[car.step],
+      destination = car.route.at(-1)!,
+      lane = Math.round(car.lane),
+      source: Port = {
+        road: current.road,
+        end: current.direction === 1 ? "start" : "end",
+        type: "source",
+        rate: 0,
+      },
+      sink: Port = {
+        road: destination.road,
+        end: destination.direction === 1 ? "end" : "start",
+        type: "sink",
+        rate: 0,
+      },
+      route = findRoute(
+        this.project,
+        source,
+        sink,
+        this.cs,
+        lane,
+        this.occupancy(car.id),
+        car.s,
+        this.lengths,
+      );
+    if (!route || route[0].inLane !== lane) return;
+    const remaining = car.route.slice(car.step);
+    if (
+      route.length === remaining.length &&
+      route.every(
+        (step, i) =>
+          step.road === remaining[i].road &&
+          step.direction === remaining[i].direction &&
+          step.inLane === remaining[i].inLane &&
+          step.outLane === remaining[i].outLane,
+      )
+    )
+      return;
+    car.route = route;
+    car.step = 0;
+  }
   update(delta: number) {
     if (!this.running) return;
     const total = Math.min(Math.max(delta, 0), 0.05) * this.speed,
@@ -407,6 +536,7 @@ export class Simulation {
       const original = {
         ...car,
         connector: car.connector ? { ...car.connector } : undefined,
+        laneChange: car.laneChange ? { ...car.laneChange } : undefined,
       };
       car.age += dt;
       const step = car.route[car.step],
@@ -443,7 +573,49 @@ export class Simulation {
             this.arcs.get(r.id)!,
             step.direction === 1 ? car.s : len - car.s,
           ),
-          target = step.outLane;
+          next = car.route[car.step + 1];
+        // If a late lane change cannot finish safely, keep the current lane
+        // through an equivalent link to the same road and change there.
+        if (
+          next &&
+          !car.laneChange &&
+          Math.abs(car.lane - step.outLane) > 0.15
+        ) {
+          const current = Math.round(car.lane),
+            needed = laneChangeLength(car.speed) + 8,
+            nextRoad = this.roads.get(next.road);
+          if (
+            end - car.s < needed &&
+            laneWidth(r, current, step.direction === 1 ? 1 : 0) >
+              r.width * 0.8 &&
+            nextRoad
+          ) {
+            const alternate = this.cs
+              .filter(
+                (c) =>
+                  c.enabled &&
+                  c.from.road === r.id &&
+                  c.from.lane === current &&
+                  c.to.road === next.road &&
+                  laneDirection(nextRoad, c.to.lane) === next.direction,
+              )
+              .sort(
+                (a, b) =>
+                  Math.abs(a.to.lane - next.inLane) -
+                  Math.abs(b.to.lane - next.inLane),
+              )[0];
+            if (alternate) {
+              step.outLane = current;
+              next.inLane = alternate.to.lane;
+            }
+          }
+        }
+        const target =
+          !next &&
+          laneWidth(r, Math.round(car.lane), step.direction === 1 ? 1 : 0) >
+            r.width * 0.8
+            ? Math.round(car.lane)
+            : step.outLane;
         let desired =
           laneWidth(r, target, t) > r.width * 0.8 ? target : car.lane;
         if (laneWidth(r, Math.round(car.lane), t) < r.width * 0.85) {
@@ -460,35 +632,127 @@ export class Simulation {
             valid[0] ?? car.lane,
           );
         }
+        const minimumChange = Math.min(
+          20,
+          Math.max(8, end - this.entry(step) - 6),
+        );
+        const changeLength = Math.max(
+          0,
+          Math.min(laneChangeLength(car.speed), end - car.s - 6),
+        );
+        const changeTime = Math.min(3, changeLength / Math.max(car.speed, 5));
         const blockedChange = this.vehicles.some(
           (o) =>
             o.id !== car.id &&
+            !o.connector &&
             o.route[o.step].road === r.id &&
             o.route[o.step].direction === step.direction &&
-            Math.abs(o.lane - desired) < 0.8 &&
-            Math.abs(o.s - car.s) < 8,
+            (Math.abs(o.lane - car.lane) > 0.55 || !!o.laneChange) &&
+            ((o.lane >= Math.min(car.lane, desired) - 0.7 &&
+              o.lane <= Math.max(car.lane, desired) + 0.7) ||
+              (o.laneChange &&
+                o.laneChange.to >= Math.min(car.lane, desired) - 0.7 &&
+                o.laneChange.to <= Math.max(car.lane, desired) + 0.7)) &&
+            ((o.s >= car.s &&
+              o.s - car.s <
+                4.8 + Math.max(0, car.speed - o.speed) * changeTime) ||
+              (o.s < car.s &&
+                car.s - o.s <
+                  (o.laneChange ? 0 : 3.5) +
+                    Math.max(0, o.speed - car.speed) * changeTime)),
         );
-        if (!blockedChange)
-          car.lane +=
-            Math.sign(desired - car.lane) *
-            Math.min(Math.abs(desired - car.lane), dt * 0.65);
+        if (car.laneChange && Math.abs(car.laneChange.to - desired) > 0.1)
+          car.laneChange = undefined;
+        if (
+          !car.laneChange &&
+          !blockedChange &&
+          changeLength >= minimumChange &&
+          Math.abs(desired - car.lane) > 0.08
+        )
+          car.laneChange = {
+            from: car.lane,
+            to: desired,
+            start: car.s,
+            length: changeLength,
+          };
+        // Opposing lane changes at the same longitudinal position cannot both
+        // proceed. Let the leading car go first; break ties by stable vehicle id.
+        const swap = this.vehicles.find((o) => {
+          if (o.id === car.id || o.connector) return false;
+          const os = o.route[o.step];
+          return (
+            os.road === r.id &&
+            os.direction === step.direction &&
+            Math.abs(o.s - car.s) < 12 &&
+            Math.abs(o.lane - target) < 0.8 &&
+            Math.abs(os.outLane - car.lane) < 0.8
+          );
+        });
+        const yieldSwap =
+          swap &&
+          (car.s < swap.s - 0.5 ||
+            (Math.abs(car.s - swap.s) <= 0.5 && car.id > swap.id));
         let limit = r.speed / 3.6;
+        if (yieldSwap) limit = 0;
         for (const other of this.vehicles) {
           if (other.id === car.id || finished.has(other.id)) continue;
           const os = other.route[other.step];
           if (
             os.road === r.id &&
             os.direction === step.direction &&
-            Math.abs(other.lane - car.lane) < 0.85 &&
+            (Math.abs(other.lane - car.lane) < 0.85 ||
+              (other.laneChange &&
+                car.lane >=
+                  Math.min(other.laneChange.from, other.laneChange.to) - 0.5 &&
+                car.lane <=
+                  Math.max(other.laneChange.from, other.laneChange.to) +
+                    0.5)) &&
             other.s > car.s
           )
-            limit = Math.min(limit, Math.max(0, (other.s - car.s - 4.8) / 1.4));
+            limit = Math.min(
+              limit,
+              Math.max(
+                0,
+                (other.s - car.s - (other.laneChange ? 7 : 4.8)) / 1.4,
+              ),
+            );
         }
-        if (end - car.s < 14 && Math.abs(car.lane - target) > 0.08)
-          limit = Math.min(limit, Math.max(0, (end - car.s - 0.4) / 2));
-        const next = car.route[car.step + 1],
-          connector =
-            next && end - car.s < 18 ? this.connector(step, next) : undefined;
+        if (!car.laneChange && Math.abs(car.lane - target) > 0.08) {
+          const distance = end - car.s - minimumChange - 12;
+          if (distance < 4 + (car.speed * car.speed) / 12)
+            limit = Math.min(limit, Math.max(0, distance / 2));
+        }
+        const connector =
+          next && end - car.s < 18 ? this.connector(step, next) : undefined;
+        const nextEntry = next ? this.entry(next) : 0;
+        const nextTraffic =
+          next && end - car.s < 45
+            ? this.vehicles
+                .filter((o) => {
+                  if (o.id === car.id || o.route[o.step].road !== next.road)
+                    return false;
+                  if (o.route[o.step].direction !== next.direction)
+                    return false;
+                  if (o.s >= nextEntry + 45) return false;
+                  return (
+                    Math.abs(o.lane - next.inLane) < 0.85 ||
+                    (o.laneChange &&
+                      next.inLane >=
+                        Math.min(o.laneChange.from, o.laneChange.to) - 0.5 &&
+                      next.inLane <=
+                        Math.max(o.laneChange.from, o.laneChange.to) + 0.5)
+                  );
+                })
+                .sort((a, b) => a.s - b.s)[0]
+            : undefined;
+        const nextGap = nextTraffic
+          ? end - car.s + nextTraffic.s - nextEntry
+          : Infinity;
+        if (nextTraffic)
+          limit = Math.min(
+            limit,
+            Math.sqrt(Math.max(0, nextTraffic.speed ** 2 + 12 * (nextGap - 7))),
+          );
         if (next && connector) {
           const owner =
             connector.junction && this.reservations.get(connector.junction);
@@ -505,6 +769,15 @@ export class Simulation {
         }
         car.speed += clamp(limit - car.speed, -6 * dt, 2.4 * dt);
         car.s = Math.min(end, car.s + Math.max(0, car.speed) * dt);
+        if (car.laneChange) {
+          const change = car.laneChange,
+            progress = (car.s - change.start) / change.length;
+          car.lane = change.from + (change.to - change.from) * smooth(progress);
+          if (progress >= 1) {
+            car.lane = change.to;
+            car.laneChange = undefined;
+          }
+        }
         if (car.s >= end - 0.00001 && Math.abs(car.lane - target) < 0.12) {
           if (!next) {
             finished.add(car.id);
@@ -515,7 +788,10 @@ export class Simulation {
           }
           const c = connector || this.connector(step, next);
           const owner = c.junction && this.reservations.get(c.junction);
-          if (owner && owner !== car.id) {
+          if (
+            (owner && owner !== car.id) ||
+            (nextTraffic && nextTraffic.s - nextEntry < 7)
+          ) {
             car.s = Math.min(car.s, end - 0.05);
             car.speed = 0;
             this.pose(car);
@@ -523,6 +799,7 @@ export class Simulation {
             car.step++;
             car.s = this.entry(next);
             car.lane = next.inLane;
+            car.laneChange = undefined;
             if (c.length > 0.15) {
               car.connector = c;
               car.position = c.from;
@@ -542,6 +819,13 @@ export class Simulation {
         if (released && this.reservations.get(released) === car.id)
           this.reservations.delete(released);
       }
+      if (!car.connector && !car.laneChange && car.speed < 0.5) {
+        car.stalledFor = (car.stalledFor ?? 0) + dt;
+        if (car.stalledFor >= 8) {
+          car.stalledFor = 0;
+          this.reroute(car);
+        }
+      } else car.stalledFor = 0;
     }
     this.vehicles = this.vehicles.filter((c) => !finished.has(c.id));
   }

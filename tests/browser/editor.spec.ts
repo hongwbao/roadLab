@@ -1,6 +1,67 @@
 import { expect, test, type Page } from "@playwright/test";
 const state = (page: Page) =>
   page.evaluate(() => (window as any).lab.getState());
+
+test("shared traffic map loads in the deployed UI with reachable routes", async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await open(page);
+  await page.locator('[data-action="menu"]').click();
+  await page.locator('[data-action="example-shared"]').click();
+  await page.locator("#confirm-yes").click();
+  expect((await state(page)).project.roads).toHaveLength(18);
+  expect((await state(page)).project.trafficMultiplier).toBe(4);
+  expect((await state(page)).routes).toBe(12);
+  await page.evaluate(() => {
+    const sim = (window as any).lab.editor.simulation;
+    sim.running = true;
+    for (let i = 0; i < 200; i++) sim.update(0.05);
+  });
+  await expect(page.locator("#stat-active")).not.toHaveText("0");
+  await expect(page.locator("#traffic-total")).toContainText("1,320");
+  expect(errors).toEqual([]);
+  await page.screenshot({ path: "artifacts/shared-map-traffic.png" });
+});
+
+test("named map saves can be restored from the UI after resetting and reloading", async ({
+  page,
+}) => {
+  await open(page);
+  await page.locator('[data-action="menu"]').click();
+  await page.locator("#save-name").fill("我的路网存档");
+  await page.locator("#save-submit").click();
+  await expect(page.locator(".save-row")).toHaveCount(1);
+  await expect(page.locator("#save-submit")).toContainText("覆盖存档");
+  await page.locator("#save-submit").click();
+  await expect(page.locator("#confirm-title")).toContainText("覆盖");
+  await page.locator("#confirm-yes").click();
+  await expect(page.locator(".save-row")).toHaveCount(1);
+  await page.screenshot({ path: "artifacts/map-saves-desktop.png" });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.screenshot({ path: "artifacts/map-saves-mobile.png" });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.locator('[data-action="new"]').click();
+  await page.locator("#confirm-yes").click();
+  expect((await state(page)).project.roads).toHaveLength(0);
+
+  await page.waitForTimeout(750);
+  await page.reload();
+  await page.waitForFunction(() => !!(window as any).lab);
+  expect((await state(page)).project.roads).toHaveLength(0);
+  await page.locator('[data-action="menu"]').click();
+  await expect(page.locator(".save-row")).toHaveCount(1);
+  await page.locator("[data-save-load]").click();
+  await page.locator("#confirm-yes").click();
+  expect((await state(page)).project.roads).toHaveLength(5);
+
+  await page.locator('[data-action="menu"]').click();
+  await page.locator("[data-save-delete]").click();
+  await page.locator("#confirm-yes").click();
+  await expect(page.locator(".save-row")).toHaveCount(0);
+  expect((await state(page)).project.roads).toHaveLength(5);
+});
 async function open(page: Page) {
   await page.goto("/");
   await page.waitForFunction(() => !!(window as any).lab);
@@ -62,6 +123,141 @@ test("game HUD shows road asset thumbnails at bottom center and no retired tools
   expect(errors).toEqual([]);
   await page.screenshot({ path: "artifacts/game-editor-desktop.png" });
 });
+test("camera supports keyboard and requested mouse gestures", async ({
+  page,
+}) => {
+  await open(page);
+  const pose = () =>
+    page.evaluate(() => {
+      const scene = (window as any).lab.editor.scene;
+      return {
+        target: scene.controls.target.toArray() as number[],
+        offset: scene.camera.position
+          .clone()
+          .sub(scene.controls.target)
+          .toArray() as number[],
+      };
+    });
+  const distance = (a: number[], b: number[]) =>
+    Math.hypot(...a.map((value, index) => value - b[index]));
+
+  const start = await pose();
+  await page.keyboard.down("w");
+  await page.waitForTimeout(250);
+  await page.keyboard.up("w");
+  const moved = await pose();
+  expect(distance(start.target, moved.target)).toBeGreaterThan(3);
+
+  await page.keyboard.down("q");
+  await page.waitForTimeout(250);
+  await page.keyboard.up("q");
+  const turned = await pose();
+  expect(distance(moved.offset, turned.offset)).toBeGreaterThan(3);
+
+  await page.mouse.move(700, 300);
+  await page.mouse.down({ button: "right" });
+  await page.mouse.move(820, 340, { steps: 4 });
+  await page.mouse.up({ button: "right" });
+  const panned = await pose();
+  expect(distance(turned.target, panned.target)).toBeGreaterThan(3);
+
+  await page.mouse.down({ button: "left" });
+  await page.mouse.move(900, 380, { steps: 4 });
+  await page.mouse.up({ button: "left" });
+  const rotated = await pose();
+  expect(distance(panned.offset, rotated.offset)).toBeGreaterThan(3);
+
+  await page.keyboard.down("t");
+  await page.waitForTimeout(180);
+  await page.keyboard.up("t");
+  const tilted = await pose();
+  expect(distance(rotated.offset, tilted.offset)).toBeGreaterThan(2);
+
+  await page.keyboard.down("r");
+  await page.waitForTimeout(180);
+  await page.keyboard.up("r");
+  const zoomed = await pose();
+  expect(distance(tilted.offset, zoomed.offset)).toBeGreaterThan(2);
+
+  await page.mouse.move(700, 300);
+  await page.mouse.down({ button: "middle" });
+  await page.mouse.move(700, 400, { steps: 4 });
+  await page.mouse.up({ button: "middle" });
+  const middleDragged = await pose();
+  expect(distance(zoomed.offset, middleDragged.offset)).toBeGreaterThan(2);
+
+  await page.mouse.click(700, 300, { button: "middle" });
+  const middleClicked = await pose();
+  expect(distance(middleDragged.offset, middleClicked.offset)).toBeGreaterThan(
+    2,
+  );
+
+  await page.mouse.wheel(0, -400);
+  await page.waitForTimeout(100);
+  const wheeled = await pose();
+  expect(distance(middleClicked.offset, wheeled.offset)).toBeGreaterThan(2);
+
+  await page.mouse.move(2, 400);
+  await page.waitForTimeout(180);
+  const edged = await pose();
+  expect(distance(wheeled.target, edged.target)).toBeGreaterThan(2);
+  await page.mouse.move(700, 300);
+});
+test("mouse drags navigate while clicks build and right click steps back", async ({
+  page,
+}) => {
+  await open(page);
+  await load(page);
+  await page.locator('[data-asset="city-2"]').click();
+  const before = await page.evaluate(() => {
+    const scene = (window as any).lab.editor.scene;
+    return scene.camera.position.clone().sub(scene.controls.target).toArray();
+  });
+  await page.mouse.move(600, 280);
+  await page.mouse.down({ button: "left" });
+  await page.mouse.move(710, 140, { steps: 4 });
+  await page.mouse.up({ button: "left" });
+  await page.waitForTimeout(120);
+  const after = await page.evaluate(() => ({
+    offset: (window as any).lab.editor.scene.camera.position
+      .clone()
+      .sub((window as any).lab.editor.scene.controls.target)
+      .toArray(),
+    points: (window as any).lab.editor.drawPoints.length,
+  }));
+  expect(
+    Math.hypot(...after.offset.map((x: number, i: number) => x - before[i])),
+  ).toBeGreaterThan(2);
+  expect(after.points).toBe(0);
+
+  await clickWorld(page, -50, -10);
+  expect(
+    await page.evaluate(() => (window as any).lab.editor.drawPoints.length),
+  ).toBe(1);
+  await page.mouse.move(600, 280);
+  await page.mouse.down({ button: "right" });
+  await page.mouse.move(710, 300, { steps: 4 });
+  await page.mouse.up({ button: "right" });
+  await page.waitForTimeout(120);
+  expect(
+    await page.evaluate(() => (window as any).lab.editor.drawPoints.length),
+  ).toBe(1);
+  await page.mouse.click(700, 300, { button: "right" });
+  expect(
+    await page.evaluate(() => (window as any).lab.editor.drawPoints.length),
+  ).toBe(0);
+
+  await page.locator('[data-tool="curve"]').click();
+  await clickWorld(page, -50, -10);
+  await clickWorld(page, 0, -10);
+  expect(
+    await page.evaluate(() => (window as any).lab.editor.drawPoints.length),
+  ).toBe(2);
+  await page.mouse.click(700, 300, { button: "right" });
+  expect(
+    await page.evaluate(() => (window as any).lab.editor.drawPoints.length),
+  ).toBe(1);
+});
 test("selecting an asset immediately shows a ghost road before the first click", async ({
   page,
 }) => {
@@ -107,6 +303,36 @@ test("draws preset straight and curved roads, cancels strokes, undoes and redoes
   expect((await state(page)).project.roads).toHaveLength(2);
   await page.keyboard.press("Escape");
   expect((await state(page)).tool).toBe("select");
+});
+test("two-way roads have yellow centerlines and elevated supports clear lower roads", async ({
+  page,
+}) => {
+  await open(page);
+  await load(page, "example-elevated");
+  const geometry = await page.evaluate(() => {
+    const { scene, project } = (window as any).lab.editor;
+    const upper = project.roads.find((road: any) => road.name === "第二层高架");
+    const group = scene.roads.children.find((candidate: any) =>
+      candidate.children.some((child: any) => child.userData.road === upper.id),
+    );
+    return {
+      yellow: scene.details.children.filter(
+        (child: any) => child.material?.color?.getHex() === 0xf3c454,
+      ).length,
+      pillars: group.children
+        .filter((child: any) => child.geometry?.type === "CylinderGeometry")
+        .map((child: any) => ({ x: child.position.x, z: child.position.z })),
+    };
+  });
+  expect(geometry.yellow).toBeGreaterThan(0);
+  expect(geometry.pillars.length).toBeGreaterThan(0);
+  expect(
+    geometry.pillars.some(
+      (pillar: { x: number; z: number }) =>
+        Math.abs(pillar.x - 102) < 4 && Math.abs(pillar.z + 60) < 4,
+    ),
+  ).toBe(false);
+  await page.screenshot({ path: "artifacts/game-elevated-fixed.png" });
 });
 test("snaps from a visible pixel radius and constructs an exact shared endpoint", async ({
   page,
@@ -468,6 +694,63 @@ test("one-way section snapping aligns outer edges with exact lane continuity", a
   ]);
   await page.keyboard.press("Tab");
   await expect(page.locator("#alignment-mode")).toHaveText("对齐：中线");
+});
+
+test("one-way section snapping also aligns the road end", async ({ page }) => {
+  await open(page);
+  await load(page);
+  await page.locator('[data-category="oneway"]').click();
+  await page.locator('[data-asset="one-3"]').click();
+  await clickWorld(page, 0, -15);
+  await clickWorld(page, 65, -15);
+  await endStroke(page);
+  await page.locator('[data-asset="one-2"]').click();
+  await clickWorld(page, -65, -16.75);
+  const endpoint = await screen(page, 0, -16.75);
+  await page.mouse.move(endpoint.x, endpoint.y);
+  const s = await state(page);
+  expect(s.snap.kind).toBe("offset");
+  expect(Math.abs(s.snap.offset)).toBeCloseTo(1.75);
+  await page.mouse.click(endpoint.x, endpoint.y);
+  expect((await state(page)).project.roads[1].knots.at(-1).p.z).toBeCloseTo(
+    -16.75,
+  );
+});
+test("angled road ends snap to a lane edge and blend into the target tangent", async ({
+  page,
+}) => {
+  await open(page);
+  await load(page);
+  await page.locator('[data-category="oneway"]').click();
+  await page.locator('[data-asset="one-3"]').click();
+  await clickWorld(page, 0, -15);
+  await clickWorld(page, 65, -15);
+  await endStroke(page);
+  await page.locator('[data-asset="one-2"]').click();
+  await clickWorld(page, -65, -45);
+  const endpoint = await screen(page, 0, -16.75);
+  await page.mouse.move(endpoint.x, endpoint.y);
+  expect((await state(page)).snap.kind).toBe("offset");
+  await page.mouse.click(endpoint.x, endpoint.y);
+  const road = (await state(page)).project.roads[1];
+  expect(road.knots.at(-1).p.z).toBeCloseTo(-16.75);
+  expect(road.knots.at(-1).incoming.z).toBeCloseTo(-16.75);
+  await page.screenshot({ path: "artifacts/game-angled-lane-join.png" });
+});
+test("continuous road building preserves the previous road tangent", async ({
+  page,
+}) => {
+  await open(page);
+  await load(page);
+  await page.locator('[data-category="oneway"]').click();
+  await page.locator('[data-asset="one-2"]').click();
+  await clickWorld(page, -60, -20);
+  await clickWorld(page, 0, -20);
+  await clickWorld(page, 60, -10);
+  const roads = (await state(page)).project.roads;
+  expect(roads).toHaveLength(2);
+  expect(roads[1].knots[0].p).toEqual(roads[0].knots.at(-1).p);
+  expect(roads[1].knots[0].outgoing.z).toBeCloseTo(-20);
 });
 
 for (const endZ of [-60, 10])
