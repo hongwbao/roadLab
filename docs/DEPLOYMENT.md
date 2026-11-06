@@ -80,6 +80,8 @@ npm run build
 
 将 `dist/` 的内容上传到 Nginx、对象存储或其他静态托管服务的网站目录。根路径部署不需要额外配置。Nginx 可参考 `deploy/nginx.conf`，根据服务器调整 `root`、监听端口和域名。
 
+本机也可用 `node deploy/wsl-server.mjs` 提供静态文件，默认读取项目 `dist/`，通过 `ROADLAB_PORT` 设置端口。需要固定一个已验收预览时，先复制构建产物到独立目录，再用 `ROADLAB_DIST_DIR=/绝对路径/预览目录/dist` 指定文件根目录。后续在工作目录重新构建不会替换该预览；发布下一版时再更新环境变量并重启服务。
+
 如果部署在 `/roadLab/` 等子目录，构建时指定相同前缀：
 
 ```bash

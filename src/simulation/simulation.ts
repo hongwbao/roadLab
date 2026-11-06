@@ -25,7 +25,13 @@ import {
   type Road,
   type V,
 } from "../core/types";
-import { TrafficIndex } from "./collision";
+import { bodiesOverlap, TrafficIndex } from "./collision";
+import {
+  chooseRetreat,
+  waitCycles,
+  type WaitingVehicle,
+  type Retreat,
+} from "./deadlock-recovery";
 import {
   DEFAULT_DRIVER,
   VEHICLE_LENGTH,
@@ -42,6 +48,13 @@ import {
   type JunctionRequest,
   type Movement,
 } from "./intersections";
+import {
+  PredictiveJunctionController,
+  type PredictionAgent,
+  type PredictionPath,
+  type YieldDirective,
+  samplePredictionPath,
+} from "./predictive-junction";
 export type Step = {
   road: string;
   direction: 1 | -1;
@@ -63,6 +76,9 @@ export type Vehicle = {
   lastRerouteAt?: number;
   nextRouteDecision?: number;
   acceleration?: number;
+  yieldingFor?: number;
+  reversing?: boolean;
+  lastMovementAt?: number;
   speed: number;
   age: number;
   color: number;
@@ -344,6 +360,22 @@ export class Simulation {
   unreachable = 0;
   generated = 0;
   junctions: Junction[] = [];
+  predictiveYielding = true;
+  private prediction = new PredictiveJunctionController();
+  private predictionPaths = new Map<string, PredictionPath>();
+  private yieldDirectives: ReadonlyMap<number, YieldDirective> = new Map();
+  private nextPredictionAt = 0;
+  private retreat?: Retreat & {
+    s: number;
+    fromIndex: number;
+    connector: NonNullable<Vehicle["connector"]>;
+  };
+  private nextRecoveryAt = 0;
+  private recoveryStatistics = {
+    deadlockCycles: 0,
+    retreats: 0,
+    blockedRetreats: 0,
+  };
   private demand = new Map<Port, { credit: number; waiting: number }>();
   private id = 0;
   private randomState = 123456;
@@ -453,6 +485,17 @@ export class Simulation {
     this.generated = 0;
     this.demand.clear();
     this.mergeController.clear();
+    this.prediction.clear();
+    this.predictionPaths.clear();
+    this.yieldDirectives = new Map();
+    this.nextPredictionAt = 0;
+    this.retreat = undefined;
+    this.nextRecoveryAt = 0;
+    this.recoveryStatistics = {
+      deadlockCycles: 0,
+      retreats: 0,
+      blockedRetreats: 0,
+    };
     this.connectorCache.clear();
     this.trafficDelays.clear();
     this.sampledAt = 0;
@@ -863,6 +906,7 @@ export class Simulation {
       current = Math.round(car.lane),
       driver = car.driver ?? DEFAULT_DRIVER,
       v0 = (r.speed / 3.6) * driver.speedFactor;
+    if (this.entry(step) > 0 && car.s - this.entry(step) < 8) return current;
     const here = lanes.neighbours(r.id, step.direction, current, car.s, car.id);
     const follow = (
       speed: number,
@@ -1063,6 +1107,353 @@ export class Simulation {
   private controlsMerge(movement: Movement) {
     return movement.junction.startsWith("merge:");
   }
+  private predictionPath(
+    from: Step,
+    to: Step,
+    c: NonNullable<Vehicle["connector"]>,
+  ): PredictionPath {
+    const cached = this.predictionPaths.get(c.id!);
+    if (cached) return cached;
+    const road = this.roads.get(from.road)!,
+      next = this.roads.get(to.road)!;
+    const start = -Math.min(100, this.exit(from) - this.entry(from));
+    const end = c.length + Math.min(16, this.exit(to) - this.entry(to));
+    const positionAt = (s: number) => {
+      if (s < 0) {
+        const distance = this.exit(from) + s;
+        return lanePoint(
+          road,
+          from.outLane,
+          arcParameter(
+            this.arcs.get(road.id)!,
+            from.direction === 1
+              ? distance
+              : this.lengths.get(road.id)! - distance,
+          ),
+        );
+      }
+      if (s > c.length) {
+        const distance = this.entry(to) + s - c.length;
+        return lanePoint(
+          next,
+          to.inLane,
+          arcParameter(
+            this.arcs.get(next.id)!,
+            to.direction === 1
+              ? distance
+              : this.lengths.get(next.id)! - distance,
+          ),
+        );
+      }
+      return bezier(c.from, c.c1, c.c2, c.to, arcParameter(c.arc, s));
+    };
+    const points = [];
+    const count = Math.max(1, Math.ceil((end - start) / 0.5));
+    for (let i = 0; i <= count; i++) {
+      const s = start + ((end - start) * i) / count;
+      const a = positionAt(s - 0.05),
+        b = positionAt(s + 0.05);
+      points.push({
+        s,
+        position: positionAt(s),
+        heading: Math.atan2(b.z - a.z, b.x - a.x),
+      });
+    }
+    const movement = c.movement!;
+    const path = {
+      id: c.id!,
+      junction: movement.junction,
+      from: movement.from,
+      to: movement.to,
+      length: c.length,
+      points,
+    };
+    this.predictionPaths.set(path.id, path);
+    return path;
+  }
+  private predictionAgents(lanes: LaneTraffic): PredictionAgent[] {
+    const agents: PredictionAgent[] = [];
+    for (const car of this.vehicles) {
+      if (car.laneChange) continue;
+      const current = car.route[car.step],
+        previous = car.route[car.step - 1],
+        next = car.route[car.step + 1];
+      let from: Step,
+        to: Step,
+        connector: NonNullable<Vehicle["connector"]>,
+        s: number;
+      if (car.connector && previous) {
+        from = previous;
+        to = current;
+        connector = car.connector;
+        s = connector.progress * connector.length;
+      } else if (
+        next &&
+        this.exit(current) - car.s < 100 &&
+        Math.abs(car.lane - current.outLane) < 0.1
+      ) {
+        from = current;
+        to = next;
+        connector = this.connector(from, to);
+        s = car.s - this.exit(from);
+        const first = lanes.neighbours(
+          current.road,
+          current.direction,
+          car.lane,
+          car.s,
+          car.id,
+        ).leader;
+        if (
+          first &&
+          lanes.neighbours(
+            current.road,
+            current.direction,
+            car.lane,
+            first.s + 0.001,
+            first.id,
+          ).leader
+        )
+          continue;
+        if (
+          car.speed < 0.25 &&
+          s < -8 &&
+          lanes.neighbours(
+            current.road,
+            current.direction,
+            car.lane,
+            car.s,
+            car.id,
+          ).leader
+        )
+          continue;
+      } else if (previous && car.s - this.entry(current) < 8) {
+        from = previous;
+        to = current;
+        connector = this.connector(from, to);
+        s = connector.length + car.s - this.entry(current);
+      } else continue;
+      if (!connector.movement || this.controlsMerge(connector.movement))
+        continue;
+      const driver = car.driver ?? driverProfile(car.id);
+      const path = this.predictionPath(from, to, connector);
+      let leader: Leader | undefined;
+      let leaderId: number | undefined;
+      const takeLeader = (gap: number, speed: number, id: number) => {
+        if (!leader || gap < leader.gap) {
+          leader = { gap, speed };
+          leaderId = id;
+        }
+      };
+      if (s < 0) {
+        const front = lanes.neighbours(
+          from.road,
+          from.direction,
+          from.outLane,
+          car.s,
+          car.id,
+        ).leader;
+        if (front)
+          takeLeader(front.s - car.s - VEHICLE_LENGTH, front.speed, front.id);
+      }
+      const inside = lanes.onConnector(path.id, Math.max(0, s), car.id).leader;
+      if (inside)
+        takeLeader(inside.s - s - VEHICLE_LENGTH, inside.speed, inside.id);
+      const entry = this.entry(to);
+      const first = lanes.neighbours(
+        to.road,
+        to.direction,
+        to.inLane,
+        s >= connector.length ? car.s - 0.001 : entry - 0.001,
+        car.id,
+      ).leader;
+      if (first)
+        takeLeader(
+          connector.length - s + first.s - entry - VEHICLE_LENGTH,
+          first.speed,
+          first.id,
+        );
+      agents.push({
+        id: car.id,
+        path,
+        s,
+        speed: car.speed,
+        driver,
+        leader,
+        leaderId,
+        freeSpeed:
+          (this.roads.get(from.road)!.speed / 3.6) * driver.speedFactor,
+        turnSpeed: connector.speedLimit ?? 8,
+        exitSpeed: (this.roads.get(to.road)!.speed / 3.6) * driver.speedFactor,
+        canExit:
+          s >= connector.length ||
+          !first ||
+          first.s - entry > VEHICLE_LENGTH + driver.minimumGap + 1,
+      });
+    }
+    return agents;
+  }
+  private predictionProgress(car: Vehicle, path: string): number | undefined {
+    const current = car.route[car.step],
+      next = car.route[car.step + 1],
+      previous = car.route[car.step - 1];
+    if (car.connector?.id === path)
+      return car.connector.progress * car.connector.length;
+    if (
+      !car.connector &&
+      next &&
+      `${current.road}:${current.outLane}>${next.road}:${next.inLane}` === path
+    )
+      return car.s - this.exit(current);
+    if (
+      !car.connector &&
+      previous &&
+      `${previous.road}:${previous.outLane}>${current.road}:${current.inLane}` ===
+        path
+    )
+      return (
+        (this.predictionPaths.get(path)?.length ?? 0) +
+        car.s -
+        this.entry(current)
+      );
+    return undefined;
+  }
+  private yielding(car: Vehicle): {
+    leader?: Leader;
+    acceleration: number;
+    distance: number;
+  } {
+    const directives = this.predictiveYielding
+      ? this.prediction.constraintsFor(car.id)
+      : [];
+    let leader: Leader | undefined,
+      acceleration = Infinity,
+      distance = Infinity;
+    car.yieldingFor = undefined;
+    for (const directive of directives) {
+      const s = this.predictionProgress(car, directive.path);
+      if (s === undefined) continue;
+      if (directive.follow) {
+        const follow = {
+          gap: directive.leaderS - s - VEHICLE_LENGTH,
+          speed: directive.leaderSpeed,
+        };
+        if (!leader || follow.gap < leader.gap) {
+          leader = follow;
+          car.yieldingFor = directive.winner;
+        }
+        continue;
+      }
+      const available = Math.max(0, directive.stopS - s);
+      const time = Math.max(0.1, directive.releaseAt - this.elapsed);
+      const required = (2 * (available - car.speed * time)) / (time * time);
+      if (available < distance) {
+        distance = available;
+        car.yieldingFor = directive.winner;
+      }
+      if (required < 0) acceleration = Math.min(acceleration, required);
+      if (
+        time < 0.4 ||
+        available < Math.max(1, (car.speed * car.speed) / 16 + car.speed * 0.1)
+      ) {
+        const stop = {
+          gap: available + (car.driver?.minimumGap ?? 1.7),
+          speed: 0,
+        };
+        if (!leader || stop.gap < leader.gap) leader = stop;
+      }
+    }
+    return { leader, acceleration, distance };
+  }
+  get predictionStatistics() {
+    return { ...this.prediction.statistics, ...this.recoveryStatistics };
+  }
+  get predictionDebug() {
+    return this.prediction.debug;
+  }
+  private tryRecovery(lanes: LaneTraffic, index: TrafficIndex<Vehicle>) {
+    if (this.retreat || this.elapsed < this.nextRecoveryAt) return;
+    this.nextRecoveryAt = this.elapsed + 0.5;
+    const agents = this.predictionAgents(lanes),
+      waiting: WaitingVehicle[] = [];
+    for (const a of agents) {
+      const car = this.vehicles.find((c) => c.id === a.id)!;
+      if (
+        car.speed > 0.25 ||
+        this.elapsed - (car.lastMovementAt ?? this.elapsed) < 2
+      )
+        continue;
+      const pose = samplePredictionPath(a.path, a.s + 0.25);
+      const blockers = index
+        .near(pose.position)
+        .filter((c) => c.id !== a.id && bodiesOverlap({ id: a.id, ...pose }, c))
+        .map((c) => c.id);
+      for (const c of this.prediction.constraintsFor(a.id))
+        if (!blockers.includes(c.winner)) blockers.push(c.winner);
+      waiting.push({ id: a.id, path: a.path, s: a.s, blockers });
+    }
+    for (const cycle of waitCycles(waiting)) {
+      this.recoveryStatistics.deadlockCycles++;
+      const retreat = chooseRetreat(cycle, waiting, this.vehicles);
+      if (!retreat) {
+        this.recoveryStatistics.blockedRetreats++;
+        continue;
+      }
+      const car = this.vehicles.find((c) => c.id === retreat.id)!;
+      const fromIndex = car.connector
+        ? car.step - 1
+        : car.route[car.step + 1] &&
+            `${car.route[car.step].road}:${car.route[car.step].outLane}>${car.route[car.step + 1].road}:${car.route[car.step + 1].inLane}` ===
+              retreat.path.id
+          ? car.step
+          : car.step - 1;
+      if (fromIndex < 0) continue;
+      this.retreat = {
+        ...retreat,
+        s: retreat.fromS,
+        fromIndex,
+        connector: this.connector(
+          car.route[fromIndex],
+          car.route[fromIndex + 1],
+        ),
+      };
+      car.reversing = true;
+      this.recoveryStatistics.retreats++;
+      return;
+    }
+  }
+  private setRetreatPosition(car: Vehicle, s: number) {
+    const retreat = this.retreat!,
+      from = car.route[retreat.fromIndex],
+      to = car.route[retreat.fromIndex + 1],
+      c = { ...retreat.connector };
+    car.laneChange = undefined;
+    if (s < 0) {
+      car.step = retreat.fromIndex;
+      car.s = this.exit(from) + s;
+      car.lane = from.outLane;
+      car.connector = undefined;
+      this.pose(car);
+    } else {
+      car.step = retreat.fromIndex + 1;
+      car.s = this.entry(to);
+      car.lane = to.inLane;
+      c.progress = 0;
+      car.connector = c;
+      this.advanceConnector(car, c, s);
+    }
+  }
+  private recoveryHolds(car: Vehicle) {
+    const retreat = this.retreat;
+    if (!retreat || car.id === retreat.id) return false;
+    if (car.connector?.junction === retreat.path.junction) return true;
+    const current = car.route[car.step],
+      next = car.route[car.step + 1];
+    return (
+      !!next &&
+      this.exit(current) - car.s < 14 &&
+      this.connector(current, next).junction === retreat.path.junction
+    );
+  }
   update(delta: number) {
     if (!this.running) return;
     const total = Math.min(Math.max(delta, 0), 0.05) * this.speed,
@@ -1082,15 +1473,62 @@ export class Simulation {
     this.sampleTraffic();
     const lanes = new LaneTraffic(this.vehicles);
     const permissions = this.junctionPermissions(lanes);
+    if (
+      this.predictiveYielding &&
+      !this.retreat &&
+      this.elapsed >= this.nextPredictionAt
+    ) {
+      this.yieldDirectives = this.prediction.plan(
+        this.predictionAgents(lanes),
+        this.elapsed,
+      );
+      this.nextPredictionAt = this.elapsed + 0.1;
+    } else if (!this.predictiveYielding && this.yieldDirectives.size) {
+      this.prediction.clear();
+      this.yieldDirectives = new Map();
+    }
+    if (this.predictiveYielding) this.tryRecovery(lanes, index);
     const finished = new Set<number>();
     for (const car of this.vehicles) {
       car.driver ??= driverProfile(car.id);
+      car.lastMovementAt ??= this.elapsed;
       const original = {
         ...car,
         connector: car.connector ? { ...car.connector } : undefined,
         laneChange: car.laneChange ? { ...car.laneChange } : undefined,
       };
       car.age += dt;
+      if (this.retreat?.id === car.id) {
+        const retreat = this.retreat;
+        const nextS = Math.max(retreat.toS, retreat.s - 0.8 * dt);
+        this.setRetreatPosition(car, nextS);
+        car.speed = 0;
+        car.reversing = true;
+        if (index.blocked(car)) {
+          Object.assign(car, original);
+          car.reversing = false;
+          this.retreat = undefined;
+          this.recoveryStatistics.blockedRetreats++;
+          this.nextRecoveryAt = this.elapsed + 2;
+        } else {
+          retreat.s = nextS;
+          car.lastMovementAt = this.elapsed;
+          index.update(car);
+          if (nextS <= retreat.toS + 1e-6) {
+            car.reversing = false;
+            this.prediction.forget(new Set(retreat.participants));
+            this.prediction.prefer(retreat.clears, this.elapsed + 3);
+            this.retreat = undefined;
+            this.nextPredictionAt = 0;
+            this.nextRecoveryAt = this.elapsed + 2;
+          }
+        }
+        continue;
+      }
+      if (this.recoveryHolds(car)) {
+        car.speed = 0;
+        continue;
+      }
       const step = car.route[car.step],
         r = this.roads.get(step.road);
       if (!r) {
@@ -1099,6 +1537,7 @@ export class Simulation {
         continue;
       }
       let acquired: Movement | undefined;
+      const yielding = this.yielding(car);
       if (car.connector) {
         const c = car.connector;
         const downstream = lanes.neighbours(
@@ -1126,13 +1565,25 @@ export class Simulation {
           const gap = ahead.s - c.progress * c.length - VEHICLE_LENGTH;
           if (!leader || gap < leader.gap) leader = { gap, speed: ahead.speed };
         }
-        const acceleration = followingAcceleration(
-          car.speed,
-          Math.min(c.speedLimit ?? 8, (r.speed / 3.6) * driver.speedFactor),
-          driver,
-          leader,
+        if (yielding.leader && (!leader || yielding.leader.gap < leader.gap))
+          leader = yielding.leader;
+        const acceleration = Math.max(
+          -driver.emergencyBrake,
+          Math.min(
+            yielding.acceleration,
+            followingAcceleration(
+              car.speed,
+              Math.min(c.speedLimit ?? 8, (r.speed / 3.6) * driver.speedFactor),
+              driver,
+              leader,
+            ),
+          ),
         );
         const advance = advanceVehicle(car.speed, acceleration, dt);
+        if (advance.distance > yielding.distance) {
+          advance.distance = yielding.distance;
+          advance.speed = 0;
+        }
         car.acceleration = acceleration;
         car.speed = advance.speed;
         this.advanceConnector(car, c, advance.distance);
@@ -1414,13 +1865,25 @@ export class Simulation {
             if (!leader || stop.gap < leader.gap) leader = stop;
           }
         }
-        const acceleration = followingAcceleration(
-          car.speed,
-          Math.max(0.1, limit),
-          car.driver,
-          leader,
+        if (yielding.leader && (!leader || yielding.leader.gap < leader.gap))
+          leader = yielding.leader;
+        const acceleration = Math.max(
+          -car.driver.emergencyBrake,
+          Math.min(
+            yielding.acceleration,
+            followingAcceleration(
+              car.speed,
+              Math.max(0.1, limit),
+              car.driver,
+              leader,
+            ),
+          ),
         );
         const advance = advanceVehicle(car.speed, acceleration, dt);
+        if (advance.distance > yielding.distance) {
+          advance.distance = yielding.distance;
+          advance.speed = 0;
+        }
         car.acceleration = acceleration;
         car.speed = advance.speed;
         const travelled = car.s + advance.distance;
@@ -1480,6 +1943,8 @@ export class Simulation {
         this.statistics.safetyStops++;
       } else {
         index.update(car);
+        if (dist(car.position, original.position) > 0.002)
+          car.lastMovementAt = this.elapsed;
         if (acquired) {
           if (this.controlsMerge(acquired))
             this.mergeController.enter(car.id, acquired);

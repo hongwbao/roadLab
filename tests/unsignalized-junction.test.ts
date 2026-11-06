@@ -122,6 +122,97 @@ it("runs all six opposing straight lanes concurrently without a junction-wide lo
   expect(sim.statistics.safetyStops).toBe(0);
 });
 
+it("predicts perpendicular arrivals early enough to pass without physical collision stops", () => {
+  const { p, sim } = crossing();
+  const links = connections(p);
+  const horizontal = links.find(
+    (c) => c.from.road === p.roads[0].id && c.to.road === p.roads[1].id,
+  )!;
+  const vertical = links.find(
+    (c) => c.from.road === p.roads[2].id && c.to.road === p.roads[3].id,
+  )!;
+  const a = vehicle(p, horizontal, 111, 70),
+    b = vehicle(p, vertical, 112, 70);
+  a.speed = b.speed = 12;
+  sim.vehicles = [a, b];
+  let yielded = false;
+  for (let i = 0; i < 1000 && sim.completed < 2; i++) {
+    sim.update(0.05);
+    noOverlaps(sim);
+    if (a.yieldingFor || b.yieldingFor) yielded = true;
+  }
+  expect(yielded).toBe(true);
+  expect(sim.completed).toBe(2);
+  expect(sim.statistics.safetyStops).toBe(0);
+});
+
+it("keeps a three-stream combination of turning and straight vehicles progressing", () => {
+  const { p, sim } = crossing(),
+    links = connections(p);
+  const movements = [
+    links.find(
+      (c) => c.from.road === p.roads[0].id && c.to.road === p.roads[2].id,
+    )!,
+    links.find(
+      (c) => c.from.road === p.roads[2].id && c.to.road === p.roads[3].id,
+    )!,
+    links.find(
+      (c) => c.from.road === p.roads[1].id && c.to.road === p.roads[0].id,
+    )!,
+  ];
+  sim.vehicles = movements.map((m, i) => {
+    const c = vehicle(p, m, 121 + i, 65);
+    c.speed = 12;
+    return c;
+  });
+  for (let i = 0; i < 1400 && sim.completed < 3; i++) {
+    sim.update(0.05);
+    noOverlaps(sim);
+  }
+  expect(sim.completed).toBe(3);
+  expect(sim.statistics.safetyStops).toBe(0);
+});
+
+it("keeps an oversaturated three-lane crossing progressing while preserving queues", () => {
+  const { p, sim } = crossing();
+  p.trafficMultiplier = 4;
+  p.ports = p.roads.map((r, i) => ({
+    road: r.id,
+    end: i === 0 || i === 2 ? "start" : "end",
+    type: "both",
+    rate: 30,
+  }));
+  sim.configure(p);
+  sim.running = true;
+  const checkpoints: number[] = [];
+  const exits = new Map<string, number>();
+  let previous = new Map<number, string>();
+  let overlaps = 0;
+  for (let i = 0; i < 4800; i++) {
+    sim.update(0.05);
+    const active = new Map(
+      sim.vehicles.map((c) => [c.id, c.route.at(-1)!.road]),
+    );
+    for (const [id, exit] of previous)
+      if (!active.has(id)) exits.set(exit, (exits.get(exit) ?? 0) + 1);
+    previous = active;
+    if (i % 1200 === 1199) checkpoints.push(sim.completed);
+    if (i % 20 === 0)
+      for (let a = 0; a < sim.vehicles.length; a++)
+        for (let b = a + 1; b < sim.vehicles.length; b++)
+          if (bodiesOverlap(sim.vehicles[a], sim.vehicles[b], 0)) overlaps++;
+  }
+  expect(checkpoints[2] - checkpoints[1]).toBeGreaterThan(10);
+  expect(checkpoints[3] - checkpoints[2]).toBeGreaterThan(10);
+  expect(sim.queued).toBeGreaterThan(0);
+  expect(overlaps).toBe(0);
+  // Protective movement rejections are allowed; actual overlap or an exit
+  // stuck indefinitely is not. Small crossing cases above additionally
+  // require no hard collision stops at all.
+  for (const road of p.roads)
+    expect(exits.get(road.id) ?? 0).toBeGreaterThan(10);
+}, 90_000);
+
 it("admits the four independent right turns together", () => {
   const { p, sim } = crossing();
   const links = connections(p).filter((c) => {

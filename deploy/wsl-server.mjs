@@ -3,7 +3,9 @@ import { stat } from "node:fs/promises";
 import { createServer } from "node:http";
 import { extname, resolve, sep } from "node:path";
 
-const root = resolve(import.meta.dirname, "../dist");
+const root = resolve(
+  process.env.ROADLAB_DIST_DIR || resolve(import.meta.dirname, "../dist"),
+);
 const port = Number(process.env.ROADLAB_PORT || 8080);
 const contentTypes = {
   ".css": "text/css; charset=utf-8",
