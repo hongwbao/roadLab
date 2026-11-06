@@ -31,6 +31,13 @@ import {
   type Road,
   type V,
 } from "./types";
+import {
+  allowedTurns,
+  attachmentAllows,
+  attachmentAt,
+  attachLanes,
+  turnOf,
+} from "./lane-rules";
 export function makeRoad(
   p0: V,
   p3: V,
@@ -189,6 +196,17 @@ export function connections(p: Project): Connection[] {
   for (const a of exits)
     for (const b of entries) {
       if (a.r.id === b.r.id || Math.abs(a.p.y - b.p.y) > 0.5) continue;
+      const aAttachment = attachmentAt(a.r, a.t),
+        bAttachment = attachmentAt(b.r, b.t);
+      const directA = aAttachment?.road === b.r.id && aAttachment.end === b.t,
+        directB = bAttachment?.road === a.r.id && bAttachment.end === a.t;
+      if (directA || directB) {
+        if (
+          (directA && !attachmentAllows(aAttachment, a.l, b.r, b.t, b.l)) ||
+          (directB && !attachmentAllows(bAttachment, b.l, a.r, a.t, a.l))
+        )
+          continue;
+      } else if (aAttachment || bAttachment) continue;
       const ac = center(a.r, a.t),
         bc = center(b.r, b.t),
         shared = dist(ac, bc) < 0.65,
@@ -198,8 +216,9 @@ export function connections(p: Project): Connection[] {
         bd = mul(tangent(b.r, b.t), laneDirection(b.r, b.l)),
         dot = ad.x * bd.x + ad.z * bd.z,
         cross = ad.x * bd.z - ad.z * bd.x;
+      if (!allowedTurns(a.r, a.l).includes(turnOf(ad, bd))) continue;
       if (shared && dot < -0.75) continue;
-      if (shared && dot < 0.85) {
+      if (!aAttachment && !bAttachment && shared && dot < 0.85) {
         const from = exits
             .filter((x) => x.r.id === a.r.id && x.t === a.t)
             .sort((x, y) => (x.l - y.l) * laneDirection(a.r, a.l)),
@@ -208,8 +227,17 @@ export function connections(p: Project): Connection[] {
             .sort((x, y) => (x.l - y.l) * laneDirection(b.r, b.l));
         const ai = cross > 0 ? from.at(-1) : from[0],
           bi = cross > 0 ? to.at(-1) : to[0];
-        if (a.l !== ai?.l || b.l !== bi?.l) continue;
-      } else if (shared) {
+        const turn = turnOf(ad, bd),
+          explicit = from.filter((x) => x.r.turns?.[x.l]?.includes(turn));
+        if (explicit.length) {
+          const index = explicit.findIndex((x) => x.l === a.l);
+          const target =
+            cross > 0
+              ? to[Math.max(0, to.length - explicit.length + index)]
+              : to[Math.min(to.length - 1, index)];
+          if (index < 0 || b.l !== target?.l) continue;
+        } else if (a.l !== ai?.l || b.l !== bi?.l) continue;
+      } else if (!aAttachment && !bAttachment && shared) {
         const compatible = entries.filter(
             (x) => x.r.id === b.r.id && x.t === b.t,
           ),
@@ -231,6 +259,36 @@ export function connections(p: Project): Connection[] {
 // Connections are derived from geometry; historical manual overrides are retired.
 export function autoJunction(p: Project) {
   p.connections = [];
+  for (const road of p.roads) {
+    for (const lane of Object.keys(road.turns ?? {}))
+      if (Number(lane) >= laneCount(road)) delete road.turns![lane];
+    for (const end of ["start", "end"] as const) {
+      const attachment = road.attachments?.[end];
+      if (!attachment) continue;
+      const reference = p.roads.find((r) => r.id === attachment.road);
+      if (
+        !reference ||
+        attachment.ownLanes.some((lane) => lane >= laneCount(road)) ||
+        attachment.lanes.some((lane) => lane >= laneCount(reference))
+      )
+        delete road.attachments![end];
+    }
+  }
+}
+export function remapRoadReferences(
+  roads: Road[],
+  ids: ReadonlyMap<string, string>,
+) {
+  for (const road of roads) {
+    for (const end of ["start", "end"] as const) {
+      const attachment = road.attachments?.[end];
+      if (!attachment) continue;
+      const target = ids.get(attachment.road);
+      if (target) attachment.road = target;
+      else delete road.attachments![end];
+    }
+    road.id = ids.get(road.id) ?? road.id;
+  }
 }
 export function normalizePorts(p: Project) {
   const seen = new Set<string>();
@@ -303,6 +361,26 @@ export function splitRoad(
     a.widthOrigin = b.widthOrigin = r.widthOrigin ?? totalAt(r, 0);
   }
   p.roads.splice(i, 1, a, b);
+  if (r.attachments) {
+    a.attachments = { start: r.attachments.start };
+    b.attachments = { end: r.attachments.end };
+  }
+  if (r.turns) {
+    a.turns = Object.fromEntries(
+      Object.entries(r.turns).filter(
+        ([lane]) => laneDirection(r, Number(lane)) === -1,
+      ),
+    );
+    b.turns = Object.fromEntries(
+      Object.entries(r.turns).filter(
+        ([lane]) => laneDirection(r, Number(lane)) === 1,
+      ),
+    );
+  }
+  for (const road of p.roads)
+    for (const attachment of Object.values(road.attachments ?? {}))
+      if (attachment?.road === id && attachment.end === 1)
+        attachment.road = b.id;
   p.connections = p.connections.map((c) => ({
     ...c,
     from:
@@ -346,6 +424,10 @@ export function removeRoads(p: Project, ids: Set<string>) {
     (c) => !ids.has(c.from.road) && !ids.has(c.to.road),
   );
   p.ports = p.ports.filter((x) => !ids.has(x.road));
+  for (const r of p.roads)
+    for (const end of ["start", "end"] as const)
+      if (r.attachments?.[end] && ids.has(r.attachments[end]!.road))
+        delete r.attachments[end];
 }
 export function transformRoads(roads: Road[], fn: (v: V) => V) {
   for (const r of roads)
@@ -361,9 +443,32 @@ export function mirrorRoads(p: Project, ids: Set<string>) {
   const points = roads.flatMap((r) => r.knots.map((k) => k.p)),
     cx = points.reduce((sum, v) => sum + v.x, 0) / points.length;
   transformRoads(roads, (point) => v(2 * cx - point.x, point.z, point.y));
-  for (const r of roads)
+  for (const r of roads) {
     r.align =
       r.align === "left" ? "right" : r.align === "right" ? "left" : "center";
+    if (r.turns)
+      r.turns = Object.fromEntries(
+        Object.entries(r.turns).map(([lane, turns]) => [
+          r.twoWay ? lane : laneCount(r) - 1 - Number(lane),
+          turns.map((turn) =>
+            turn === "left" ? "right" : turn === "right" ? "left" : turn,
+          ),
+        ]),
+      );
+  }
+  for (const road of p.roads)
+    for (const attachment of Object.values(road.attachments ?? {})) {
+      if (!attachment) continue;
+      if (ids.has(road.id) && !road.twoWay)
+        attachment.ownLanes = attachment.ownLanes.map(
+          (lane) => laneCount(road) - 1 - lane,
+        );
+      const reference = roads.find((r) => r.id === attachment.road);
+      if (reference && !reference.twoWay)
+        attachment.lanes = attachment.lanes.map(
+          (lane) => laneCount(reference) - 1 - lane,
+        );
+    }
   for (const c of p.connections)
     for (const ref of [c.from, c.to]) {
       const r = roads.find((r) => r.id === ref.road);
@@ -447,10 +552,32 @@ export function makeBranch(
         add(rampStart, mul(forward, len * 0.45)),
         add(far, mul(forward, -len * 0.4)),
       );
+  const all = Array.from({ length: count }, (_, i) => i),
+    rampGroup =
+      side === -1 ? all.slice(0, rampLanes) : all.slice(count - rampLanes),
+    mainGroup = all.filter((lane) => !rampGroup.includes(lane));
+  attachLanes(
+    main,
+    merge ? 1 : 0,
+    r,
+    t,
+    mainGroup,
+    mainGroup.map((_, i) => i),
+  );
+  attachLanes(
+    ramp,
+    merge ? 1 : 0,
+    r,
+    t,
+    rampGroup,
+    rampGroup.map((_, i) => i),
+  );
   p.roads.push(main, ramp);
   return ramp.id;
 }
 export function reverseRoad(r: Road) {
+  delete r.attachments;
+  delete r.turns;
   const origin = r.widthOrigin ?? totalAt(r, 0);
   r.knots = r.knots
     .map((k, i) => ({ ...k, at: knotAt(r, i) }))
@@ -651,7 +778,7 @@ export function parseProject(text: string): Project {
       r.knots.length < 2 ||
       r.knots.length > 100 ||
       ![r.lanesStart, r.lanesEnd].every(
-        (n) => Number.isInteger(n) && n >= 1 && n <= 3,
+        (n) => Number.isInteger(n) && n >= 1 && n <= 6,
       ) ||
       !finite(r.width) ||
       r.width < 2 ||
@@ -683,7 +810,7 @@ export function parseProject(text: string): Project {
       throw new Error("曲线端点参数不合法。");
     if (
       r.widthOrigin !== undefined &&
-      (!finite(r.widthOrigin) || r.widthOrigin < 0 || r.widthOrigin > 6)
+      (!finite(r.widthOrigin) || r.widthOrigin < 0 || r.widthOrigin > 12)
     )
       throw new Error("道路宽度参考不合法。");
     if (
@@ -700,13 +827,64 @@ export function parseProject(text: string): Project {
         r.profile.end > 1 ||
         r.profile.start >= r.profile.end ||
         ![r.profile.from, r.profile.to].every(
-          (n) => Number.isInteger(n) && n >= 1 && n <= 3,
+          (n) => Number.isInteger(n) && n >= 1 && n <= 6,
         ) ||
         r.profile.transitionStart < 0 ||
         r.profile.transitionEnd > 1 ||
         r.profile.transitionStart >= r.profile.transitionEnd)
     )
       throw new Error("渐变区参数不合法。");
+  }
+  for (const r of p.roads as Road[]) {
+    if (r.turns !== undefined) {
+      if (!r.turns || typeof r.turns !== "object" || Array.isArray(r.turns))
+        throw new Error("车道转向规则格式错误。");
+      for (const [lane, turns] of Object.entries(r.turns))
+        if (
+          !/^\d+$/.test(lane) ||
+          Number(lane) >= laneCount(r) ||
+          !Array.isArray(turns) ||
+          turns.length > 3 ||
+          new Set(turns).size !== turns.length ||
+          turns.some((turn) => !["left", "straight", "right"].includes(turn))
+        )
+          throw new Error("车道转向规则不合法。");
+    }
+    if (r.attachments !== undefined) {
+      if (
+        !r.attachments ||
+        typeof r.attachments !== "object" ||
+        Array.isArray(r.attachments)
+      )
+        throw new Error("车道吸附信息格式错误。");
+      for (const [key, a] of Object.entries(r.attachments)) {
+        const reference = p.roads.find((road: Road) => road.id === a?.road);
+        if (
+          !["start", "end"].includes(key) ||
+          !reference ||
+          reference.id === r.id ||
+          ![0, 1].includes(a.end) ||
+          !Array.isArray(a.lanes) ||
+          !Array.isArray(a.ownLanes) ||
+          !a.lanes.length ||
+          a.lanes.length > 12 ||
+          a.lanes.length !== a.ownLanes.length ||
+          new Set(a.lanes).size !== a.lanes.length ||
+          new Set(a.ownLanes).size !== a.ownLanes.length ||
+          a.lanes.some(
+            (lane) =>
+              !Number.isInteger(lane) ||
+              lane < 0 ||
+              lane >= laneCount(reference),
+          ) ||
+          a.ownLanes.some(
+            (lane) =>
+              !Number.isInteger(lane) || lane < 0 || lane >= laneCount(r),
+          )
+        )
+          throw new Error("车道吸附引用不合法。");
+      }
+    }
   }
   p.connections = [];
   for (const x of p.ports)

@@ -1,21 +1,21 @@
 {
-  "recorded_at": "2026-11-06T10:01:11.518703+00:00",
-  "latest_change": "已验收的局部预测让行实验：每 0.1 秒规划未来 5 秒车身占用，保持冲突车辆的稳定顺序并提前减速；循环等待时尝试有空间约束的短距离倒退，实际车身保护始终保留。固定已部署预览，暂停继续调整算法。400% 长时间运行仍可能死锁。",
+  "recorded_at": "2026-11-06T10:46:24.974837+00:00",
+  "latest_change": "车道级建造：单向1–6车道，端点指定车道或连续车道组吸附，持久车道引用，左右通用分合流，中段外侧匝道，以及地图车道转向规则。已接受的预测交通AI算法保持原样；第三批道路工具暂缓。",
   "checks": [
     {
       "command": "npm run check",
       "exit_code": 0,
-      "passed_cases": 100,
-      "scope": "格式、类型、构建及全部核心测试；交通 AI 20 项，无信号路口及连续运动 15 项，预测让行 5 项，等待环与安全倒退 3 项。"
+      "passed_cases": 115,
+      "scope": "格式、类型、构建及全部核心测试；本轮新增车道建造15项，包含指定车道真实通行、分组、分流、引用维护、转向可达性与多上游接入。"
     },
     {
       "command": "PLAYWRIGHT_PORT=5174 npm run test:e2e",
       "exit_code": 0,
-      "passed_cases": 28,
+      "passed_cases": 34,
       "last_run": {
         "status": "passed",
         "failedTests": [],
-        "scope": "当前实验版本重新执行全部 28 项浏览器回归。"
+        "scope": "当前发布版本完整34项浏览器测试通过；额外验证切换分合流资产后按钮、预览与实际车道方向一致。"
       }
     },
     {
@@ -77,7 +77,9 @@
     "tests/unsignalized-junction.test.ts",
     "docs/PATHFINDING.md",
     "tests/predictive-junction.test.ts",
-    "tests/deadlock-recovery.test.ts"
+    "tests/deadlock-recovery.test.ts",
+    "docs/ROAD_BUILDING.md",
+    "tests/lane-building.test.ts"
   ],
   "limitations": [
     "桌面键鼠为目标平台；窄屏布局不等于完整触控编辑。",
@@ -139,8 +141,8 @@
       ],
       "errors": [],
       "passed": true,
+      "bundle": "index-C_Ctsm9M.js",
       "preview_fixed": true,
-      "bundle": "index-wbIbC-F8.js",
       "predictive_enabled_verified": true
     },
     "unsignalized_policy": {
@@ -214,6 +216,42 @@
     "evidence_mode": "审查员查看源码、有效截图、测试及状态记录，未声称亲自执行浏览器。",
     "recorded_at": "2026-11-05T11:59:28.249890+00:00"
   },
-  "branch": "experiment/predictive-junction-yielding",
-  "baseline_commit": "dc83da6"
+  "branch": "feature/lane-level-road-building",
+  "baseline_commit": "6eb920c",
+  "road_building": {
+    "documentation": "docs/ROAD_BUILDING.md",
+    "single_direction_lanes_per_end": [1, 6],
+    "endpoint_lane_groups": true,
+    "persistent_attachments": true,
+    "mid_segment_ramps": "outer lanes of constant-width one-way mainlines",
+    "generic_split_merge": true,
+    "left_right_transitions": true,
+    "lane_turn_rules": ["left", "straight", "right"],
+    "tests": "tests/lane-building.test.ts",
+    "third_batch_tools": "deferred",
+    "status": "deployed and verified",
+    "deployment": {
+      "url": "http://192.168.31.167:5173/",
+      "bundle": "index-C_Ctsm9M.js",
+      "frozen_preview": true,
+      "baseline_traffic_ai_unchanged": true,
+      "production_lane_tools": {
+        "url": "http://192.168.31.167:5173/",
+        "prediction": true,
+        "laneControls": true,
+        "fourLaneAsset": true,
+        "turnPanel": true,
+        "errors": [],
+        "passed": true
+      }
+    },
+    "ui_review": {
+      "initial_disposition": "fix",
+      "material_findings": [
+        "F1: asset switching could desynchronize displayed and actual branch side"
+      ],
+      "verdict_disposition": "ship",
+      "verdict_scope": "F1 resolved; five desktop/compact screenshots valid; no claim of comprehensive defect-free certification"
+    }
+  }
 }

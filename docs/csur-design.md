@@ -1,5 +1,7 @@
 # CSUR 参考与本次应用
 
+下文记录早期断面对齐实现；当前逐车道吸附、通用分合流和转向规则见 [车道级道路建造](ROAD_BUILDING.md)。
+
 本轮研究了用户提供的 [CSUR 主仓库](https://github.com/citiesskylines-csur/CSUR)、[core/csur.py](https://github.com/citiesskylines-csur/CSUR/blob/master/core/csur.py)、[core/assets.py](https://github.com/citiesskylines-csur/CSUR/blob/master/core/assets.py)，并延伸查看 [CSURToolBox 中文说明书](https://github.com/citiesskylines-csur/CSURToolBox/wiki/中文说明书) 和其偏移选取、车道偏移处理。参考源码不包含在本仓库和构建产物中。
 
 ## 采用的设计思路

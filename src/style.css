@@ -675,6 +675,7 @@ summary {
   box-shadow: 0 4px 12px #1a354a25;
 }
 .snap-feedback[data-kind="endpoint"],
+.snap-feedback[data-kind="lane"],
 .snap-feedback[data-kind="offset"],
 .snap-feedback[data-kind="road"] {
   background: #73572bf5;
@@ -1202,4 +1203,107 @@ dialog dd {
   background: transparent;
   white-space: nowrap;
   flex-shrink: 0;
+}
+
+.lane-build-tools {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  border-top: 1px solid var(--line);
+  padding-top: 8px;
+  margin-top: 7px;
+  font-size: 11px;
+}
+.lane-build-tools[hidden],
+.branch-controls[hidden] {
+  display: none;
+}
+.lane-build-tools button {
+  min-height: 29px;
+  font-size: 11px;
+  padding: 4px 7px;
+}
+.lane-build-tools button[aria-pressed="true"],
+.turn-choices button[aria-pressed="true"] {
+  background: var(--tool-active, #355d73);
+  color: #e5f6ff;
+  border-color: #6bbde3;
+}
+.lane-count-control,
+.build-side,
+.branch-controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.lane-count-control > span {
+  color: var(--muted);
+  margin-right: 4px;
+}
+.lane-count-control output {
+  min-width: 16px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.lane-count-control button {
+  padding: 4px;
+}
+.lane-count-control svg {
+  width: 14px;
+  height: 14px;
+}
+.branch-controls {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.branch-controls label {
+  white-space: nowrap;
+  color: var(--muted);
+}
+.branch-controls output {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+#branch-length {
+  width: 95px;
+  min-height: 22px;
+  padding: 0;
+  accent-color: var(--blue);
+}
+.turn-panel {
+  left: 18px;
+  top: 148px;
+  width: min(290px, calc(100vw - 36px));
+}
+.turn-panel p {
+  font-size: 12px;
+  line-height: 1.8;
+  margin: 10px 0;
+}
+.turn-choices {
+  display: flex;
+  gap: 8px;
+}
+.turn-choices button {
+  flex: 1;
+  flex-direction: column;
+  gap: 7px;
+  padding: 12px 6px;
+}
+.turn-choices svg {
+  width: 23px;
+  height: 23px;
+}
+@media (max-width: 600px) {
+  .lane-build-tools {
+    gap: 7px 9px;
+  }
+  .lane-build-tools > #lane-snap-toggle {
+    font-size: 10px;
+  }
+  .turn-panel {
+    top: 154px;
+    left: 9px;
+  }
 }

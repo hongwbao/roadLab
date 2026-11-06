@@ -17,11 +17,13 @@ import {
   nearest,
   normal,
   point,
+  roadLength,
   smooth,
   tangent,
   totalAt,
 } from "../core/math";
 import { connections } from "../core/model";
+import { allowedTurns } from "../core/lane-rules";
 import type { Project, Road, Settings, V } from "../core/types";
 import type { Step, Vehicle } from "../simulation/simulation";
 const vec = (p: V) => new T.Vector3(p.x, p.y, p.z);
@@ -61,6 +63,7 @@ export class Scene {
   junctionMesh = new T.Group();
   hover = new T.Group();
   buildMarker = new T.Group();
+  laneTarget = new T.Group();
   portGroup = new T.Group();
   private bodyInstances!: T.InstancedMesh;
   private cabinInstances!: T.InstancedMesh;
@@ -161,6 +164,7 @@ export class Scene {
     );
     this.scene.add(
       this.junctionMesh,
+      this.laneTarget,
       this.hover,
       this.buildMarker,
       this.portGroup,
@@ -470,6 +474,43 @@ export class Scene {
           for (const t of [0.22, 0.55, 0.83]) {
             if (t < range.start + 0.01 || t > range.end - 0.01) continue;
             if (laneWidth(r, l, t) < r.width * 0.8) continue;
+            if (
+              r.turns?.[l] &&
+              Math.abs(t - (laneDirection(r, l) === 1 ? 0.83 : 0.22)) < 0.01
+            ) {
+              const c = lanePoint(r, l, t),
+                d = mul(tangent(r, t), laneDirection(r, l)),
+                n = { x: -d.z, y: 0, z: d.x };
+              const turns = allowedTurns(r, l);
+              if (!turns.length) {
+                this.line(
+                  [add(c, mul(n, -1)), add(c, mul(n, 1))],
+                  this.mats.centerline,
+                  this.details,
+                );
+              }
+              for (const turn of turns) {
+                const side = turn === "left" ? -1 : turn === "right" ? 1 : 0;
+                const tip = side
+                  ? add(c, mul(n, side * 1.15))
+                  : add(c, mul(d, 1.8));
+                const direction = side ? mul(n, side) : d,
+                  cross = { x: -direction.z, y: 0, z: direction.x };
+                this.line(
+                  [
+                    add(c, mul(d, -1.8)),
+                    c,
+                    tip,
+                    add(add(tip, mul(direction, -0.75)), mul(cross, 0.5)),
+                    tip,
+                    add(add(tip, mul(direction, -0.75)), mul(cross, -0.5)),
+                  ],
+                  this.mats.mark,
+                  this.details,
+                );
+              }
+              continue;
+            }
             const p = lanePoint(r, l, t),
               d = mul(tangent(r, t), laneDirection(r, l)),
               n = normal(r, t),
@@ -750,6 +791,11 @@ export class Scene {
       }
       for (let l = 0; l < laneCount(r); l++) {
         if (laneWidth(r, l, 0.5) < r.width * 0.8) continue;
+        const path: V[] = [];
+        for (let i = 0; i <= 50; i++)
+          if (laneWidth(r, l, i / 50) > r.width * 0.7)
+            path.push(lanePoint(r, l, i / 50));
+        if (path.length > 1) this.line(path, color, this.preview);
         const c = lanePoint(r, l, 0.5),
           d = mul(tangent(r, 0.5), laneDirection(r, l)),
           n = normal(r, 0.5);
@@ -769,6 +815,63 @@ export class Scene {
   }
   showPreview(r?: Road, invalid = false) {
     this.showPreviews(r ? [r] : [], invalid);
+  }
+  showLaneTarget(road?: Road, lanes: number[] = [], at = 1) {
+    this.clear(this.laneTarget);
+    if (!road || !lanes.length) return;
+    const span = Math.min(0.3, 24 / Math.max(1, roadLength(road))),
+      start = Math.max(0, at - span),
+      end = Math.min(1, at + span);
+    const material = new T.MeshBasicMaterial({
+      color: 0xffcf70,
+      transparent: true,
+      opacity: 0.62,
+      depthTest: false,
+      side: T.DoubleSide,
+    });
+    const line = new T.LineBasicMaterial({ color: 0xffedbf, depthTest: false });
+    for (const lane of lanes) {
+      const positions: number[] = [],
+        indices: number[] = [];
+      for (let i = 0; i <= 24; i++) {
+        const t = start + ((end - start) * i) / 24,
+          c = lanePoint(road, lane, t),
+          n = normal(road, t);
+        for (const side of [-1, 1]) {
+          const p = add(c, mul(n, side * laneWidth(road, lane, t) * 0.42));
+          positions.push(p.x, p.y + 0.12, p.z);
+        }
+        if (i < 24) {
+          const j = i * 2;
+          indices.push(j, j + 1, j + 2, j + 1, j + 3, j + 2);
+        }
+      }
+      const geometry = new T.BufferGeometry();
+      geometry.setAttribute(
+        "position",
+        new T.Float32BufferAttribute(positions, 3),
+      );
+      geometry.setIndex(indices);
+      const mesh = new T.Mesh(geometry, material);
+      mesh.renderOrder = 42;
+      this.laneTarget.add(mesh);
+      const t = (start + end) / 2,
+        c = lanePoint(road, lane, t),
+        d = mul(tangent(road, t), laneDirection(road, lane)),
+        n = normal(road, t);
+      const arrow = this.line(
+        [
+          add(c, mul(d, -2.8)),
+          add(c, mul(d, 2.8)),
+          add(add(c, mul(d, 1)), mul(n, 0.9)),
+          add(c, mul(d, 2.8)),
+          add(add(c, mul(d, 1)), mul(n, -0.9)),
+        ],
+        line,
+        this.laneTarget,
+      );
+      arrow.renderOrder = 43;
+    }
   }
   showBuildMarker(p?: V, snapped = false, reference?: V) {
     this.clear(this.buildMarker);

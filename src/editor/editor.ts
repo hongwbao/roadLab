@@ -4,6 +4,9 @@ import {
   center,
   dist,
   laneCount,
+  laneDirection,
+  lanePoint,
+  laneWidth,
   lerp,
   maxGrade,
   mul,
@@ -28,6 +31,7 @@ import {
   normalizePorts,
   parseProject,
   reconnectIntersections,
+  remapRoadReferences,
   removeBoundary,
   removeRoads,
   reverseRoad,
@@ -36,7 +40,13 @@ import {
   transformRoads,
   validate,
 } from "../core/model";
-import { endpointAnchors, type Alignment } from "../core/snapping";
+import { endpointAnchors, laneAnchors, type Alignment } from "../core/snapping";
+import {
+  allowedTurns,
+  attachLanes,
+  laneNumber,
+  TURNS,
+} from "../core/lane-rules";
 import {
   copy,
   isSource,
@@ -45,12 +55,13 @@ import {
   type Road,
   type Settings,
   type Tool,
+  type Turn,
   type V,
 } from "../core/types";
 import { Scene, type Hit } from "../render/scene";
 import { Simulation } from "../simulation/simulation";
 export type SnapInfo = {
-  kind: "endpoint" | "offset" | "road" | "angle" | "grid";
+  kind: "endpoint" | "offset" | "road" | "angle" | "grid" | "lane";
   position: V;
   text: string;
   road?: string;
@@ -59,6 +70,9 @@ export type SnapInfo = {
   reference?: V;
   alignment?: Alignment;
   offset?: number;
+  lanes?: number[];
+  ownLanes?: number[];
+  interior?: boolean;
 };
 export class Editor {
   project: Project;
@@ -69,6 +83,17 @@ export class Editor {
   tool: Tool = "select";
   assetId = "city-2";
   alignment: Alignment = "auto";
+  laneSnapping = true;
+  branch = {
+    lanes: 1,
+    side: "right" as "left" | "right",
+    length: 65,
+    offset: 32,
+  };
+  turnSelection?: { road: string; lane: number };
+  private laneCandidate = 0;
+  private laneCandidateKey = "";
+  private laneCandidateCount = 0;
   settings: Settings = {
     grid: true,
     snap: true,
@@ -227,6 +252,7 @@ export class Editor {
     this.snapInfo = undefined;
     this.scene.showPreviews([]);
     this.scene.showBuildMarker();
+    this.scene.showLaneTarget();
     this.scene.setHover();
     this.scene.controls.enabled = true;
     document.querySelector<HTMLElement>("#selection-box")!.hidden = true;
@@ -245,6 +271,7 @@ export class Editor {
     this.assetId = id;
     const asset = getAsset(id);
     Object.assign(this.draw, asset.options);
+    this.branch.side = this.draw.align === "right" ? "left" : "right";
     this.setTool(
       this.tool === "curve"
         ? "curve"
@@ -261,6 +288,7 @@ export class Editor {
       boundary: "点击端点设置通行口 · 双向道路同时进出 · 右键取消通行口",
       delete: "拆除模式 · 悬停道路预览 · 左键拆除 · B / Esc 退出",
       upgrade: "先选择道路资产，再点击已有道路替换",
+      turn: "点击地图中的车道，设置允许的左转、直行和右转 · J / Esc 退出",
     }[this.tool];
   }
   private updateSnapFeedback() {
@@ -276,7 +304,7 @@ export class Editor {
     el.textContent = snap.text;
     el.dataset.kind = snap.kind;
     el.style.left = `${Math.max(12, Math.min(rect.width - 185, p.x - rect.left + 14))}px`;
-    el.style.top = `${Math.max(68, Math.min(rect.height - 230, p.y - rect.top - 30))}px`;
+    el.style.top = `${Math.max(68, Math.min(rect.height - 230, p.y - rect.top - 52))}px`;
     el.hidden = false;
   }
   snapped(p: V, exclude?: string, disabled = false): V {
@@ -284,6 +312,111 @@ export class Editor {
     this.snapInfo = undefined;
     if (!this.settings.snap || disabled) return p;
     const screen = this.scene.project(p);
+    if (
+      this.building &&
+      this.laneSnapping &&
+      this.alignment === "auto" &&
+      !this.draw.twoWay
+    ) {
+      const ownEnd = this.drawPoints.length ? 1 : 0;
+      const candidates: {
+        road: Road;
+        t: number;
+        anchor: ReturnType<typeof laneAnchors>[number];
+        distance: number;
+        interior: boolean;
+      }[] = [];
+      for (const road of this.project.roads) {
+        if (road.id === exclude) continue;
+        const near = nearest(road, p);
+        const ts = [0, 1];
+        if (
+          this.draw.kind === "ramp" &&
+          !road.twoWay &&
+          road.lanesStart === road.lanesEnd &&
+          !road.profile &&
+          near.t > 0.04 &&
+          near.t < 0.96
+        )
+          ts.push(near.t);
+        for (const t of ts) {
+          if (Math.abs(center(road, t).y - p.y) > 1.5) continue;
+          const direction = mul(tangent(road, t), t === 0 ? -1 : 1);
+          const proposed = this.drawPoints.length
+            ? this.draft(p)
+            : makeRoad(p, add(p, mul(direction, 32)), { ...this.draw });
+          if (ownEnd === 1) {
+            const toward = sub(p, this.drawPoints[0]),
+              length = Math.hypot(toward.x, toward.z);
+            if (
+              length > 4 &&
+              Math.abs(toward.x * direction.x + toward.z * direction.z) /
+                length <
+                0.7
+            )
+              continue;
+          }
+          for (const anchor of laneAnchors(road, t, proposed, ownEnd)) {
+            if (t !== 0 && t !== 1) {
+              const edge =
+                Math.min(...anchor.lanes) === 0 ||
+                Math.max(...anchor.lanes) === laneCount(road) - 1;
+              if (!edge) continue;
+            }
+            const projected = this.scene.project(anchor.contact),
+              distance = Math.hypot(
+                screen.x - projected.x,
+                screen.y - projected.y,
+              );
+            if (distance < 24)
+              candidates.push({
+                road,
+                t,
+                anchor,
+                distance,
+                interior: t !== 0 && t !== 1,
+              });
+          }
+        }
+      }
+      candidates.sort((a, b) => a.distance - b.distance);
+      if (candidates.length) {
+        const nearestCandidate = candidates[0],
+          same = candidates.filter(
+            (c) =>
+              c.road.id === nearestCandidate.road.id &&
+              Math.abs(c.t - nearestCandidate.t) < 0.001,
+          );
+        const key = `${nearestCandidate.road.id}:${nearestCandidate.t.toFixed(4)}:${ownEnd}`;
+        if (key !== this.laneCandidateKey) {
+          this.laneCandidate = 0;
+          this.laneCandidateKey = key;
+        }
+        this.laneCandidateCount = same.length;
+        const selected =
+            same[
+              ((this.laneCandidate % same.length) + same.length) % same.length
+            ],
+          { anchor, road, t } = selected;
+        const numbers = anchor.lanes.map((lane) => laneNumber(road, lane, t));
+        const offset = dist(anchor.contact, center(road, t));
+        this.snapInfo = {
+          kind: "lane",
+          position: anchor.position,
+          contact: anchor.contact,
+          reference: center(road, t),
+          road: road.id,
+          t,
+          lanes: anchor.lanes,
+          ownLanes: anchor.ownLanes,
+          interior: selected.interior,
+          text: `车道吸附：${numbers.length === 1 ? `第 ${numbers[0]} 车道` : `第 ${numbers[0]}–${numbers.at(-1)} 车道`} · ${offset.toFixed(2)} m${same.length > 1 ? " · Tab 切换" : ""}`,
+        };
+        return anchor.position;
+      }
+      this.laneCandidateCount = 0;
+      this.laneCandidateKey = "";
+    }
     let best:
       | {
           p: V;
@@ -424,6 +557,107 @@ export class Editor {
     this.onChange();
     if (this.building && this.pointer) this.updatePlacement(this.pointer);
   }
+  cycleLane(direction = 1) {
+    if (this.snapInfo?.kind === "lane" && this.laneCandidateCount > 1) {
+      this.laneCandidate += direction;
+      if (this.pointer) this.updatePlacement(this.pointer);
+    } else this.cycleAlignment();
+  }
+  private branchOptions(r: Road) {
+    const count =
+      getAsset(this.assetId).action === "merge" ? r.lanesStart : r.lanesEnd;
+    return {
+      ...this.branch,
+      lanes: Math.max(1, Math.min(this.branch.lanes, count - 1)),
+    };
+  }
+  changeBuildCount(end: "lanesStart" | "lanesEnd", delta: number) {
+    this.draw[end] = Math.max(1, Math.min(6, this.draw[end] + delta));
+    const action = getAsset(this.assetId).action;
+    if (action && this.draw[action === "merge" ? "lanesStart" : "lanesEnd"] < 2)
+      this.draw[action === "merge" ? "lanesStart" : "lanesEnd"] = 2;
+    if (
+      !this.draw.twoWay &&
+      this.draw.lanesStart !== this.draw.lanesEnd &&
+      this.draw.align === "center"
+    )
+      this.draw.align = "left";
+    this.onChange();
+    if (this.pointer) this.updatePlacement(this.pointer);
+  }
+  setBuildSide(side: "left" | "right") {
+    this.branch.side = side;
+    this.draw.align = side === "left" ? "right" : "left";
+    this.onChange();
+    if (this.pointer) this.updatePlacement(this.pointer);
+  }
+  changeBranchLanes(delta: number) {
+    const count =
+      getAsset(this.assetId).action === "merge"
+        ? this.draw.lanesStart
+        : this.draw.lanesEnd;
+    this.branch.lanes = Math.max(
+      1,
+      Math.min(count - 1, this.branch.lanes + delta),
+    );
+    this.onChange();
+    if (this.pointer) this.updatePlacement(this.pointer);
+  }
+  setBranchLength(length: number) {
+    this.branch.length = Math.max(20, Math.min(180, length));
+    this.branch.offset = Math.max(12, Math.min(50, this.branch.length * 0.5));
+    if (this.pointer) this.updatePlacement(this.pointer);
+  }
+  private turnHit(x: number, y: number) {
+    const hit = this.scene.hit(x, y),
+      road = this.project.roads.find((r) => r.id === hit?.road);
+    if (!road) return;
+    const raw = this.scene.groundPoint(
+      x,
+      y,
+      hit?.position?.y ?? center(road, 0.5).y,
+    );
+    if (!raw) return;
+    const near = nearest(road, raw);
+    const lanes = Array.from({ length: laneCount(road) }, (_, lane) => lane)
+      .filter(
+        (lane) =>
+          laneWidth(road, lane, near.t) > road.width * 0.7 &&
+          laneWidth(road, lane, laneDirection(road, lane) === 1 ? 1 : 0) >
+            road.width * 0.7,
+      )
+      .sort(
+        (a, b) =>
+          dist(lanePoint(road, a, near.t), raw) -
+          dist(lanePoint(road, b, near.t), raw),
+      );
+    if (lanes.length) return { road, lane: lanes[0] };
+  }
+  toggleTurn(turn: Turn) {
+    const choice = this.turnSelection,
+      road = this.project.roads.find((r) => r.id === choice?.road);
+    if (!choice || !road) return;
+    this.edit(() => {
+      const turns = allowedTurns(road, choice.lane);
+      road.turns ??= {};
+      road.turns[choice.lane] = turns.includes(turn)
+        ? turns.filter((t) => t !== turn)
+        : TURNS.filter((t) => t === turn || turns.includes(t));
+    }, "车道转向规则已更新");
+    this.scene.showLaneTarget(
+      road,
+      [choice.lane],
+      laneDirection(road, choice.lane) === 1 ? 1 : 0,
+    );
+  }
+  resetTurns() {
+    const choice = this.turnSelection,
+      road = this.project.roads.find((r) => r.id === choice?.road);
+    if (!choice || !road) return;
+    this.edit(() => {
+      if (road.turns) delete road.turns[choice.lane];
+    }, "已恢复自动转向规则");
+  }
   private draft(q: V, endSnap?: SnapInfo) {
     let a = this.drawPoints[0] || q;
     const control = this.drawPoints[1];
@@ -503,6 +737,23 @@ export class Editor {
           k[key] = add(k.p, mul(d, dist(k.p, k[key]) * (end === 0 ? 1 : -1)));
           break;
         }
+    for (const [ownEnd, snap] of [
+      [0, this.drawStartSnap],
+      [1, endSnap],
+    ] as const) {
+      if (snap?.kind !== "lane" || !snap.road || !snap.lanes || !snap.ownLanes)
+        continue;
+      const reference = this.project.roads.find((old) => old.id === snap.road);
+      if (reference)
+        attachLanes(
+          r,
+          ownEnd,
+          reference,
+          snap.t ?? 0,
+          snap.lanes,
+          snap.ownLanes,
+        );
+    }
     return r;
   }
   private draftBundle(r: Road) {
@@ -510,7 +761,7 @@ export class Editor {
     if (!asset.action) return [r];
     const p = emptyProject();
     p.roads = [r];
-    makeBranch(p, r.id, asset.action === "merge", { length: 65, offset: 32 });
+    makeBranch(p, r.id, asset.action === "merge", this.branchOptions(r));
     return p.roads;
   }
   updatePlacement(raw: V, alt = false) {
@@ -530,18 +781,41 @@ export class Editor {
       const end = add(q, mul(direction, 32));
       road = makeRoad(q, end, { ...this.draw });
     } else road = this.draft(q, this.snapInfo);
-    this.scene.showPreviews(this.draftBundle(road), roadLength(road) < 3);
+    let bundle = [road],
+      invalid = roadLength(road) < 3;
+    try {
+      bundle = this.draftBundle(road);
+    } catch {
+      invalid = true;
+    }
+    const warning =
+      maxGrade(road) > 15
+        ? "坡度过大，请延长道路"
+        : road.lanesStart !== road.lanesEnd &&
+            roadLength(road) * (road.transitionEnd - road.transitionStart) < 15
+          ? "过渡过短，建议至少 15 m"
+          : "";
+    this.scene.showPreviews(bundle, invalid || !!warning);
     this.scene.showBuildMarker(
       this.snapInfo?.contact || q,
       this.snapInfo?.kind === "endpoint" ||
         this.snapInfo?.kind === "road" ||
-        this.snapInfo?.kind === "offset",
+        this.snapInfo?.kind === "offset" ||
+        this.snapInfo?.kind === "lane",
       this.snapInfo?.reference,
     );
     this.scene.setHover(this.snapInfo?.road, "snap");
+    const reference = this.project.roads.find(
+      (r) => r.id === this.snapInfo?.road,
+    );
+    this.scene.showLaneTarget(
+      reference,
+      this.snapInfo?.lanes,
+      this.snapInfo?.t,
+    );
     this.updateSnapFeedback();
     this.onStatus(
-      `${this.snapInfo?.text || this.instructions()} · ${roadLength(road).toFixed(0)} m · 最大坡度 ${maxGrade(road).toFixed(1)}%`,
+      `${warning ? warning + " · " : ""}${this.snapInfo?.text || this.instructions()} · ${roadLength(road).toFixed(0)} m · 最大坡度 ${maxGrade(road).toFixed(1)}%`,
     );
   }
   private finishDraw() {
@@ -554,6 +828,48 @@ export class Editor {
       return;
     }
     this.edit(() => {
+      const descendants = new Map<string, Set<string>>();
+      for (const [ownEnd, snap] of [
+        [0, this.drawStartSnap],
+        [1, this.snapInfo],
+      ] as const) {
+        if (
+          snap?.kind !== "lane" ||
+          !snap.road ||
+          !snap.lanes ||
+          !snap.ownLanes
+        )
+          continue;
+        const original = this.project.roads.find((old) => old.id === snap.road);
+        const ids = descendants.get(snap.road) ?? new Set([snap.road]);
+        descendants.set(snap.road, ids);
+        const originalPoint =
+          snap.reference ?? (original && center(original, snap.t ?? 0));
+        if (!originalPoint) continue;
+        let reference = this.project.roads
+          .filter((old) => ids.has(old.id))
+          .sort(
+            (a, b) =>
+              nearest(a, originalPoint).distance -
+              nearest(b, originalPoint).distance,
+          )[0];
+        if (!reference) throw new Error("目标道路已改变，请重新选择车道。");
+        const near = nearest(reference, originalPoint);
+        let targetEnd: 0 | 1 = near.t < 0.5 ? 0 : 1;
+        if (snap.interior && near.t > 0.025 && near.t < 0.975) {
+          const next = splitRoad(this.project, reference.id, near.t);
+          if (!next) throw new Error("此处空间不足，无法接出匝道。");
+          ids.add(next);
+          if (ownEnd === 1)
+            reference = this.project.roads.find((old) => old.id === next)!;
+          else
+            reference = this.project.roads.find(
+              (old) => old.id === reference.id,
+            )!;
+          targetEnd = ownEnd === 0 ? 1 : 0;
+        }
+        attachLanes(r, ownEnd, reference, targetEnd, snap.lanes, snap.ownLanes);
+      }
       for (const t of [0, 1]) {
         const q = center(r, t);
         for (const old of [...this.project.roads]) {
@@ -571,8 +887,7 @@ export class Editor {
       const action = getAsset(this.assetId).action;
       if (action)
         makeBranch(this.project, r.id, action === "merge", {
-          length: 65,
-          offset: 32,
+          ...this.branchOptions(r),
         });
       reconnectIntersections(this.project);
       autoJunction(this.project);
@@ -596,6 +911,7 @@ export class Editor {
       : undefined;
     this.scene.showPreviews([]);
     this.scene.showBuildMarker();
+    this.scene.showLaneTarget();
     this.onStatus(this.instructions());
   }
   private boundaryHit(x: number, y: number) {
@@ -623,6 +939,19 @@ export class Editor {
         this.drawPoints.length ? this.draw.endHeight : this.draw.height,
       );
     if (!raw) return;
+    if (this.tool === "turn") {
+      const choice = this.turnHit(e.clientX, e.clientY);
+      if (choice) {
+        this.turnSelection = { road: choice.road.id, lane: choice.lane };
+        this.scene.showLaneTarget(
+          choice.road,
+          [choice.lane],
+          laneDirection(choice.road, choice.lane) === 1 ? 1 : 0,
+        );
+        this.onChange();
+      }
+      return;
+    }
     if (this.building) {
       const q = this.snapped(raw, undefined, e.altKey);
       if (!this.drawPoints.length)
@@ -837,6 +1166,26 @@ export class Editor {
         canvas.style.cursor = "crosshair";
         return;
       }
+      if (this.tool === "turn") {
+        const choice = this.turnHit(e.clientX, e.clientY);
+        const selected = this.turnSelection;
+        const road =
+          choice?.road ??
+          this.project.roads.find((r) => r.id === selected?.road);
+        const lane = choice?.lane ?? selected?.lane;
+        this.scene.setHover();
+        this.scene.showLaneTarget(
+          road,
+          lane === undefined ? [] : [lane],
+          road && lane !== undefined
+            ? laneDirection(road, lane) === 1
+              ? 1
+              : 0
+            : 1,
+        );
+        canvas.style.cursor = "crosshair";
+        return;
+      }
       const hit = this.scene.hit(e.clientX, e.clientY);
       this.hovered = hit?.road;
       this.scene.setHover(
@@ -971,7 +1320,7 @@ export class Editor {
       }
       if (e.key === "Tab" && this.building && target === this.scene.el) {
         e.preventDefault();
-        this.cycleAlignment();
+        this.cycleLane(e.shiftKey ? -1 : 1);
         return;
       }
       if (key === "b") {
@@ -984,6 +1333,7 @@ export class Editor {
       if (key === "c") this.setTool("curve");
       if (key === "u") this.setTool("upgrade");
       if (key === "i") this.setTool("boundary");
+      if (key === "j") this.setTool(this.tool === "turn" ? "select" : "turn");
       if (e.key === "Escape") {
         this.setTool("select");
         return;
@@ -1035,6 +1385,7 @@ export class Editor {
     const roads = copy(this.chosen),
       ids = new Map(roads.map((r) => [r.id, uid()]));
     if (template) {
+      remapRoadReferences(roads, new Map(roads.map((r) => [r.id, r.id])));
       this.edit(
         () =>
           this.project.templates.push({
@@ -1048,7 +1399,7 @@ export class Editor {
       return;
     }
     this.edit(() => {
-      roads.forEach((r) => (r.id = ids.get(r.id)!));
+      remapRoadReferences(roads, ids);
       transformRoads(roads, (p) => add(p, v(15, 30)));
       this.project.roads.push(...roads);
       this.selected = new Set(roads.map((r) => r.id));
@@ -1156,6 +1507,13 @@ export class Editor {
     }
     if (name === "reverse") {
       this.edit(() => {
+        for (const road of this.project.roads)
+          for (const end of ["start", "end"] as const)
+            if (
+              road.attachments?.[end] &&
+              this.selected.has(road.attachments[end]!.road)
+            )
+              delete road.attachments[end];
         for (const r of this.chosen) {
           reverseRoad(r);
           this.project.ports
@@ -1201,7 +1559,7 @@ export class Editor {
         cx = points.reduce((s, p) => s + p.x, 0) / points.length,
         cz = points.reduce((s, p) => s + p.z, 0) / points.length,
         target = this.scene.controls.target;
-      roads.forEach((r) => (r.id = uid()));
+      remapRoadReferences(roads, new Map(roads.map((r) => [r.id, uid()])));
       transformRoads(roads, (p) =>
         v(p.x - cx + target.x, p.z - cz + target.z, p.y),
       );

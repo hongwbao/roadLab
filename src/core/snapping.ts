@@ -1,4 +1,15 @@
-import { add, center, mul, normal, point, sub, tangent, totalAt } from "./math";
+import {
+  add,
+  center,
+  lanePoint,
+  mul,
+  normal,
+  point,
+  sub,
+  tangent,
+  totalAt,
+} from "./math";
+import { endpointLaneGroups } from "./lane-rules";
 import type { Road, V } from "./types";
 export type Alignment = "auto" | "center" | "left" | "right";
 export type EndpointAnchor = {
@@ -8,6 +19,37 @@ export type EndpointAnchor = {
   alignment: Exclude<Alignment, "auto">;
   offset: number;
 };
+export function laneAnchors(
+  reference: Road,
+  end: number,
+  proposed: Road,
+  proposedEnd: 0 | 1,
+) {
+  const flowEnd = end === 0 || end === 1 ? end : proposedEnd === 0 ? 1 : 0;
+  return endpointLaneGroups(reference, flowEnd, proposed, proposedEnd).map(
+    (group) => {
+      const contact = mul(
+        group.lanes.reduce(
+          (p, lane) => add(p, lanePoint(reference, lane, end)),
+          { x: 0, y: 0, z: 0 },
+        ),
+        1 / group.lanes.length,
+      );
+      const own = mul(
+        group.ownLanes.reduce(
+          (p, lane) => add(p, lanePoint(proposed, lane, proposedEnd)),
+          { x: 0, y: 0, z: 0 },
+        ),
+        1 / group.ownLanes.length,
+      );
+      return {
+        ...group,
+        contact,
+        position: sub(contact, sub(own, point(proposed, proposedEnd))),
+      };
+    },
+  );
+}
 /** Independently implemented section alignment, inspired by modular road interfaces.
  * position is the editable spline anchor; contact is the physical pavement centre.
  * Keeping these separate also handles an aligned widening's shifted centreline.
