@@ -1,29 +1,27 @@
 {
-  "recorded_at": "2026-11-05T11:59:28.249890+00:00",
-  "latest_change": "游戏式道路资产 HUD、B 拆除、自动路口、车辆避碰、双向通行口，以及参考 CSUR 模块思路独立实现的单向端点断面对齐。",
+  "recorded_at": "2026-11-06T07:26:10.954240+00:00",
+  "latest_change": "修复斑马线处不必要的制动与边界顿挫：路口出口容量检查覆盖完整驾驶预判范围，普通路口不使用队首预约条件；道路和连接曲线之间保留积分剩余距离，包含零长度与短连接。继续按目标车道容量准入，保留转弯减速、跟车和车身保护。",
   "checks": [
     {
-      "command": "npm run build",
-      "exit_code": 0
+      "command": "npm run check",
+      "exit_code": 0,
+      "passed_cases": 89,
+      "scope": "格式、类型、构建及全部核心测试；交通 AI 20 项，无信号路口及边界运动连续性 12 项。"
     },
     {
-      "command": "npm test",
+      "command": "PLAYWRIGHT_PORT=5174 npm run test:e2e",
       "exit_code": 0,
-      "passed_cases": 46
-    },
-    {
-      "command": "npm run test:e2e",
-      "exit_code": 0,
-      "passed_cases": 20,
+      "passed_cases": 28,
       "last_run": {
         "status": "passed",
         "failedTests": []
       }
     },
     {
-      "command": "node tests/production.mjs",
+      "command": "SMOKE_URL=http://192.168.31.167:5173/ npm run test:smoke",
       "exit_code": 0,
       "result": {
+        "url": "http://192.168.31.167:5173/",
         "roads": 5,
         "routes": 2,
         "canvas": true,
@@ -33,63 +31,59 @@
     }
   ],
   "traffic_stress": {
-    "duration_per_case_simulated_seconds": 120,
+    "duration_per_case_simulated_seconds": 360,
     "source_rate_per_minute": 60,
     "global_multiplier": 4,
     "metrics": {
       "transition": {
-        "completed": 13,
-        "active": 76,
+        "completed": 327,
+        "active": 26,
         "overlaps": 0,
-        "maxMove": 0.8415066514558637,
-        "maxAngle": 0.011158023060059086,
-        "turns": 0
+        "maxMove": 0.8316839193894623,
+        "maxAngle": 0.03642330345696515,
+        "turns": 0,
+        "checkpoints": [93, 208, 327]
       },
       "junction": {
-        "completed": 30,
-        "active": 68,
+        "completed": 6,
+        "active": 65,
         "overlaps": 0,
-        "maxMove": 0.6944444444445139,
-        "maxAngle": 0.05894087336208776,
-        "turns": 2025
+        "maxMove": 0.6516893196491083,
+        "maxAngle": 0.03965492012288951,
+        "turns": 48723,
+        "checkpoints": [6, 6, 6]
       },
       "merge": {
-        "completed": 62,
-        "active": 96,
+        "completed": 269,
+        "active": 35,
         "overlaps": 0,
-        "maxMove": 0.8421826583772651,
-        "maxAngle": 0.01047470404421838,
-        "turns": 0
+        "maxMove": 0.8150340927633692,
+        "maxAngle": 0.054621179974812306,
+        "turns": 0,
+        "checkpoints": [87, 180, 269]
       }
     },
-    "scope": "仅覆盖过渡分流、城市四臂路口和汇入三个固定场景；overlaps 为每个 0.05s 观测的车身定向矩形重叠次数。内部以最多 0.025s 时间步执行碰撞检查。"
-  },
-  "interaction_review": {
-    "disposition": "ship",
-    "scope": "独立审查员只复核 F1–F4 和新增单向端点偏移吸附的限定范围，不泛化为任意路网或整个产品无缺陷。",
-    "fixes": {
-      "F1": "resolved：通行口模式一键返回道路资产。",
-      "F2": "resolved：页脚进入手工通行口模式，批量识别仅在面板明确触发。",
-      "F3": "resolved：主要按钮悬停白字对比度 5.7156:1。",
-      "F4": "resolved：先选偏移起点后垂直转向，预览和提交统一回到参考中心节点，两个方向均无额外短段且路径可达。"
-    },
-    "evidence_mode": "审查员查看源码、有效截图、测试及状态记录，未声称亲自执行浏览器。"
+    "scope": "三个固定场景各运行 360 秒，按 0.05 秒观测车身重叠。过渡和汇流验证持续通行；400% 无信号路口允许拥堵和僵持，验证排队且不穿模，不再要求最低通行量。内部时间步不超过 0.025 秒。"
   },
   "evidence": [
     "docs/images/editor.png",
     "docs/images/junction.png",
     "docs/images/offset-snapping.png",
     "docs/feature-map.json",
-    "docs/csur-design.md"
+    "docs/csur-design.md",
+    "docs/TRAFFIC_AI.md",
+    "tests/traffic-ai.test.ts",
+    "tests/unsignalized-junction.test.ts",
+    "docs/PATHFINDING.md"
   ],
   "limitations": [
     "桌面键鼠为目标平台；窄屏布局不等于完整触控编辑。",
-    "交通为简化模型，未经真实交通数据校准；路口使用保守逐车预约，无信号灯。",
+    "交通模型未经真实数据校准；按用户阶段规则，无信号路口仅按目标出口空间准入，保留车身保护，高流量可拥堵或僵持。尚无信号灯、停车或多种交通方式。",
     "偏移对齐适用于单向且近似平行的端点接口，不覆盖任意位置的平行道路偏移。",
     "复杂道路的几何和净空检查采用采样。",
     "本机保存属于当前浏览器与网址，JSON 导出用于可移植备份。"
   ],
-  "record_type": "功能实现时的验证快照；当前提交的持续验证请查看 GitHub Actions CI。",
+  "record_type": "当前本地实现及生产演示的验证快照；未将本轮实现推送到远程仓库或运行 GitHub Actions。repository_setup_validation 仅为历史部署记录。",
   "repository_setup_validation": {
     "recorded_at": "2026-11-05T12:25:34.654345+00:00",
     "application_commit": "6c3d681a240b67ec5510d874a6f321d81bc52c9c",
@@ -101,5 +95,73 @@
       "GitHub Actions 实际构建 Docker 镜像、运行容器及容器浏览器检查通过。"
     ],
     "pages_status": "提供手动发布及 PAGES_ENABLED 自动发布配置；未启用公开网站。"
+  },
+  "traffic_ai": {
+    "implementation": "Independent IDM/MOBIL-inspired road traffic model; not Cities: Skylines II source code.",
+    "documentation": ["docs/TRAFFIC_AI.md", "docs/PATHFINDING.md"],
+    "behavioral_cases": 32,
+    "shared_map": {
+      "roads": 18,
+      "routes": 12,
+      "traffic_multiplier": 4,
+      "duration_simulated_seconds": 240,
+      "passed": true,
+      "test": "tests/shared-map.test.ts",
+      "requirements": {
+        "completed_per_60_simulated_seconds": ">150",
+        "completed_per_sink": ">25"
+      }
+    },
+    "live_production": {
+      "url": "http://192.168.31.167:5173/",
+      "map": "十字路口",
+      "scenario": "isolated straight travel through both crosswalks",
+      "cases": [
+        {
+          "reverse": false,
+          "minSpeed": 15,
+          "maxDistanceError": 0.00446257044230991,
+          "entered": true,
+          "exited": true,
+          "safetyStops": 0
+        },
+        {
+          "reverse": true,
+          "minSpeed": 15,
+          "maxDistanceError": 0.0044625704423024715,
+          "entered": true,
+          "exited": true,
+          "safetyStops": 0
+        }
+      ],
+      "errors": [],
+      "passed": true
+    },
+    "unsignalized_policy": {
+      "admission": "destination-lane-capacity-only",
+      "cross_direction_reservations": false,
+      "body_overlap_guard": true,
+      "traffic_lights": false,
+      "oversaturation_queue_is_allowed": true
+    },
+    "crosswalk_motion": {
+      "admission_lookahead_metres": 80,
+      "preserve_remaining_distance_at_boundaries": true,
+      "ordinary_junction_queue_head_reservation": false,
+      "regressions": "空路口直行速度保持、路口入口和出口位置连续、0 米与 0.1 米道路连接距离保持。",
+      "pedestrian_stop_rule": false
+    }
+  },
+  "previous_interaction_review": {
+    "disposition": "ship",
+    "scope": "独立审查员只复核 F1–F4 和新增单向端点偏移吸附的限定范围，不泛化为任意路网或整个产品无缺陷。",
+    "fixes": {
+      "F1": "resolved：通行口模式一键返回道路资产。",
+      "F2": "resolved：页脚进入手工通行口模式，批量识别仅在面板明确触发。",
+      "F3": "resolved：主要按钮悬停白字对比度 5.7156:1。",
+      "F4": "resolved：先选偏移起点后垂直转向，预览和提交统一回到参考中心节点，两个方向均无额外短段且路径可达。"
+    },
+    "evidence_mode": "审查员查看源码、有效截图、测试及状态记录，未声称亲自执行浏览器。",
+    "recorded_at": "2026-11-05T11:59:28.249890+00:00"
   }
 }

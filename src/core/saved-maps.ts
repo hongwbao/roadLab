@@ -1,5 +1,5 @@
 import { parseProject } from "./model";
-import type { Project } from "./types";
+import { uid, type Project } from "./types";
 
 const key = "roadlab:named-maps:v1";
 type StoragePort = Pick<Storage, "getItem" | "setItem">;
@@ -62,7 +62,7 @@ export function saveNamedMap(
   const existing = saves.find((save) => save.name === title);
   const savedAt = Date.now();
   const entry: SavedMap = {
-    id: existing?.id ?? crypto.randomUUID(),
+    id: existing?.id ?? globalThis.crypto?.randomUUID?.() ?? uid("map"),
     name: title,
     savedAt,
     project: validProject,

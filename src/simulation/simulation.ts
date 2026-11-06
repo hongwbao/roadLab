@@ -26,6 +26,22 @@ import {
   type V,
 } from "../core/types";
 import { TrafficIndex } from "./collision";
+import {
+  DEFAULT_DRIVER,
+  VEHICLE_LENGTH,
+  advanceVehicle,
+  driverProfile,
+  followingAcceleration,
+  laneChangeIncentive,
+  type DriverProfile,
+  type Leader,
+} from "./driving";
+import { LaneTraffic, type LaneSample } from "./lane-traffic";
+import {
+  IntersectionController,
+  type JunctionRequest,
+  type Movement,
+} from "./intersections";
 export type Step = {
   road: string;
   direction: 1 | -1;
@@ -40,6 +56,13 @@ export type Vehicle = {
   lane: number;
   laneChange?: { from: number; to: number; start: number; length: number };
   stalledFor?: number;
+  driver?: DriverProfile;
+  preferredLane?: number;
+  nextLaneDecision?: number;
+  lastLaneChangeAt?: number;
+  lastRerouteAt?: number;
+  nextRouteDecision?: number;
+  acceleration?: number;
   speed: number;
   age: number;
   color: number;
@@ -47,6 +70,7 @@ export type Vehicle = {
   heading: number;
   pitch: number;
   connector?: {
+    id?: string;
     from: V;
     c1: V;
     c2: V;
@@ -55,6 +79,8 @@ export type Vehicle = {
     length: number;
     arc: { t: number; s: number }[];
     junction?: string;
+    movement?: Movement;
+    speedLimit?: number;
   };
 };
 const key = (road: string, dir: number) => road + ":" + dir;
@@ -62,6 +88,12 @@ const laneKey = (road: string, dir: number, lane: number) =>
   `${road}:${dir}:${lane}`;
 const laneChangeLength = (speed: number) =>
   Math.max(24, Math.min(50, Math.max(speed, 10) * 2.3));
+const CONNECTION_LOOKAHEAD = 80;
+type RoutingCache = {
+  changes: Map<string, number>;
+  links: Map<Connection, number>;
+  trims?: ReadonlyMap<string, { start: number; end: number }>;
+};
 export function findRoute(
   p: Project,
   source: Port,
@@ -71,6 +103,7 @@ export function findRoute(
   congestion?: ReadonlyMap<string, number>,
   startDistance = 0,
   cachedLengths?: ReadonlyMap<string, number>,
+  cache?: RoutingCache,
 ): Step[] | undefined {
   const roads = new Map(p.roads.map((r) => [r.id, r]));
   const sourceRoad = roads.get(source.road),
@@ -86,6 +119,22 @@ export function findRoute(
   type LaneState = { road: string; direction: 1 | -1; lane: number };
   const lengths =
     cachedLengths ?? new Map(p.roads.map((r) => [r.id, arcTable(r).at(-1)!.s]));
+  const junctionArms = cache?.trims
+    ? []
+    : buildJunctions(p).flatMap((j) => j.arms);
+  const trims =
+    cache?.trims ??
+    new Map(
+      p.roads.map((r) => [
+        r.id,
+        {
+          start:
+            junctionArms.find((a) => a.road === r.id && a.end === 0)?.trim ?? 0,
+          end:
+            junctionArms.find((a) => a.road === r.id && a.end === 1)?.trim ?? 0,
+        },
+      ]),
+    );
   const links = new Map<string, Connection[]>();
   for (const c of cs) {
     if (!c.enabled) continue;
@@ -104,11 +153,22 @@ export function findRoute(
   ) => {
     if (from === to) return 0;
     if (laneDirection(r, to) !== direction) return Infinity;
+    const cacheKey = `${r.id}:${direction}:${from}:${to}`;
+    if (offset === 0) {
+      const saved = cache?.changes.get(cacheKey);
+      if (saved !== undefined) return saved;
+    }
     const length = lengths.get(r.id)!,
+      trim = trims.get(r.id),
+      begin = Math.max(
+        offset,
+        (direction === 1 ? trim?.start : trim?.end) ?? 0,
+      ),
+      end = length - ((direction === 1 ? trim?.end : trim?.start) ?? 0),
       minimum = 20 * Math.abs(to - from),
-      lastStart = length - minimum - 6;
-    if (lastStart < offset) return Infinity;
-    for (let s = offset; s <= lastStart + 0.001; s += 2) {
+      lastStart = end - minimum - 6;
+    if (lastStart < begin) return Infinity;
+    for (let s = begin; s <= lastStart + 0.001; s += 2) {
       const widthAt = (lane: number, at: number) =>
         laneWidth(r, lane, direction === 1 ? at / length : 1 - at / length);
       // A lane that tapers away only needs to fit the car at the start of a
@@ -120,8 +180,13 @@ export function findRoute(
           { length: Math.abs(to - from) - 1 },
           (_, i) => Math.min(from, to) + i + 1,
         ).every((lane) => widthAt(lane, s + minimum / 2) >= r.width * 0.8);
-      if (usable) return Math.abs(to - from) * 2.5 + (s / length) * 2;
+      if (usable) {
+        const cost = Math.abs(to - from) * 2.5 + (s / length) * 2;
+        if (offset === 0) cache?.changes.set(cacheKey, cost);
+        return cost;
+      }
     }
+    if (offset === 0) cache?.changes.set(cacheKey, Infinity);
     return Infinity;
   };
   const states = new Map<string, LaneState>(),
@@ -143,7 +208,11 @@ export function findRoute(
     states.set(k, { road: sourceRoad.id, direction: startDir, lane });
     costs.set(
       k,
-      preferredLane === undefined ? 0 : Math.abs(lane - preferredLane) * 10,
+      // At an external boundary this is only a tie-breaker. Giving a random
+      // entry lane more weight than a necessary change creates avoidable
+      // weaving across turn queues. Existing cars are fixed above to their
+      // actual lane whenever startDistance > 0.
+      preferredLane === undefined ? 0 : Math.abs(lane - preferredLane) * 0.25,
     );
     open.add(k);
   }
@@ -181,7 +250,15 @@ export function findRoute(
           r.id === sourceRoad.id ? startDistance : 0,
         );
         if (!Number.isFinite(change)) continue;
-        const cost = costs.get(current)! + travel + change + density * 0.4;
+        const cost =
+          costs.get(current)! +
+          travel +
+          change +
+          Math.max(
+            density,
+            congestion?.get(laneKey(r.id, state.direction, lane)) ?? 0,
+          ) *
+            0.4;
         if (!goal || cost < goal.cost) goal = { key: current, lane, cost };
       }
     for (const c of links.get(key(r.id, state.direction)) ?? []) {
@@ -195,8 +272,38 @@ export function findRoute(
           r.id === sourceRoad.id ? startDistance : 0,
         );
       if (!Number.isFinite(change)) continue;
-      const next = laneKey(nextRoad.id, nextDir, c.to.lane),
-        cost = costs.get(current)! + travel + change + density * 0.4;
+      const next = laneKey(nextRoad.id, nextDir, c.to.lane);
+      let linkCost = cache?.links.get(c);
+      if (linkCost === undefined) {
+        const ad = mul(
+            tangent(r, state.direction === 1 ? 1 : 0),
+            state.direction,
+          ),
+          bd = mul(tangent(nextRoad, nextDir === 1 ? 0 : 1), nextDir),
+          dot = ad.x * bd.x + ad.z * bd.z,
+          turnCost = dot > 0.9 ? 0 : ad.x * bd.z - ad.z * bd.x > 0 ? 0.6 : 1.4,
+          lateral =
+            dot > 0.94
+              ? (dist(
+                  lanePoint(r, c.from.lane, state.direction === 1 ? 1 : 0),
+                  lanePoint(nextRoad, c.to.lane, nextDir === 1 ? 0 : 1),
+                ) /
+                  r.width) *
+                5
+              : 0;
+        linkCost = turnCost + lateral;
+        cache?.links.set(c, linkCost);
+      }
+      const cost =
+        costs.get(current)! +
+        travel +
+        change +
+        Math.max(
+          density,
+          congestion?.get(laneKey(r.id, state.direction, c.from.lane)) ?? 0,
+        ) *
+          0.4 +
+        linkCost;
       if (cost >= (costs.get(next) ?? Infinity)) continue;
       states.set(next, {
         road: nextRoad.id,
@@ -248,7 +355,21 @@ export class Simulation {
   private project?: Project;
   private cs: Connection[] = [];
   private trims = new Map<string, { start: number; end: number }>();
-  private reservations = new Map<string, number>();
+  private mergeController = new IntersectionController();
+  private connectorCache = new Map<string, NonNullable<Vehicle["connector"]>>();
+  private mergeTargets = new Set<string>();
+  private laneEnds = new Map<string, number>();
+  private trafficDelays = new Map<string, number>();
+  private sampledAt = 0;
+  private routingCache: RoutingCache = { changes: new Map(), links: new Map() };
+  statistics = {
+    discretionaryChanges: 0,
+    mandatoryChanges: 0,
+    reroutes: 0,
+    safetyStops: 0,
+    junctionEntries: 0,
+    simultaneousJunctions: 0,
+  };
   configure(p: Project) {
     this.reset();
     normalizePorts(p);
@@ -258,6 +379,20 @@ export class Simulation {
     this.lengths = new Map(
       p.roads.map((r) => [r.id, this.arcs.get(r.id)!.at(-1)!.s]),
     );
+    this.laneEnds.clear();
+    for (const r of p.roads) {
+      const length = this.lengths.get(r.id)!;
+      for (let lane = 0; lane < laneCount(r); lane++) {
+        const direction = laneDirection(r, lane);
+        let last = 0;
+        for (let i = 0; i <= 100; i++) {
+          const t = direction === 1 ? i / 100 : 1 - i / 100;
+          if (laneWidth(r, lane, t) >= Math.max(2, r.width * 0.55))
+            last = (length * i) / 100;
+        }
+        this.laneEnds.set(laneKey(r.id, direction, lane), last);
+      }
+    }
     this.junctions = buildJunctions(p);
     this.trims = new Map(
       p.roads.map((r) => {
@@ -274,6 +409,19 @@ export class Simulation {
       }),
     );
     this.cs = connections(p);
+    this.routingCache.trims = this.trims;
+    this.mergeTargets.clear();
+    const inputs = new Map<string, Set<string>>();
+    for (const c of this.cs) {
+      const k = `${c.to.road}:${c.to.lane}`;
+      let set = inputs.get(k);
+      if (!set) {
+        set = new Set();
+        inputs.set(k, set);
+      }
+      set.add(`${c.from.road}:${c.from.lane}`);
+    }
+    for (const [k, set] of inputs) if (set.size > 1) this.mergeTargets.add(k);
     this.routes = [];
     for (const source of p.ports.filter(isSource))
       for (const sink of p.ports.filter(isSink)) {
@@ -287,6 +435,7 @@ export class Simulation {
           undefined,
           0,
           this.lengths,
+          this.routingCache,
         );
         if (route) this.routes.push({ source, sink, route });
         else this.unreachable++;
@@ -303,7 +452,20 @@ export class Simulation {
     this.unreachable = 0;
     this.generated = 0;
     this.demand.clear();
-    this.reservations.clear();
+    this.mergeController.clear();
+    this.connectorCache.clear();
+    this.trafficDelays.clear();
+    this.sampledAt = 0;
+    this.routingCache.changes.clear();
+    this.routingCache.links.clear();
+    this.statistics = {
+      discretionaryChanges: 0,
+      mandatoryChanges: 0,
+      reroutes: 0,
+      safetyStops: 0,
+      junctionEntries: 0,
+      simultaneousJunctions: 0,
+    };
   }
   private rand() {
     this.randomState = (this.randomState * 1664525 + 1013904223) >>> 0;
@@ -343,6 +505,47 @@ export class Simulation {
     car.heading = Math.atan2(b.z - a.z, b.x - a.x);
     car.pitch = Math.atan2(b.y - a.y, Math.hypot(b.x - a.x, b.z - a.z));
   }
+  private advanceConnector(
+    car: Vehicle,
+    connector: NonNullable<Vehicle["connector"]>,
+    distance: number,
+  ) {
+    const travelled = connector.progress * connector.length + distance;
+    if (travelled >= connector.length) {
+      car.connector = undefined;
+      car.s = Math.min(
+        this.exit(car.route[car.step]),
+        car.s + travelled - connector.length,
+      );
+      this.pose(car);
+      return;
+    }
+    connector.progress = travelled / connector.length;
+    const t = arcParameter(connector.arc, travelled),
+      a = bezier(
+        connector.from,
+        connector.c1,
+        connector.c2,
+        connector.to,
+        clamp(t - 0.001),
+      ),
+      b = bezier(
+        connector.from,
+        connector.c1,
+        connector.c2,
+        connector.to,
+        clamp(t + 0.001),
+      );
+    car.position = bezier(
+      connector.from,
+      connector.c1,
+      connector.c2,
+      connector.to,
+      t,
+    );
+    car.heading = Math.atan2(b.z - a.z, b.x - a.x);
+    car.pitch = Math.atan2(b.y - a.y, Math.hypot(b.x - a.x, b.z - a.z));
+  }
   private occupancy(exclude?: number) {
     const result = new Map<string, number>();
     for (const car of this.vehicles) {
@@ -351,7 +554,53 @@ export class Simulation {
         k = laneKey(step.road, step.direction, Math.round(car.lane));
       result.set(k, (result.get(k) ?? 0) + (car.speed < 1 ? 2 : 1));
     }
+    for (const [k, delay] of this.trafficDelays)
+      result.set(k, (result.get(k) ?? 0) + delay / 0.4);
     return result;
+  }
+  private sampleTraffic() {
+    if (this.elapsed - this.sampledAt < 1) return;
+    this.sampledAt = this.elapsed;
+    const sums = new Map<
+      string,
+      { speed: number; count: number; road: Road }
+    >();
+    for (const car of this.vehicles) {
+      if (car.connector) continue;
+      const step = car.route[car.step],
+        k = laneKey(step.road, step.direction, Math.round(car.lane)),
+        r = this.roads.get(step.road);
+      if (!r) continue;
+      let row = sums.get(k);
+      if (!row) {
+        row = { speed: 0, count: 0, road: r };
+        sums.set(k, row);
+      }
+      row.speed += car.speed;
+      row.count++;
+    }
+    for (const k of new Set([...this.trafficDelays.keys(), ...sums.keys()])) {
+      const row = sums.get(k),
+        v = row ? row.speed / row.count : 0;
+      const occupied = row
+        ? Math.min(
+            this.lengths.get(row.road.id)!,
+            row.count * (VEHICLE_LENGTH + v * 1.2),
+          )
+        : 0;
+      const sample = row
+        ? Math.min(
+            90,
+            Math.max(
+              0,
+              occupied / Math.max(1, v) - occupied / (row.road.speed / 3.6),
+            ),
+          )
+        : 0;
+      const delay = (this.trafficDelays.get(k) ?? sample) * 0.8 + sample * 0.2;
+      if (delay < 0.05) this.trafficDelays.delete(k);
+      else this.trafficDelays.set(k, delay);
+    }
   }
   private spawn(index: TrafficIndex<Vehicle>) {
     const congestion = this.occupancy();
@@ -389,6 +638,7 @@ export class Simulation {
           congestion,
           0,
           this.lengths,
+          this.routingCache,
         );
         if (!route) continue;
         const step = route[0],
@@ -418,6 +668,7 @@ export class Simulation {
           s: entry,
           lane: step.inLane,
           speed: initialSpeed,
+          driver: driverProfile(this.id + 1),
           age: 0,
           color: Math.floor(this.rand() * 5),
           position: { x: 0, y: 0, z: 0 },
@@ -434,7 +685,10 @@ export class Simulation {
       }
     }
   }
-  private connector(step: Step, next: Step) {
+  private connector(step: Step, next: Step): NonNullable<Vehicle["connector"]> {
+    const id = `${step.road}:${step.outLane}>${next.road}:${next.inLane}`;
+    const cached = this.connectorCache.get(id);
+    if (cached) return { ...cached, progress: 0 };
     const r = this.roads.get(step.road)!,
       nr = this.roads.get(next.road)!,
       len = this.lengths.get(r.id)!,
@@ -470,10 +724,72 @@ export class Simulation {
           (a) => a.road === nr.id && a.end === (next.direction === 1 ? 0 : 1),
         ),
     )?.id;
-    return { from, to, c1, c2, arc, length: s, progress: 0, junction };
+    const controlJunction =
+      junction ||
+      (this.mergeTargets.has(`${nr.id}:${next.inLane}`)
+        ? `merge:${nr.id}:${next.inLane}`
+        : undefined);
+    const ad = mul(tangent(r, ft), step.direction),
+      bd = mul(tangent(nr, nt), next.direction);
+    const cross = ad.x * bd.z - ad.z * bd.x,
+      dot = ad.x * bd.x + ad.z * bd.z;
+    const points = Array.from({ length: 21 }, (_, i) =>
+      bezier(from, c1, c2, to, i / 20),
+    );
+    const movement: Movement | undefined = controlJunction
+      ? {
+          id,
+          junction: controlJunction,
+          from: `${r.id}:${step.outLane}`,
+          to: `${nr.id}:${next.inLane}`,
+          points: [add(from, mul(ad, -2.2)), ...points, add(to, mul(bd, 2.2))],
+          priority: r.kind === "ramp" ? 0 : r.speed >= 80 ? 3 : 1,
+          merge: this.mergeTargets.has(`${nr.id}:${next.inLane}`),
+          turn: dot > 0.9 ? "straight" : cross > 0 ? "right" : "left",
+        }
+      : undefined;
+    let radius = Infinity;
+    for (let i = 1; i < points.length - 1; i++) {
+      const a = points[i - 1],
+        b = points[i],
+        c = points[i + 1],
+        ab = dist(a, b),
+        bc = dist(b, c),
+        ac = dist(a, c),
+        area = Math.abs((b.x - a.x) * (c.z - a.z) - (b.z - a.z) * (c.x - a.x));
+      if (area > 1e-7) radius = Math.min(radius, (ab * bc * ac) / (2 * area));
+    }
+    const speedLimit = Math.min(
+      r.speed / 3.6,
+      nr.speed / 3.6,
+      Math.max(3.2, Math.sqrt(radius * 2.3)),
+    );
+    const result = {
+      id,
+      from,
+      to,
+      c1,
+      c2,
+      arc,
+      length: s,
+      progress: 0,
+      junction: controlJunction,
+      movement,
+      speedLimit,
+    };
+    this.connectorCache.set(id, result);
+    return { ...result };
   }
   private reroute(car: Vehicle) {
-    if (!this.project || car.connector || car.laneChange) return;
+    if (
+      !this.project ||
+      car.connector ||
+      car.laneChange ||
+      this.elapsed < (car.nextRouteDecision ?? 0) ||
+      this.elapsed - (car.lastRerouteAt ?? -Infinity) < 10
+    )
+      return;
+    car.nextRouteDecision = this.elapsed + 5;
     const current = car.route[car.step],
       destination = car.route.at(-1)!,
       lane = Math.round(car.lane),
@@ -498,6 +814,7 @@ export class Simulation {
         this.occupancy(car.id),
         car.s,
         this.lengths,
+        this.routingCache,
       );
     if (!route || route[0].inLane !== lane) return;
     const remaining = car.route.slice(car.step);
@@ -512,8 +829,239 @@ export class Simulation {
       )
     )
       return;
+    const congestion = this.occupancy(car.id);
+    const cost = (steps: Step[]) =>
+      steps.reduce((sum, st, i) => {
+        const road = this.roads.get(st.road)!;
+        return (
+          sum +
+          Math.max(0, this.lengths.get(st.road)! - (i === 0 ? car.s : 0)) /
+            (road.speed / 3.6) +
+          Math.abs(st.inLane - st.outLane) * 2.5 +
+          Math.max(
+            congestion.get(laneKey(st.road, st.direction, st.inLane)) ?? 0,
+            congestion.get(laneKey(st.road, st.direction, st.outLane)) ?? 0,
+          ) *
+            0.4
+        );
+      }, 0);
+    const oldCost = cost(remaining),
+      newCost = cost(route);
+    const missed =
+      20 * Math.abs(current.outLane - car.lane) + 6 >
+      this.exit(current) - car.s;
+    if (!missed && (oldCost - newCost < 2.5 || newCost > oldCost * 0.85))
+      return;
     car.route = route;
     car.step = 0;
+    car.preferredLane = undefined;
+    car.lastRerouteAt = this.elapsed;
+    this.statistics.reroutes++;
+  }
+  private chooseLane(car: Vehicle, r: Road, end: number, lanes: LaneTraffic) {
+    const step = car.route[car.step],
+      current = Math.round(car.lane),
+      driver = car.driver ?? DEFAULT_DRIVER,
+      v0 = (r.speed / 3.6) * driver.speedFactor;
+    const here = lanes.neighbours(r.id, step.direction, current, car.s, car.id);
+    const follow = (
+      speed: number,
+      leader: LaneSample | undefined,
+      s: number,
+      profile: DriverProfile,
+    ) =>
+      followingAcceleration(
+        speed,
+        (r.speed / 3.6) * profile.speedFactor,
+        profile,
+        leader
+          ? { gap: leader.s - s - VEHICLE_LENGTH, speed: leader.speed }
+          : undefined,
+      );
+    const before = followingAcceleration(
+      car.speed,
+      v0,
+      driver,
+      here.leader
+        ? {
+            gap: here.leader.s - car.s - VEHICLE_LENGTH,
+            speed: here.leader.speed,
+          }
+        : undefined,
+    );
+    let best = current,
+      score = 0.25;
+    for (const candidate of [current - 1, current + 1]) {
+      if (
+        candidate < 0 ||
+        candidate >= laneCount(r) ||
+        laneDirection(r, candidate) !== step.direction
+      )
+        continue;
+      const t = arcParameter(
+        this.arcs.get(r.id)!,
+        step.direction === 1 ? car.s : this.lengths.get(r.id)! - car.s,
+      );
+      if (laneWidth(r, candidate, t) < r.width * 0.85) continue;
+      const candidateEnd =
+        this.laneEnds.get(laneKey(r.id, step.direction, candidate)) ?? end;
+      if (
+        candidateEnd < end - 1 &&
+        candidateEnd - car.s < laneChangeLength(car.speed) * 2 + 12
+      )
+        continue;
+      const required = car.route[car.step + 1] ? step.outLane : current;
+      const junctionApproach =
+        (step.direction === 1
+          ? this.trims.get(r.id)?.end
+          : this.trims.get(r.id)?.start) ?? 0;
+      if (
+        Math.abs(candidate - required) > Math.abs(current - required) &&
+        end - car.s <
+          Math.max(
+            junctionApproach > 0 ? 200 : 0,
+            laneChangeLength(car.speed) * (Math.abs(candidate - required) + 1) +
+              35,
+          )
+      )
+        continue;
+      const neighbours = lanes.neighbours(
+          r.id,
+          step.direction,
+          candidate,
+          car.s,
+          car.id,
+        ),
+        front = neighbours.leader,
+        back = neighbours.follower;
+      if (front && front.s - car.s < VEHICLE_LENGTH + driver.minimumGap)
+        continue;
+      const backDriver = back
+        ? (back.driver ?? driverProfile(back.id))
+        : driver;
+      if (back && car.s - back.s < VEHICLE_LENGTH + backDriver.minimumGap)
+        continue;
+      const ownAfter = follow(car.speed, front, car.s, driver);
+      const followerBefore = back
+        ? follow(back.speed, front, back.s, backDriver)
+        : 0;
+      const followerAfter = back
+        ? followingAcceleration(
+            back.speed,
+            (r.speed / 3.6) * backDriver.speedFactor,
+            backDriver,
+            { gap: car.s - back.s - VEHICLE_LENGTH, speed: car.speed },
+          )
+        : 0;
+      const oldBack = here.follower,
+        oldDriver = oldBack
+          ? (oldBack.driver ?? driverProfile(oldBack.id))
+          : driver;
+      const oldBefore = oldBack
+        ? followingAcceleration(
+            oldBack.speed,
+            (r.speed / 3.6) * oldDriver.speedFactor,
+            oldDriver,
+            { gap: car.s - oldBack.s - VEHICLE_LENGTH, speed: car.speed },
+          )
+        : 0;
+      const oldAfter = oldBack
+        ? follow(oldBack.speed, here.leader, oldBack.s, oldDriver)
+        : 0;
+      const routeBias = car.route[car.step + 1]
+        ? 0.65 * (Math.abs(current - required) - Math.abs(candidate - required))
+        : 0;
+      const rightBias =
+        r.speed >= 80 ? (candidate - current) * step.direction * 0.3 : 0;
+      const incentive = laneChangeIncentive({
+        before,
+        after: ownAfter,
+        followerBefore,
+        followerAfter,
+        oldFollowerBefore: oldBefore,
+        oldFollowerAfter: oldAfter,
+        driver,
+        bias: routeBias + rightBias,
+      });
+      if (incentive > score) {
+        score = incentive;
+        best = candidate;
+      }
+    }
+    return best;
+  }
+  private junctionPermissions(lanes: LaneTraffic) {
+    const cars = new Map(this.vehicles.map((c) => [c.id, c]));
+    for (const [id, movement] of this.mergeController.reservations) {
+      const car = cars.get(id),
+        step = car?.route[car.step];
+      if (
+        !car ||
+        (!car.connector &&
+          (!step ||
+            !movement.to.startsWith(step.road + ":") ||
+            car.s >= this.entry(step) + VEHICLE_LENGTH + 1))
+      )
+        this.mergeController.leave(id);
+    }
+    const requests: JunctionRequest[] = [];
+    const permitted = new Set<number>();
+    for (const car of this.vehicles) {
+      if (car.connector || car.laneChange) continue;
+      const step = car.route[car.step],
+        next = car.route[car.step + 1];
+      if (!step || !next) continue;
+      const distance = this.exit(step) - car.s;
+      if (distance > Math.max(CONNECTION_LOOKAHEAD, car.speed * 3.5)) continue;
+      if (Math.abs(car.lane - step.outLane) > 0.15) continue;
+      const connector = this.connector(step, next);
+      if (!connector.movement) continue;
+      if (this.controlsMerge(connector.movement)) {
+        if (distance > Math.max(15, car.speed * 3.5)) continue;
+        // Only the queue head can reserve a merge. Ordinary unsignalized
+        // junctions use continuous following and destination capacity instead.
+        if (
+          lanes.neighbours(
+            step.road,
+            step.direction,
+            step.outLane,
+            car.s,
+            car.id,
+          ).leader
+        )
+          continue;
+      }
+      const first = lanes.neighbours(
+        next.road,
+        next.direction,
+        next.inLane,
+        this.entry(next) - 0.001,
+        car.id,
+      ).leader;
+      const space =
+        !first ||
+        first.s - this.entry(next) >
+          VEHICLE_LENGTH + (car.driver?.minimumGap ?? 1.7) + 1;
+      // Unsignalized junctions currently use destination capacity only.
+      // Cross-direction right of way will be controlled by future signals.
+      if (!this.controlsMerge(connector.movement)) {
+        if (space) permitted.add(car.id);
+        continue;
+      }
+      requests.push({
+        id: car.id,
+        movement: connector.movement,
+        eta: distance < 7 ? 0 : distance / Math.max(1, car.speed),
+        queued: car.speed < 5 && distance < 15,
+        space,
+      });
+    }
+    for (const id of this.mergeController.plan(requests, this.elapsed))
+      permitted.add(id);
+    return permitted;
+  }
+  private controlsMerge(movement: Movement) {
+    return movement.junction.startsWith("merge:");
   }
   update(delta: number) {
     if (!this.running) return;
@@ -531,8 +1079,12 @@ export class Simulation {
       this.timer = Math.max(0, this.timer - 0.2);
       this.spawn(index);
     }
+    this.sampleTraffic();
+    const lanes = new LaneTraffic(this.vehicles);
+    const permissions = this.junctionPermissions(lanes);
     const finished = new Set<number>();
     for (const car of this.vehicles) {
+      car.driver ??= driverProfile(car.id);
       const original = {
         ...car,
         connector: car.connector ? { ...car.connector } : undefined,
@@ -546,26 +1098,44 @@ export class Simulation {
         index.remove(car);
         continue;
       }
-      let acquired: string | undefined, released: string | undefined;
+      let acquired: Movement | undefined;
       if (car.connector) {
         const c = car.connector;
-        c.progress = Math.min(
-          1,
-          c.progress +
-            (dt * Math.min(8, Math.max(4, car.speed))) /
-              Math.max(0.01, c.length),
-        );
-        const t = arcParameter(c.arc, c.progress * c.length),
-          pos = bezier(c.from, c.c1, c.c2, c.to, t),
-          a = bezier(c.from, c.c1, c.c2, c.to, clamp(t - 0.001)),
-          b = bezier(c.from, c.c1, c.c2, c.to, clamp(t + 0.001));
-        car.position = pos;
-        car.heading = Math.atan2(b.z - a.z, b.x - a.x);
-        car.pitch = Math.atan2(b.y - a.y, Math.hypot(b.x - a.x, b.z - a.z));
-        if (c.progress >= 1) {
-          released = c.junction;
-          car.connector = undefined;
+        const downstream = lanes.neighbours(
+          step.road,
+          step.direction,
+          car.lane,
+          car.s - 0.001,
+          car.id,
+        ).leader;
+        const driver = car.driver;
+        let leader: Leader | undefined = downstream
+          ? {
+              gap:
+                (1 - c.progress) * c.length +
+                downstream.s -
+                car.s -
+                VEHICLE_LENGTH,
+              speed: downstream.speed,
+            }
+          : undefined;
+        const ahead = c.id
+          ? lanes.onConnector(c.id, c.progress * c.length, car.id).leader
+          : undefined;
+        if (ahead) {
+          const gap = ahead.s - c.progress * c.length - VEHICLE_LENGTH;
+          if (!leader || gap < leader.gap) leader = { gap, speed: ahead.speed };
         }
+        const acceleration = followingAcceleration(
+          car.speed,
+          Math.min(c.speedLimit ?? 8, (r.speed / 3.6) * driver.speedFactor),
+          driver,
+          leader,
+        );
+        const advance = advanceVehicle(car.speed, acceleration, dt);
+        car.acceleration = acceleration;
+        car.speed = advance.speed;
+        this.advanceConnector(car, c, advance.distance);
       } else {
         const len = this.lengths.get(r.id)!,
           end = this.exit(step),
@@ -610,12 +1180,36 @@ export class Simulation {
             }
           }
         }
-        const target =
+        const routeTarget =
           !next &&
           laneWidth(r, Math.round(car.lane), step.direction === 1 ? 1 : 0) >
             r.width * 0.8
             ? Math.round(car.lane)
             : step.outLane;
+        const currentLane = Math.round(car.lane);
+        const changeEnd = Math.min(
+          end,
+          this.laneEnds.get(laneKey(r.id, step.direction, currentLane)) ?? end,
+        );
+        const preparation = Math.max(
+          90,
+          car.speed * 7 +
+            laneChangeLength(car.speed) * Math.abs(routeTarget - currentLane),
+        );
+        const mustChange =
+          Math.abs(routeTarget - currentLane) > 0.1 &&
+          changeEnd - car.s < preparation;
+        let target = car.laneChange?.to ?? car.preferredLane ?? currentLane;
+        if (mustChange) target = routeTarget;
+        if (
+          !car.laneChange &&
+          this.elapsed >= (car.nextLaneDecision ?? 0) &&
+          this.elapsed - (car.lastLaneChangeAt ?? -Infinity) > 2.5
+        ) {
+          car.nextLaneDecision = this.elapsed + 0.45 + (car.id % 5) * 0.03;
+          if (!mustChange) target = this.chooseLane(car, r, end, lanes);
+          car.preferredLane = target;
+        }
         let desired =
           laneWidth(r, target, t) > r.width * 0.8 ? target : car.lane;
         if (laneWidth(r, Math.round(car.lane), t) < r.width * 0.85) {
@@ -632,35 +1226,66 @@ export class Simulation {
             valid[0] ?? car.lane,
           );
         }
+        if (!car.laneChange && Math.abs(desired - car.lane) > 1)
+          desired = currentLane + Math.sign(desired - currentLane);
+        if (car.laneChange) desired = car.laneChange.to;
         const minimumChange = Math.min(
           20,
+          Math.max(8, car.speed * 1.3),
           Math.max(8, end - this.entry(step) - 6),
         );
         const changeLength = Math.max(
           0,
-          Math.min(laneChangeLength(car.speed), end - car.s - 6),
+          Math.min(
+            laneChangeLength(car.speed),
+            (changeEnd - car.s - 6) /
+              Math.max(1, Math.abs(routeTarget - currentLane)),
+          ),
         );
         const changeTime = Math.min(3, changeLength / Math.max(car.speed, 5));
-        const blockedChange = this.vehicles.some(
-          (o) =>
-            o.id !== car.id &&
-            !o.connector &&
-            o.route[o.step].road === r.id &&
-            o.route[o.step].direction === step.direction &&
-            (Math.abs(o.lane - car.lane) > 0.55 || !!o.laneChange) &&
-            ((o.lane >= Math.min(car.lane, desired) - 0.7 &&
-              o.lane <= Math.max(car.lane, desired) + 0.7) ||
-              (o.laneChange &&
-                o.laneChange.to >= Math.min(car.lane, desired) - 0.7 &&
-                o.laneChange.to <= Math.max(car.lane, desired) + 0.7)) &&
-            ((o.s >= car.s &&
-              o.s - car.s <
-                4.8 + Math.max(0, car.speed - o.speed) * changeTime) ||
-              (o.s < car.s &&
-                car.s - o.s <
-                  (o.laneChange ? 0 : 3.5) +
-                    Math.max(0, o.speed - car.speed) * changeTime)),
-        );
+        const startingChange =
+          !car.laneChange && Math.abs(desired - car.lane) > 0.08;
+        const targetBack = startingChange
+          ? lanes.neighbours(
+              r.id,
+              step.direction,
+              Math.round(desired),
+              car.s,
+              car.id,
+            ).follower
+          : undefined;
+        const unsafeRear =
+          targetBack &&
+          Math.abs(desired - car.lane) > 0.1 &&
+          followingAcceleration(
+            targetBack.speed,
+            r.speed / 3.6,
+            targetBack.driver ?? driverProfile(targetBack.id),
+            { gap: car.s - targetBack.s - VEHICLE_LENGTH, speed: car.speed },
+          ) < -car.driver.safeBrake;
+        const blockedChange =
+          startingChange &&
+          (!!unsafeRear ||
+            this.vehicles.some(
+              (o) =>
+                o.id !== car.id &&
+                !o.connector &&
+                o.route[o.step].road === r.id &&
+                o.route[o.step].direction === step.direction &&
+                (Math.abs(o.lane - car.lane) > 0.55 || !!o.laneChange) &&
+                ((o.lane >= Math.min(car.lane, desired) - 0.7 &&
+                  o.lane <= Math.max(car.lane, desired) + 0.7) ||
+                  (o.laneChange &&
+                    o.laneChange.to >= Math.min(car.lane, desired) - 0.7 &&
+                    o.laneChange.to <= Math.max(car.lane, desired) + 0.7)) &&
+                ((o.s >= car.s &&
+                  o.s - car.s <
+                    4.8 + Math.max(0, car.speed - o.speed) * changeTime) ||
+                  (o.s < car.s &&
+                    car.s - o.s <
+                      (o.laneChange ? 0 : 3.5) +
+                        Math.max(0, o.speed - car.speed) * changeTime)),
+            ));
         if (car.laneChange && Math.abs(car.laneChange.to - desired) > 0.1)
           car.laneChange = undefined;
         if (
@@ -668,107 +1293,142 @@ export class Simulation {
           !blockedChange &&
           changeLength >= minimumChange &&
           Math.abs(desired - car.lane) > 0.08
-        )
+        ) {
           car.laneChange = {
             from: car.lane,
             to: desired,
             start: car.s,
             length: changeLength,
           };
+          if (
+            Math.abs(desired - routeTarget) < Math.abs(car.lane - routeTarget)
+          )
+            this.statistics.mandatoryChanges++;
+          else this.statistics.discretionaryChanges++;
+        }
         // Opposing lane changes at the same longitudinal position cannot both
         // proceed. Let the leading car go first; break ties by stable vehicle id.
-        const swap = this.vehicles.find((o) => {
-          if (o.id === car.id || o.connector) return false;
-          const os = o.route[o.step];
-          return (
-            os.road === r.id &&
-            os.direction === step.direction &&
-            Math.abs(o.s - car.s) < 12 &&
-            Math.abs(o.lane - target) < 0.8 &&
-            Math.abs(os.outLane - car.lane) < 0.8
-          );
-        });
+        const swap =
+          Math.abs(target - car.lane) > 0.1
+            ? this.vehicles.find((o) => {
+                if (o.id === car.id || o.connector) return false;
+                const os = o.route[o.step];
+                return (
+                  os.road === r.id &&
+                  os.direction === step.direction &&
+                  Math.abs(target - car.lane) > 0.1 &&
+                  Math.abs(o.lane - car.lane) > 0.55 &&
+                  Math.abs(o.s - car.s) < 12 &&
+                  Math.abs(o.lane - target) < 0.8 &&
+                  Math.abs(os.outLane - car.lane) < 0.8
+                );
+              })
+            : undefined;
         const yieldSwap =
           swap &&
           (car.s < swap.s - 0.5 ||
             (Math.abs(car.s - swap.s) <= 0.5 && car.id > swap.id));
-        let limit = r.speed / 3.6;
+        let limit = (r.speed / 3.6) * car.driver.speedFactor;
         if (yieldSwap) limit = 0;
-        for (const other of this.vehicles) {
-          if (other.id === car.id || finished.has(other.id)) continue;
-          const os = other.route[other.step];
-          if (
-            os.road === r.id &&
-            os.direction === step.direction &&
-            (Math.abs(other.lane - car.lane) < 0.85 ||
-              (other.laneChange &&
-                car.lane >=
-                  Math.min(other.laneChange.from, other.laneChange.to) - 0.5 &&
-                car.lane <=
-                  Math.max(other.laneChange.from, other.laneChange.to) +
-                    0.5)) &&
-            other.s > car.s
+        const fronts = [
+          Math.floor(car.lane),
+          Math.ceil(car.lane),
+          ...(car.laneChange ? [car.laneChange.to] : []),
+        ]
+          .map(
+            (lane) =>
+              lanes.neighbours(r.id, step.direction, lane, car.s, car.id)
+                .leader,
           )
-            limit = Math.min(
-              limit,
-              Math.max(
-                0,
-                (other.s - car.s - (other.laneChange ? 7 : 4.8)) / 1.4,
-              ),
-            );
-        }
-        if (!car.laneChange && Math.abs(car.lane - target) > 0.08) {
-          const distance = end - car.s - minimumChange - 12;
-          if (distance < 4 + (car.speed * car.speed) / 12)
-            limit = Math.min(limit, Math.max(0, distance / 2));
+          .filter((v): v is LaneSample => !!v);
+        const front = fronts.sort((a, b) => a.s - b.s)[0];
+        let leader: Leader | undefined = front
+          ? { gap: front.s - car.s - VEHICLE_LENGTH, speed: front.speed }
+          : undefined;
+        if (
+          !car.laneChange &&
+          Math.abs(car.lane - routeTarget) > 0.08 &&
+          mustChange
+        ) {
+          // Preserve room for every remaining adjacent change while waiting
+          // for a safe gap, including on short collector/distributor segments.
+          const stop = {
+            gap:
+              changeEnd -
+              car.s -
+              minimumChange * Math.abs(routeTarget - currentLane) -
+              6,
+            speed: 0,
+          };
+          if (!leader || stop.gap < leader.gap) leader = stop;
         }
         const connector =
-          next && end - car.s < 18 ? this.connector(step, next) : undefined;
+          next && end - car.s < CONNECTION_LOOKAHEAD
+            ? this.connector(step, next)
+            : undefined;
         const nextEntry = next ? this.entry(next) : 0;
         const nextTraffic =
-          next && end - car.s < 45
-            ? this.vehicles
-                .filter((o) => {
-                  if (o.id === car.id || o.route[o.step].road !== next.road)
-                    return false;
-                  if (o.route[o.step].direction !== next.direction)
-                    return false;
-                  if (o.s >= nextEntry + 45) return false;
-                  return (
-                    Math.abs(o.lane - next.inLane) < 0.85 ||
-                    (o.laneChange &&
-                      next.inLane >=
-                        Math.min(o.laneChange.from, o.laneChange.to) - 0.5 &&
-                      next.inLane <=
-                        Math.max(o.laneChange.from, o.laneChange.to) + 0.5)
-                  );
-                })
-                .sort((a, b) => a.s - b.s)[0]
+          next && end - car.s < CONNECTION_LOOKAHEAD
+            ? lanes.neighbours(
+                next.road,
+                next.direction,
+                next.inLane,
+                nextEntry - 0.001,
+                car.id,
+              ).leader
             : undefined;
         const nextGap = nextTraffic
-          ? end - car.s + nextTraffic.s - nextEntry
+          ? end -
+            car.s +
+            (connector?.length ?? 0) +
+            nextTraffic.s -
+            nextEntry -
+            VEHICLE_LENGTH
           : Infinity;
-        if (nextTraffic)
+        if (nextTraffic && (!leader || nextGap < leader.gap))
+          leader = { gap: nextGap, speed: nextTraffic.speed };
+        const inJunction = connector?.id
+          ? lanes.onConnector(connector.id, 0, car.id).leader
+          : undefined;
+        if (inJunction) {
+          const gap = end - car.s + inJunction.s - VEHICLE_LENGTH;
+          if (!leader || gap < leader.gap)
+            leader = { gap, speed: inJunction.speed };
+        }
+        const permitted =
+          !connector?.movement ||
+          (permissions.has(car.id) &&
+            (!this.controlsMerge(connector.movement) ||
+              this.mergeController.canEnter(car.id, connector.movement)));
+        if (connector) {
+          const turnSpeed = connector.speedLimit ?? limit;
           limit = Math.min(
             limit,
-            Math.sqrt(Math.max(0, nextTraffic.speed ** 2 + 12 * (nextGap - 7))),
+            Math.sqrt(
+              turnSpeed * turnSpeed +
+                2 * car.driver.comfortableBrake * Math.max(0, end - car.s),
+            ),
           );
-        if (next && connector) {
-          const owner =
-            connector.junction && this.reservations.get(connector.junction);
-          if (owner && owner !== car.id)
-            limit = Math.min(limit, Math.max(0, (end - car.s - 0.4) / 1.3));
-          for (const o of this.vehicles)
-            if (
-              o.id !== car.id &&
-              o.route[o.step].road === next.road &&
-              Math.abs(o.lane - next.inLane) < 0.8 &&
-              o.s < this.entry(next) + 7
-            )
-              limit = Math.min(limit, Math.max(0, (end - car.s - 0.4) / 1.4));
+          if (!permitted) {
+            const stop = { gap: end - car.s - VEHICLE_LENGTH / 2, speed: 0 };
+            if (!leader || stop.gap < leader.gap) leader = stop;
+          }
         }
-        car.speed += clamp(limit - car.speed, -6 * dt, 2.4 * dt);
-        car.s = Math.min(end, car.s + Math.max(0, car.speed) * dt);
+        const acceleration = followingAcceleration(
+          car.speed,
+          Math.max(0.1, limit),
+          car.driver,
+          leader,
+        );
+        const advance = advanceVehicle(car.speed, acceleration, dt);
+        car.acceleration = acceleration;
+        car.speed = advance.speed;
+        const travelled = car.s + advance.distance;
+        car.s = Math.min(end, travelled);
+        if (!permitted && car.s > end - VEHICLE_LENGTH / 2 - 0.15) {
+          car.s = Math.max(original.s, end - VEHICLE_LENGTH / 2 - 0.15);
+          car.speed = 0;
+        }
         if (car.laneChange) {
           const change = car.laneChange,
             progress = (car.s - change.start) / change.length;
@@ -776,6 +1436,8 @@ export class Simulation {
           if (progress >= 1) {
             car.lane = change.to;
             car.laneChange = undefined;
+            car.lastLaneChangeAt = this.elapsed;
+            car.nextLaneDecision = this.elapsed + 2.5;
           }
         }
         if (car.s >= end - 0.00001 && Math.abs(car.lane - target) < 0.12) {
@@ -784,13 +1446,16 @@ export class Simulation {
             this.completed++;
             this.totalTime += car.age;
             index.remove(car);
+            this.mergeController.leave(car.id);
             continue;
           }
           const c = connector || this.connector(step, next);
-          const owner = c.junction && this.reservations.get(c.junction);
           if (
-            (owner && owner !== car.id) ||
-            (nextTraffic && nextTraffic.s - nextEntry < 7)
+            (c.movement &&
+              (!permissions.has(car.id) ||
+                (this.controlsMerge(c.movement) &&
+                  !this.mergeController.canEnter(car.id, c.movement)))) ||
+            (nextTraffic && nextTraffic.s - nextEntry < VEHICLE_LENGTH + 2)
           ) {
             car.s = Math.min(car.s, end - 0.05);
             car.speed = 0;
@@ -800,11 +1465,10 @@ export class Simulation {
             car.s = this.entry(next);
             car.lane = next.inLane;
             car.laneChange = undefined;
-            if (c.length > 0.15) {
-              car.connector = c;
-              car.position = c.from;
-              acquired = c.junction;
-            } else this.pose(car);
+            car.preferredLane = undefined;
+            car.connector = c;
+            this.advanceConnector(car, c, Math.max(0, travelled - end));
+            acquired = c.movement;
           }
         } else this.pose(car);
       }
@@ -813,11 +1477,20 @@ export class Simulation {
         Object.assign(car, original);
         car.age = age;
         car.speed = 0;
+        this.statistics.safetyStops++;
       } else {
         index.update(car);
-        if (acquired) this.reservations.set(acquired, car.id);
-        if (released && this.reservations.get(released) === car.id)
-          this.reservations.delete(released);
+        if (acquired) {
+          if (this.controlsMerge(acquired))
+            this.mergeController.enter(car.id, acquired);
+          this.statistics.junctionEntries++;
+          this.statistics.simultaneousJunctions = Math.max(
+            this.statistics.simultaneousJunctions,
+            this.vehicles.filter(
+              (other) => other.connector?.junction === acquired.junction,
+            ).length,
+          );
+        }
       }
       if (!car.connector && !car.laneChange && car.speed < 0.5) {
         car.stalledFor = (car.stalledFor ?? 0) + dt;
@@ -826,6 +1499,24 @@ export class Simulation {
           this.reroute(car);
         }
       } else car.stalledFor = 0;
+      if (
+        !car.connector &&
+        !car.laneChange &&
+        this.elapsed - (car.lastRerouteAt ?? 0) > 10 &&
+        (car.speed <
+          ((this.roads.get(car.route[car.step].road)?.speed ?? 50) / 3.6) *
+            0.6 ||
+          car.route
+            .slice(car.step)
+            .some(
+              (st) =>
+                (this.trafficDelays.get(
+                  laneKey(st.road, st.direction, st.inLane),
+                ) ?? 0) > 5,
+            )) &&
+        (Math.floor(this.elapsed * 2) + car.id) % 17 === 0
+      )
+        this.reroute(car);
     }
     this.vehicles = this.vehicles.filter((c) => !finished.has(c.id));
   }

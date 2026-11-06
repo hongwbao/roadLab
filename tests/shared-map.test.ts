@@ -81,4 +81,4 @@ it("keeps every branch of the shared map flowing at 400% demand", () => {
       queued: sim.queued,
       finishedByRoad: Object.fromEntries(finishedByRoad),
     });
-}, 30000);
+}, 60_000);

@@ -1,4 +1,4 @@
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 import { emptyProject } from "../src/core/model";
 import {
   deleteNamedMap,
@@ -45,4 +45,21 @@ it("rejects invalid names and reports damaged storage without replacing it", () 
   storage.setItem("roadlab:named-maps:v1", "{");
   expect(() => listSavedMaps(storage)).toThrow("无法读取");
   expect(storage.getItem("roadlab:named-maps:v1")).toBe("{");
+});
+
+it("saves distinct named maps when randomUUID is unavailable on an HTTP LAN origin", () => {
+  vi.stubGlobal("crypto", {});
+  try {
+    const storage = memoryStorage();
+    const project = emptyProject();
+    const first = saveNamedMap(storage, project, "局域网存档 A");
+    const second = saveNamedMap(storage, project, "局域网存档 B");
+    expect(first.id).not.toBe(second.id);
+    expect(loadNamedMap(storage, first.id)).toEqual(project);
+    expect(loadNamedMap(storage, second.id)).toEqual(project);
+    expect(saveNamedMap(storage, project, "局域网存档 A").id).toBe(first.id);
+    expect(listSavedMaps(storage)).toHaveLength(2);
+  } finally {
+    vi.unstubAllGlobals();
+  }
 });
