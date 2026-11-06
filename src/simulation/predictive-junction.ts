@@ -26,6 +26,7 @@ export type PredictionAgent = {
   turnSpeed: number;
   exitSpeed: number;
   canExit: boolean;
+  stopS?: number;
   leader?: Leader;
   leaderId?: number;
 };
@@ -192,6 +193,10 @@ export class PredictiveJunctionController {
         const stop = { gap: -s - 1.9, speed: 0 };
         if (!leader || stop.gap < leader.gap) leader = stop;
       }
+      if (agent.stopS !== undefined && s < agent.stopS) {
+        const stop = { gap: agent.stopS - s - 1.9, speed: 0 };
+        if (!leader || stop.gap < leader.gap) leader = stop;
+      }
       const desired =
         s < 0
           ? Math.min(
@@ -311,7 +316,8 @@ export class PredictiveJunctionController {
         winner.path.id !== c.winnerPath ||
         loser.path.id !== c.loserPath ||
         winner.s > c.exitS ||
-        (!winner.canExit && winner.s < 0)
+        (!winner.canExit && winner.s < 0) ||
+        (winner.stopS !== undefined && winner.s < 0)
       )
         this.commitments.delete(key);
     }

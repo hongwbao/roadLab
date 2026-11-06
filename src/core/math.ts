@@ -67,7 +67,7 @@ export function normal(r: Road, t: number): V {
   const d = tangent(r, t);
   return norm(v(-d.z, d.x));
 }
-export const countAt = (r: Road, t: number) => {
+export const baseCountAt = (r: Road, t: number) => {
   const p = r.profile,
     u = p ? p.start + (p.end - p.start) * t : t;
   return (
@@ -83,16 +83,34 @@ export const countAt = (r: Road, t: number) => {
       )
   );
 };
+export function taperWeight(r: Road, t: number, end: "start" | "end") {
+  const taper = r.autoTaper?.[end];
+  return taper ? 1 - smooth((end === "start" ? t : 1 - t) / taper.span) : 0;
+}
+export function countAt(r: Road, t: number): number {
+  if (!r.autoTaper) return baseCountAt(r, t);
+  let width = 0;
+  for (let lane = 0; lane < laneCount(r); lane++)
+    width += laneWidth(r, lane, t);
+  return width / (r.width * (r.twoWay ? 2 : 1));
+}
 export const totalAt = (r: Road, t: number) =>
   countAt(r, t) * (r.twoWay ? 2 : 1);
 export function center(r: Road, t: number): V {
+  const baseTotal = baseCountAt(r, t) * (r.twoWay ? 2 : 1);
   const delta =
-    ((totalAt(r, t) - (r.widthOrigin ?? totalAt(r, 0))) * r.width) / 2;
+    ((baseTotal - (r.widthOrigin ?? baseCountAt(r, 0) * (r.twoWay ? 2 : 1))) *
+      r.width) /
+    2;
+  const automaticOffset =
+    (r.autoTaper?.start?.offset ?? 0) * taperWeight(r, t, "start") +
+    (r.autoTaper?.end?.offset ?? 0) * taperWeight(r, t, "end");
   return add(
     point(r, t),
     mul(
       normal(r, t),
-      r.align === "left" ? delta : r.align === "right" ? -delta : 0,
+      (r.align === "left" ? delta : r.align === "right" ? -delta : 0) +
+        automaticOffset,
     ),
   );
 }
@@ -111,7 +129,15 @@ export function laneWidth(r: Road, lane: number, t: number): number {
       : r.align === "right"
         ? max - 1 - lane
         : lane;
-  return clamp(countAt(r, t) - index) * r.width;
+  let width = clamp(baseCountAt(r, t) - index) * r.width;
+  for (const end of ["start", "end"] as const) {
+    const taper = r.autoTaper?.[end];
+    if (!taper) continue;
+    const order = r.twoWay ? index : lane;
+    if (order < taper.firstLane || order >= taper.firstLane + taper.lanes)
+      width *= 1 - taperWeight(r, t, end);
+  }
+  return width;
 }
 export function lanePoint(r: Road, lane: number, t: number): V {
   let offset = 0;

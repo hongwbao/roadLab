@@ -38,6 +38,11 @@ import {
   attachLanes,
   turnOf,
 } from "./lane-rules";
+import {
+  normalizeTrafficSignals,
+  validateTrafficSignals,
+} from "./traffic-signals";
+import { updateAutomaticTransitions } from "./auto-transitions";
 export function makeRoad(
   p0: V,
   p3: V,
@@ -258,7 +263,9 @@ export function connections(p: Project): Connection[] {
 }
 // Connections are derived from geometry; historical manual overrides are retired.
 export function autoJunction(p: Project) {
+  updateAutomaticTransitions(p);
   p.connections = [];
+  normalizeTrafficSignals(p);
   for (const road of p.roads) {
     for (const lane of Object.keys(road.turns ?? {}))
       if (Number(lane) >= laneCount(road)) delete road.turns![lane];
@@ -344,7 +351,12 @@ export function splitRoad(
   if (i < 0 || t < 0.025 || t > 0.975) return;
   const r = p.roads[i];
   const [a, b] = splitCurve(r, t);
+  delete a.autoTaper;
+  delete b.autoTaper;
   b.id = uid();
+  for (const signal of p.signals ?? [])
+    for (const arm of signal.arms)
+      if (arm.road === id && arm.end === 1) arm.road = b.id;
   b.name = r.name + " · 后段";
   if (r.lanesStart !== r.lanesEnd || r.profile) {
     const profile = r.profile || {
@@ -576,6 +588,7 @@ export function makeBranch(
   return ramp.id;
 }
 export function reverseRoad(r: Road) {
+  delete r.autoTaper;
   delete r.attachments;
   delete r.turns;
   const origin = r.widthOrigin ?? totalAt(r, 0);
@@ -836,6 +849,34 @@ export function parseProject(text: string): Project {
       throw new Error("渐变区参数不合法。");
   }
   for (const r of p.roads as Road[]) {
+    if (r.autoTaper !== undefined) {
+      if (
+        !r.autoTaper ||
+        typeof r.autoTaper !== "object" ||
+        Array.isArray(r.autoTaper) ||
+        r.profile ||
+        r.lanesStart !== r.lanesEnd
+      )
+        throw new Error("自动过渡参数不合法。");
+      for (const [end, taper] of Object.entries(r.autoTaper))
+        if (
+          !["start", "end"].includes(end) ||
+          !taper ||
+          !Number.isInteger(taper.lanes) ||
+          taper.lanes < 1 ||
+          taper.lanes >= r.lanesStart ||
+          !Number.isInteger(taper.firstLane) ||
+          taper.firstLane < 0 ||
+          taper.firstLane + taper.lanes > r.lanesStart ||
+          !finite(taper.offset) ||
+          Math.abs(taper.offset) > r.lanesStart * r.width ||
+          !finite(taper.span) ||
+          taper.span <= 0 ||
+          taper.span > 0.95 ||
+          (r.twoWay && taper.firstLane !== 0)
+        )
+          throw new Error("自动过渡参数不合法。");
+    }
     if (r.turns !== undefined) {
       if (!r.turns || typeof r.turns !== "object" || Array.isArray(r.turns))
         throw new Error("车道转向规则格式错误。");
@@ -886,6 +927,7 @@ export function parseProject(text: string): Project {
       }
     }
   }
+  validateTrafficSignals(p);
   p.connections = [];
   for (const x of p.ports)
     if (
@@ -911,12 +953,14 @@ export function parseProject(text: string): Project {
         name: t.name,
         roads: t.roads,
         connections: t.connections,
+        signals: t.signals,
         ports: [],
         templates: [],
       }),
     );
   }
   normalizePorts(p);
+  normalizeTrafficSignals(p);
   return p;
 }
 export function reconnectIntersections(p: Project): number {

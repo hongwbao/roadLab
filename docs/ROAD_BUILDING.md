@@ -35,4 +35,4 @@
 - `tests/lane-building.test.ts`：指定车道、成组接头、双向目标、保存分段、左右分流、多上游接入、转向可达性及车辆实际通行。
 - `tests/browser/editor.spec.ts`：真实鼠标操作、Tab、存档恢复、撤销重做、中段匝道和桌面／窄屏控件检查。
 
-本轮不修改已接受的预测交通 AI。高流量长期死锁等已知限制仍见 [交通 AI](TRAFFIC_AI.md)。
+车道建造保留原有预测交通 AI；当前可另行添加 [红绿灯](TRAFFIC_LIGHTS.md) 控制路口。高流量长期死锁等已知限制仍见 [交通 AI](TRAFFIC_AI.md)。

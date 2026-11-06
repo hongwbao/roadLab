@@ -1,4 +1,5 @@
 import { getAsset } from "../core/assets";
+import { automaticTransitionPreview } from "../core/auto-transitions";
 import {
   add,
   center,
@@ -41,6 +42,7 @@ import {
   validate,
 } from "../core/model";
 import { endpointAnchors, laneAnchors, type Alignment } from "../core/snapping";
+import { segmentRoads } from "../core/road-segments";
 import {
   allowedTurns,
   attachLanes,
@@ -60,6 +62,8 @@ import {
 } from "../core/types";
 import { Scene, type Hit } from "../render/scene";
 import { Simulation } from "../simulation/simulation";
+import { TrafficLightTool } from "./traffic-light-tool";
+import { cloneTrafficSignals } from "../core/traffic-signals";
 export type SnapInfo = {
   kind: "endpoint" | "offset" | "road" | "angle" | "grid" | "lane";
   position: V;
@@ -80,6 +84,7 @@ export class Editor {
   history = new History();
   scene: Scene;
   simulation = new Simulation();
+  signalTool = new TrafficLightTool(this);
   tool: Tool = "select";
   assetId = "city-2";
   alignment: Alignment = "auto";
@@ -97,7 +102,7 @@ export class Editor {
   settings: Settings = {
     grid: true,
     snap: true,
-    arrows: true,
+    arrows: false,
     paths: false,
     layer: -1,
     ghost: true,
@@ -289,6 +294,7 @@ export class Editor {
       delete: "拆除模式 · 悬停道路预览 · 左键拆除 · B / Esc 退出",
       upgrade: "先选择道路资产，再点击已有道路替换",
       turn: "点击地图中的车道，设置允许的左转、直行和右转 · J / Esc 退出",
+      signal: "点击路口中心设置红绿灯 · 右键移除 · K / Esc 退出",
     }[this.tool];
   }
   private updateSnapFeedback() {
@@ -788,6 +794,8 @@ export class Editor {
     } catch {
       invalid = true;
     }
+    const transitionPreview = automaticTransitionPreview(this.project, bundle);
+    bundle = transitionPreview.roads;
     const warning =
       maxGrade(road) > 15
         ? "坡度过大，请延长道路"
@@ -815,7 +823,7 @@ export class Editor {
     );
     this.updateSnapFeedback();
     this.onStatus(
-      `${warning ? warning + " · " : ""}${this.snapInfo?.text || this.instructions()} · ${roadLength(road).toFixed(0)} m · 最大坡度 ${maxGrade(road).toFixed(1)}%`,
+      `${warning ? warning + " · " : ""}${transitionPreview.hasTransitions ? "自动生成车道过渡 · " : ""}${this.snapInfo?.text || this.instructions()} · ${roadLength(road).toFixed(0)} m · 最大坡度 ${maxGrade(road).toFixed(1)}%`,
     );
   }
   private finishDraw() {
@@ -883,28 +891,44 @@ export class Editor {
             splitRoad(this.project, old.id, n.t);
         }
       }
+      const beforeBuild = new Set(this.project.roads.map((road) => road.id));
       this.project.roads.push(r);
       const action = getAsset(this.assetId).action;
       if (action)
         makeBranch(this.project, r.id, action === "merge", {
           ...this.branchOptions(r),
         });
+      segmentRoads(
+        this.project,
+        new Set(
+          this.project.roads
+            .filter((road) => !beforeBuild.has(road.id))
+            .map((road) => road.id),
+        ),
+      );
       reconnectIntersections(this.project);
       autoJunction(this.project);
       this.selected.clear();
     }, "道路已建造");
+    const continuation = this.project.roads.find(
+      (road) =>
+        dist(center(road, 1), center(r, 1)) < 0.01 &&
+        tangent(road, 1).x * tangent(r, 1).x +
+          tangent(road, 1).z * tangent(r, 1).z >
+          0.99,
+    );
     const keep =
       this.continuous &&
       r.lanesStart === r.lanesEnd &&
       !getAsset(this.assetId).action &&
-      this.project.roads.some((road) => road.id === r.id);
-    this.drawPoints = keep ? [copy(center(r, 1))] : [];
+      continuation;
+    this.drawPoints = keep ? [copy(center(continuation!, 1))] : [];
     this.drawStartSnap = keep
       ? {
           kind: "endpoint",
-          position: copy(center(r, 1)),
-          contact: copy(center(r, 1)),
-          road: r.id,
+          position: copy(center(continuation!, 1)),
+          contact: copy(center(continuation!, 1)),
+          road: continuation!.id,
           t: 1,
           text: "继续建造道路",
         }
@@ -939,6 +963,10 @@ export class Editor {
         this.drawPoints.length ? this.draw.endHeight : this.draw.height,
       );
     if (!raw) return;
+    if (this.tool === "signal") {
+      this.signalTool.select(e.clientX, e.clientY);
+      return;
+    }
     if (this.tool === "turn") {
       const choice = this.turnHit(e.clientX, e.clientY);
       if (choice) {
@@ -1003,6 +1031,15 @@ export class Editor {
   }
 
   private rightClick(e: PointerEvent) {
+    if (this.tool === "signal") {
+      const junction = this.signalTool.hit(e.clientX, e.clientY);
+      if (junction) {
+        this.signalTool.selected = junction.id;
+        this.signalTool.remove();
+        this.onChange();
+        return;
+      }
+    }
     const port = this.boundaryHit(e.clientX, e.clientY);
     if (
       (this.tool === "boundary" || this.tool === "select") &&
@@ -1186,6 +1223,13 @@ export class Editor {
         canvas.style.cursor = "crosshair";
         return;
       }
+      if (this.tool === "signal") {
+        const junction = this.signalTool.hit(e.clientX, e.clientY);
+        this.scene.setHover();
+        this.scene.showBuildMarker(junction?.position, true);
+        canvas.style.cursor = "crosshair";
+        return;
+      }
       const hit = this.scene.hit(e.clientX, e.clientY);
       this.hovered = hit?.road;
       this.scene.setHover(
@@ -1334,6 +1378,8 @@ export class Editor {
       if (key === "u") this.setTool("upgrade");
       if (key === "i") this.setTool("boundary");
       if (key === "j") this.setTool(this.tool === "turn" ? "select" : "turn");
+      if (key === "k")
+        this.setTool(this.tool === "signal" ? "select" : "signal");
       if (e.key === "Escape") {
         this.setTool("select");
         return;
@@ -1393,15 +1439,24 @@ export class Editor {
             name: `路网模板 ${this.project.templates.length + 1}`,
             roads,
             connections: [],
+            signals: cloneTrafficSignals(
+              this.project.signals,
+              new Map(roads.map((r) => [r.id, r.id])),
+            ),
           }),
         "模板已保存",
       );
       return;
     }
     this.edit(() => {
+      const signals = cloneTrafficSignals(this.project.signals, ids);
       remapRoadReferences(roads, ids);
       transformRoads(roads, (p) => add(p, v(15, 30)));
       this.project.roads.push(...roads);
+      if (signals.length) {
+        this.project.signals ??= [];
+        this.project.signals.push(...signals);
+      }
       this.selected = new Set(roads.map((r) => r.id));
     }, "道路已复制");
   }
@@ -1515,6 +1570,9 @@ export class Editor {
             )
               delete road.attachments[end];
         for (const r of this.chosen) {
+          for (const signal of this.project.signals ?? [])
+            for (const arm of signal.arms)
+              if (arm.road === r.id) arm.end = arm.end === 0 ? 1 : 0;
           reverseRoad(r);
           this.project.ports
             .filter((p) => p.road === r.id)
@@ -1559,11 +1617,17 @@ export class Editor {
         cx = points.reduce((s, p) => s + p.x, 0) / points.length,
         cz = points.reduce((s, p) => s + p.z, 0) / points.length,
         target = this.scene.controls.target;
-      remapRoadReferences(roads, new Map(roads.map((r) => [r.id, uid()])));
+      const ids = new Map(roads.map((r) => [r.id, uid()])),
+        signals = cloneTrafficSignals(t.signals, ids);
+      remapRoadReferences(roads, ids);
       transformRoads(roads, (p) =>
         v(p.x - cx + target.x, p.z - cz + target.z, p.y),
       );
       this.project.roads.push(...roads);
+      if (signals.length) {
+        this.project.signals ??= [];
+        this.project.signals.push(...signals);
+      }
       this.selected = new Set(roads.map((r) => r.id));
     }, "模板已放置，可以拖动整体调整");
     this.setTool("select");

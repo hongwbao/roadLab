@@ -968,8 +968,8 @@ test("a ramp can start at a mainline midpoint using an outer lane without crossi
   await load(page);
   await page.locator('[data-category="oneway"]').click();
   await page.locator('[data-asset="one-4"]').click();
-  await clickWorld(page, -90, -15);
-  await clickWorld(page, 90, -15);
+  await clickWorld(page, -55, -15);
+  await clickWorld(page, 55, -15);
   await endStroke(page);
   await page.locator('[data-category="highway"]').click();
   await page.locator('[data-asset="ramp-1"]').click();

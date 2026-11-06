@@ -1,3 +1,5 @@
+import type { TrafficSignal } from "./traffic-signals";
+
 export type V = { x: number; y: number; z: number };
 export type Knot = { p: V; incoming: V; outgoing: V; at?: number };
 export type Turn = "left" | "straight" | "right";
@@ -6,6 +8,12 @@ export type LaneAttachment = {
   end: 0 | 1;
   lanes: number[];
   ownLanes: number[];
+};
+export type AutomaticTaper = {
+  lanes: number;
+  firstLane: number;
+  offset: number;
+  span: number;
 };
 export type Road = {
   id: string;
@@ -31,6 +39,7 @@ export type Road = {
   widthOrigin?: number;
   attachments?: { start?: LaneAttachment; end?: LaneAttachment };
   turns?: Record<string, Turn[]>;
+  autoTaper?: { start?: AutomaticTaper; end?: AutomaticTaper };
 };
 export type LaneRef = { road: string; lane: number };
 export type Connection = {
@@ -51,6 +60,7 @@ export type Blueprint = {
   name: string;
   roads: Road[];
   connections: Connection[];
+  signals?: TrafficSignal[];
 };
 export type Project = {
   version: 1;
@@ -60,6 +70,7 @@ export type Project = {
   ports: Port[];
   templates: Blueprint[];
   trafficMultiplier?: number;
+  signals?: TrafficSignal[];
 };
 export type Issue = {
   road?: string;
@@ -67,7 +78,14 @@ export type Issue = {
   severity: "error" | "warning";
 };
 export type Tool =
-  "select" | "line" | "curve" | "boundary" | "upgrade" | "delete" | "turn";
+  | "select"
+  | "line"
+  | "curve"
+  | "boundary"
+  | "upgrade"
+  | "delete"
+  | "turn"
+  | "signal";
 export const isSource = (p: Port) => p.type === "source" || p.type === "both";
 export const isSink = (p: Port) => p.type === "sink" || p.type === "both";
 export type Settings = {

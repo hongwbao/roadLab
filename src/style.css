@@ -1307,3 +1307,119 @@ dialog dd {
     left: 9px;
   }
 }
+
+.signal-panel {
+  right: 18px;
+  top: 148px;
+  width: min(330px, calc(100vw - 36px));
+  max-height: calc(100dvh - 240px);
+  overflow-y: auto;
+}
+#toast {
+  pointer-events: none;
+}
+#toast.signal-toast {
+  top: 80px;
+  bottom: auto;
+}
+.signal-panel p {
+  font-size: 12px;
+  line-height: 1.8;
+  margin: 10px 0;
+}
+.signal-live {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 12px 0;
+  font-size: 12px;
+}
+.signal-live strong {
+  flex: 1;
+  font-weight: 500;
+}
+.signal-live output {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.signal-status-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--red);
+  flex-shrink: 0;
+}
+.signal-status-dot[data-color="green"] {
+  background: #75e6aa;
+}
+.signal-status-dot[data-color="yellow"] {
+  background: #ffd568;
+}
+.signal-modes {
+  display: flex;
+  gap: 7px;
+}
+.signal-modes button {
+  flex: 1;
+  font-size: 11px;
+  padding: 8px 5px;
+}
+.signal-timing {
+  display: grid;
+  grid-template-columns: 75px minmax(60px, 1fr) 39px;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  margin: 10px 0;
+}
+.signal-timing input {
+  min-width: 0;
+  width: 100%;
+  padding: 0;
+  min-height: 24px;
+  accent-color: var(--blue);
+}
+.signal-timing output {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.signal-advanced {
+  margin: 13px 0;
+}
+.signal-advanced summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 11px;
+}
+.signal-phases {
+  padding: 0;
+  margin: 12px 0;
+  list-style: none;
+}
+.signal-phases li {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 11px;
+  color: var(--muted);
+  padding: 7px 8px;
+  border-radius: 4px;
+}
+.signal-phases li.active {
+  background: #355d73;
+  color: #e5f6ff;
+}
+.signal-phases li span:last-child {
+  font-variant-numeric: tabular-nums;
+}
+@media (max-width: 600px) {
+  .signal-panel {
+    right: 9px;
+    top: 145px;
+    max-height: calc(100dvh - 285px);
+    width: min(330px, calc(100vw - 73px));
+  }
+  #toast.signal-toast {
+    top: 104px;
+  }
+}

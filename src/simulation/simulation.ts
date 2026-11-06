@@ -1,4 +1,5 @@
 import { buildJunctions, type Junction } from "../core/junctions";
+import { updateAutomaticTransitions } from "../core/auto-transitions";
 import {
   add,
   arcParameter,
@@ -16,6 +17,7 @@ import {
   tangent,
 } from "../core/math";
 import { connections, normalizePorts } from "../core/model";
+import { SIGNAL_STOP_OFFSET } from "../core/traffic-signals";
 import {
   isSink,
   isSource,
@@ -43,6 +45,7 @@ import {
   type Leader,
 } from "./driving";
 import { LaneTraffic, type LaneSample } from "./lane-traffic";
+import { TrafficLightController, type SignalMovement } from "./traffic-lights";
 import {
   IntersectionController,
   type JunctionRequest,
@@ -69,6 +72,8 @@ export type Vehicle = {
   lane: number;
   laneChange?: { from: number; to: number; start: number; length: number };
   stalledFor?: number;
+  signalEntry?: string;
+  waitingAtSignal?: string;
   driver?: DriverProfile;
   preferredLane?: number;
   nextLaneDecision?: number;
@@ -361,6 +366,7 @@ export class Simulation {
   generated = 0;
   junctions: Junction[] = [];
   predictiveYielding = true;
+  trafficLights = new TrafficLightController();
   private prediction = new PredictiveJunctionController();
   private predictionPaths = new Map<string, PredictionPath>();
   private yieldDirectives: ReadonlyMap<number, YieldDirective> = new Map();
@@ -404,6 +410,7 @@ export class Simulation {
   };
   configure(p: Project) {
     this.reset();
+    updateAutomaticTransitions(p);
     normalizePorts(p);
     this.project = p;
     this.roads = new Map(p.roads.map((r) => [r.id, r]));
@@ -455,6 +462,34 @@ export class Simulation {
     }
     for (const [k, set] of inputs) if (set.size > 1) this.mergeTargets.add(k);
     this.routes = [];
+    const signalMovements: SignalMovement[] = [];
+    if (p.signals?.length)
+      for (const link of this.cs) {
+        const fromRoad = this.roads.get(link.from.road)!,
+          toRoad = this.roads.get(link.to.road)!;
+        const from: Step = {
+          road: fromRoad.id,
+          direction: laneDirection(fromRoad, link.from.lane),
+          inLane: link.from.lane,
+          outLane: link.from.lane,
+        };
+        const to: Step = {
+          road: toRoad.id,
+          direction: laneDirection(toRoad, link.to.lane),
+          inLane: link.to.lane,
+          outLane: link.to.lane,
+        };
+        const connector = this.connector(from, to);
+        if (connector.movement)
+          signalMovements.push({
+            id: connector.movement.id,
+            junction: connector.movement.junction,
+            road: from.road,
+            end: from.direction === 1 ? 1 : 0,
+            turn: connector.movement.turn,
+          });
+      }
+    this.trafficLights.configure(this.junctions, p.signals, signalMovements);
     for (const source of p.ports.filter(isSource))
       for (const sink of p.ports.filter(isSink)) {
         if (source.road === sink.road && source.end === sink.end) continue;
@@ -485,6 +520,7 @@ export class Simulation {
     this.generated = 0;
     this.demand.clear();
     this.mergeController.clear();
+    this.trafficLights.clear();
     this.prediction.clear();
     this.predictionPaths.clear();
     this.yieldDirectives = new Map();
@@ -1051,15 +1087,31 @@ export class Simulation {
     const requests: JunctionRequest[] = [];
     const permitted = new Set<number>();
     for (const car of this.vehicles) {
+      car.waitingAtSignal = undefined;
       if (car.connector || car.laneChange) continue;
       const step = car.route[car.step],
         next = car.route[car.step + 1];
       if (!step || !next) continue;
       const distance = this.exit(step) - car.s;
-      if (distance > Math.max(CONNECTION_LOOKAHEAD, car.speed * 3.5)) continue;
+      const signalConnector = this.trafficLights.enabled
+        ? this.connector(step, next)
+        : undefined;
+      if (
+        distance >
+        Math.max(
+          this.connectionLookahead(car, signalConnector),
+          car.speed * 3.5,
+        )
+      )
+        continue;
       if (Math.abs(car.lane - step.outLane) > 0.15) continue;
-      const connector = this.connector(step, next);
+      const connector = signalConnector ?? this.connector(step, next);
       if (!connector.movement) continue;
+      const signalAllows = this.signalAllows(car, connector, distance);
+      if (!signalAllows) {
+        car.waitingAtSignal = connector.junction;
+        continue;
+      }
       if (this.controlsMerge(connector.movement)) {
         if (distance > Math.max(15, car.speed * 3.5)) continue;
         // Only the queue head can reserve a merge. Ordinary unsignalized
@@ -1086,8 +1138,7 @@ export class Simulation {
         !first ||
         first.s - this.entry(next) >
           VEHICLE_LENGTH + (car.driver?.minimumGap ?? 1.7) + 1;
-      // Unsignalized junctions currently use destination capacity only.
-      // Cross-direction right of way will be controlled by future signals.
+      // Capacity applies to both signalized and unsignalized intersections.
       if (!this.controlsMerge(connector.movement)) {
         if (space) permitted.add(car.id);
         continue;
@@ -1103,6 +1154,59 @@ export class Simulation {
     for (const id of this.mergeController.plan(requests, this.elapsed))
       permitted.add(id);
     return permitted;
+  }
+  private connectionLookahead(
+    car: Vehicle,
+    connector?: NonNullable<Vehicle["connector"]>,
+  ) {
+    return this.trafficLights.has(connector?.junction)
+      ? Math.max(
+          CONNECTION_LOOKAHEAD,
+          (car.speed * car.speed) /
+            (2 * (car.driver?.comfortableBrake ?? 2.5)) +
+            car.speed * 1.5 +
+            SIGNAL_STOP_OFFSET +
+            VEHICLE_LENGTH,
+        )
+      : CONNECTION_LOOKAHEAD;
+  }
+  private signalAllows(
+    car: Vehicle,
+    connector: NonNullable<Vehicle["connector"]>,
+    distance: number,
+  ) {
+    if (
+      !connector.movement ||
+      !this.trafficLights.has(connector.junction) ||
+      car.signalEntry === connector.junction
+    )
+      return true;
+    return this.trafficLights.allows(
+      connector.movement.id,
+      car.id,
+      distance - SIGNAL_STOP_OFFSET - VEHICLE_LENGTH / 2,
+      car.speed,
+      car.driver?.comfortableBrake,
+    );
+  }
+  private occupiedSignals() {
+    const occupied = new Set<string>();
+    for (const car of this.vehicles) {
+      const junction = car.connector?.junction ?? car.signalEntry;
+      if (!junction || !this.trafficLights.has(junction)) continue;
+      const step = car.route[car.step];
+      if (
+        car.connector ||
+        (car.signalEntry &&
+          (car.s < this.entry(step) + VEHICLE_LENGTH + 1 ||
+            (car.route[car.step + 1] &&
+              this.connector(step, car.route[car.step + 1]).junction ===
+                junction)))
+      )
+        occupied.add(junction);
+      else car.signalEntry = undefined;
+    }
+    return occupied;
   }
   private controlsMerge(movement: Movement) {
     return movement.junction.startsWith("merge:");
@@ -1288,6 +1392,10 @@ export class Simulation {
           s >= connector.length ||
           !first ||
           first.s - entry > VEHICLE_LENGTH + driver.minimumGap + 1,
+        stopS:
+          s < 0 && !this.signalAllows(car, connector, -s)
+            ? -SIGNAL_STOP_OFFSET
+            : undefined,
       });
     }
     return agents;
@@ -1378,6 +1486,7 @@ export class Simulation {
     for (const a of agents) {
       const car = this.vehicles.find((c) => c.id === a.id)!;
       if (
+        car.waitingAtSignal ||
         car.speed > 0.25 ||
         this.elapsed - (car.lastMovementAt ?? this.elapsed) < 2
       )
@@ -1463,6 +1572,8 @@ export class Simulation {
   }
   private integrate(dt: number) {
     this.elapsed += dt;
+    if (this.trafficLights.enabled)
+      this.trafficLights.update(dt, this.occupiedSignals());
     const index = new TrafficIndex<Vehicle>();
     this.vehicles.forEach((c) => index.add(c));
     this.timer += dt;
@@ -1494,6 +1605,7 @@ export class Simulation {
       car.lastMovementAt ??= this.elapsed;
       const original = {
         ...car,
+        signalEntry: car.signalEntry,
         connector: car.connector ? { ...car.connector } : undefined,
         laneChange: car.laneChange ? { ...car.laneChange } : undefined,
       };
@@ -1813,13 +1925,18 @@ export class Simulation {
           };
           if (!leader || stop.gap < leader.gap) leader = stop;
         }
-        const connector =
-          next && end - car.s < CONNECTION_LOOKAHEAD
+        const signalConnector =
+          next && this.trafficLights.enabled
             ? this.connector(step, next)
+            : undefined;
+        const lookahead = this.connectionLookahead(car, signalConnector);
+        const connector =
+          next && end - car.s < lookahead
+            ? (signalConnector ?? this.connector(step, next))
             : undefined;
         const nextEntry = next ? this.entry(next) : 0;
         const nextTraffic =
-          next && end - car.s < CONNECTION_LOOKAHEAD
+          next && end - car.s < lookahead
             ? lanes.neighbours(
                 next.road,
                 next.direction,
@@ -1851,6 +1968,11 @@ export class Simulation {
           (permissions.has(car.id) &&
             (!this.controlsMerge(connector.movement) ||
               this.mergeController.canEnter(car.id, connector.movement)));
+        const signalStopOffset =
+          this.trafficLights.has(connector?.junction) &&
+          car.signalEntry !== connector?.junction
+            ? SIGNAL_STOP_OFFSET
+            : 0;
         if (connector) {
           const turnSpeed = connector.speedLimit ?? limit;
           limit = Math.min(
@@ -1861,7 +1983,10 @@ export class Simulation {
             ),
           );
           if (!permitted) {
-            const stop = { gap: end - car.s - VEHICLE_LENGTH / 2, speed: 0 };
+            const stop = {
+              gap: end - car.s - VEHICLE_LENGTH / 2 - signalStopOffset,
+              speed: 0,
+            };
             if (!leader || stop.gap < leader.gap) leader = stop;
           }
         }
@@ -1888,10 +2013,22 @@ export class Simulation {
         car.speed = advance.speed;
         const travelled = car.s + advance.distance;
         car.s = Math.min(end, travelled);
-        if (!permitted && car.s > end - VEHICLE_LENGTH / 2 - 0.15) {
-          car.s = Math.max(original.s, end - VEHICLE_LENGTH / 2 - 0.15);
+        if (
+          !permitted &&
+          car.s > end - VEHICLE_LENGTH / 2 - 0.15 - signalStopOffset
+        ) {
+          car.s = Math.max(
+            original.s,
+            end - VEHICLE_LENGTH / 2 - 0.15 - signalStopOffset,
+          );
           car.speed = 0;
         }
+        if (
+          permitted &&
+          signalStopOffset &&
+          car.s >= end - SIGNAL_STOP_OFFSET - VEHICLE_LENGTH / 2
+        )
+          car.signalEntry = connector!.junction;
         if (car.laneChange) {
           const change = car.laneChange,
             progress = (car.s - change.start) / change.length;
@@ -1957,7 +2094,12 @@ export class Simulation {
           );
         }
       }
-      if (!car.connector && !car.laneChange && car.speed < 0.5) {
+      if (
+        !car.connector &&
+        !car.laneChange &&
+        car.speed < 0.5 &&
+        !car.waitingAtSignal
+      ) {
         car.stalledFor = (car.stalledFor ?? 0) + dt;
         if (car.stalledFor >= 8) {
           car.stalledFor = 0;
@@ -1968,6 +2110,7 @@ export class Simulation {
         !car.connector &&
         !car.laneChange &&
         this.elapsed - (car.lastRerouteAt ?? 0) > 10 &&
+        !car.waitingAtSignal &&
         (car.speed <
           ((this.roads.get(car.route[car.step].road)?.speed ?? 50) / 3.6) *
             0.6 ||

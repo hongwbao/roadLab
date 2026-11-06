@@ -11,15 +11,23 @@ src/
 │   ├── math.ts               # 分段 Bézier、断面、车道轨迹和弧长
 │   ├── assets.ts             # 15 个道路资产预设
 │   ├── model.ts              # 自动拓扑、道路分段、历史和序列化
+│   ├── auto-transitions.ts   # 自动接头过渡和无副作用预览
+│   ├── road-segments.ts      # 按弧长规划自动分段
+│   ├── traffic-signals.ts    # 信号配置、绑定和校验
 │   ├── junctions.ts          # 路口分组、裁切范围和路口多边形
 │   ├── lane-rules.ts         # 车道接口、成组对齐和转向限制
 │   └── snapping.ts           # 端点断面与横向偏移对齐
 ├── editor/
-│   └── editor.ts             # 鼠标键盘、编辑事务、保存与导入导出
+│   ├── editor.ts             # 鼠标键盘、编辑事务、保存与导入导出
+│   └── traffic-light-tool.ts # 路口信号编辑事务
 ├── render/
-│   └── scene.ts              # 道路、标线、桥梁、预览、选取和车辆实例
+│   ├── scene.ts              # 道路、标线、桥梁、预览、选取和车辆实例
+│   └── traffic-lights.ts     # 灯杆、灯头和停止线
+├── ui/
+│   └── traffic-light-panel.ts # 配时浮层和运行状态
 └── simulation/
     ├── simulation.ts         # 路由、发车、交通采样和车辆调度
+    ├── traffic-lights.ts     # 独立信号相位状态机和准入
     ├── driving.ts            # IDM 跟车、MOBIL 换道收益和司机参数
     ├── lane-traffic.ts       # 单步车道占用快照和前后车查询
     ├── intersections.ts      # 同目标车道的汇流预约和公平性
@@ -32,7 +40,7 @@ src/
 
 `Project` 包含道路、通行口、模板和车流倍率。道路几何由 Bézier 控制点及断面参数决定。曲线轴线、实际路面中心、车道中心分别计算，支持拓宽、收窄和偏移对齐。
 
-车道连接根据几何自动推导。`connections` 字段保留旧文件格式兼容性，手工连接覆盖已退役，不再作为运行时连接依据。新建道路的端点可保存 `attachments` 车道映射，`turns` 保存各车道允许的转向；两者共同约束几何推导的连接。导入通过 `parseProject()` 校验并迁移端点角色；双向通行口类型为 `both`。
+车道连接根据几何自动推导。`connections` 字段保留旧文件格式兼容性，手工连接覆盖已退役，不再作为运行时连接依据。新建道路的端点可保存 `attachments` 车道映射，`turns` 保存各车道允许的转向；两者共同约束几何推导的连接。可选 `signals` 按道路端点组合保存红绿灯配置；自动分段迁移绑定。导入通过 `parseProject()` 校验并迁移端点角色；双向通行口类型为 `both`。
 
 ## 编辑事务
 

@@ -24,8 +24,10 @@ import {
 } from "../core/math";
 import { connections } from "../core/model";
 import { allowedTurns } from "../core/lane-rules";
+import { roadSegmentNodes } from "../core/road-segments";
 import type { Project, Road, Settings, V } from "../core/types";
 import type { Step, Vehicle } from "../simulation/simulation";
+import { TrafficLightRenderer } from "./traffic-lights";
 const vec = (p: V) => new T.Vector3(p.x, p.y, p.z);
 export type Hit = {
   road?: string;
@@ -38,6 +40,7 @@ export type Hit = {
   port?: boolean;
 };
 export class Scene {
+  trafficLights = new TrafficLightRenderer();
   renderer: T.WebGLRenderer;
   scene = new T.Scene();
   camera: T.PerspectiveCamera;
@@ -64,6 +67,7 @@ export class Scene {
   hover = new T.Group();
   buildMarker = new T.Group();
   laneTarget = new T.Group();
+  roadNodes = new T.Group();
   portGroup = new T.Group();
   private bodyInstances!: T.InstancedMesh;
   private cabinInstances!: T.InstancedMesh;
@@ -164,7 +168,9 @@ export class Scene {
     );
     this.scene.add(
       this.junctionMesh,
+      this.trafficLights.group,
       this.laneTarget,
+      this.roadNodes,
       this.hover,
       this.buildMarker,
       this.portGroup,
@@ -378,6 +384,7 @@ export class Scene {
   ) {
     this.currentProject = p;
     this.junctionList = buildJunctions(p);
+    this.trafficLights.rebuild(p, this.junctionList);
     this.ranges = new Map(
       p.roads.map((r) => [r.id, roadRange(r, this.junctionList)]),
     );
@@ -390,6 +397,29 @@ export class Scene {
     this.clear(this.details);
     this.clear(this.handles);
     this.clear(this.routePreview);
+    this.clear(this.roadNodes);
+    if (showHandles) {
+      const nodes: V[] = [];
+      for (const road of p.roads)
+        for (const end of [0, 1]) {
+          const pos = center(road, end);
+          if (nodes.some((node) => dist(node, pos) < 0.7)) continue;
+          nodes.push(pos);
+          const node = new T.Mesh(
+            new T.CircleGeometry(0.7, 16),
+            new T.MeshBasicMaterial({
+              color: 0xc3d2ca,
+              transparent: true,
+              opacity: 0.9,
+              depthTest: false,
+            }),
+          );
+          node.rotation.x = -Math.PI / 2;
+          node.position.set(pos.x, pos.y + 0.15, pos.z);
+          node.renderOrder = 25;
+          this.roadNodes.add(node);
+        }
+    }
     this.ground.children[1].visible = settings.grid;
     for (const r of p.roads) {
       const group = new T.Group();
@@ -767,6 +797,22 @@ export class Scene {
   showPreviews(roads: Road[], invalid = false) {
     this.clear(this.preview);
     for (const r of roads) {
+      for (const p of this.currentProject?.roads.some((old) => old.id === r.id)
+        ? []
+        : roadSegmentNodes(r)) {
+        const node = new T.Mesh(
+          new T.CircleGeometry(0.8, 16),
+          new T.MeshBasicMaterial({
+            color: invalid ? 0xff7765 : 0x9de2ff,
+            depthTest: false,
+          }),
+        );
+        node.rotation.x = -Math.PI / 2;
+        node.position.set(p.x, p.y + 0.18, p.z);
+        node.renderOrder = 30;
+        node.userData.segmentNode = true;
+        this.preview.add(node);
+      }
       this.roadMesh(
         r,
         this.preview,

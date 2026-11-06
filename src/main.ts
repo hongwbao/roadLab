@@ -53,6 +53,11 @@ import {
 import { sharedRoadMap } from "./core/shared-map";
 import { copy, isSource, type Project, type Tool } from "./core/types";
 import { Editor } from "./editor/editor";
+import {
+  trafficLightIcon,
+  trafficLightPanel,
+  updateTrafficLightPanel,
+} from "./ui/traffic-light-panel";
 import "./style.css";
 const iconSet = {
   Route,
@@ -108,7 +113,7 @@ function thumbnail(asset: RoadAsset) {
     height = Math.min(38, total * 6 + 6),
     y = (52 - height) / 2;
   if (asset.action)
-    return `<svg viewBox="0 0 120 52" aria-hidden="true"><path d="M0 22H63L120 13M63 22C85 22 85 43 120 43" stroke="#222e35" stroke-width="17" fill="none"/><path d="M0 22H63L120 13M63 22C85 22 85 43 120 43" stroke="#c5d3d8" stroke-width="1" stroke-dasharray="5 4" fill="none"/><path d="M44 19L49 22L44 25" fill="none" stroke="#e8f5f8" stroke-width="1.6"/></svg>`;
+    return `<svg viewBox="0 0 120 52" aria-hidden="true"><path d="M0 22H63L120 13M63 22C85 22 85 43 120 43" stroke="#222e35" stroke-width="17" fill="none"/><path d="M0 22H63L120 13M63 22C85 22 85 43 120 43" stroke="#c5d3d8" stroke-width="1" stroke-dasharray="5 4" fill="none"/></svg>`;
   const start = (o.lanesStart ?? 1) * (o.twoWay ? 2 : 1),
     hy = Math.min(38, start * 6 + 6),
     shape = `M0 ${(52 - hy) / 2} C45 ${(52 - hy) / 2} 75 ${y} 120 ${y}V${y + height}C75 ${y + height} 45 ${(52 + hy) / 2} 0 ${(52 + hy) / 2}Z`;
@@ -116,11 +121,6 @@ function thumbnail(asset: RoadAsset) {
   for (let i = 1; i < total; i++) {
     const cy = y + 3 + (i * (height - 6)) / total;
     lines += `<path d="M0 ${cy}H120" stroke="${o.twoWay && i === total / 2 ? "#dfc17b" : "#d0dbdd"}" stroke-width="${o.twoWay && i === total / 2 ? 1.4 : 0.8}" ${o.twoWay && i === total / 2 ? "" : 'stroke-dasharray="5 5"'}/>`;
-  }
-  for (let i = 0; i < total; i++) {
-    const cy = y + 3 + ((i + 0.5) * (height - 6)) / total,
-      dir = o.twoWay && i < total / 2 ? -1 : 1;
-    lines += `<path d="M${58 - dir * 5} ${cy}H${58 + dir * 5}M${58 + dir * 2} ${cy - 2}L${58 + dir * 5} ${cy}L${58 + dir * 2} ${cy + 2}" fill="none" stroke="#dce9eb" stroke-width="1"/>`;
   }
   return `<svg viewBox="0 0 120 52" aria-hidden="true"><path d="${shape}" fill="#253139" stroke="#72868e" stroke-width="1"/>${lines}</svg>`;
 }
@@ -131,11 +131,12 @@ document.querySelector("#app")!.innerHTML = `
  <div class="view-controls">${button("top", "俯视", "arrow-down-to-line")}${button("perspective", "立体", "layers")}${button("fit", "查看全图", "focus")}${button("grid", "网格", "grid-2x2", "icon-only")}${button("focus-transition", "查看过渡段", "spline", "icon-only")}</div>
  <div class="map-title"><strong id="scene-name">道路实验</strong><span id="scene-summary"></span></div>
  <div id="snap-feedback" class="snap-feedback" hidden></div><div id="selection-box" hidden></div><div id="empty-hint" hidden>选择下方的道路资产，开始建造。</div>
+ <aside id="signal-panel" class="floating-panel signal-panel" hidden></aside>
  <aside id="turn-panel" class="floating-panel turn-panel" hidden></aside>
  <aside id="selection-panel" class="floating-panel selection-panel" hidden></aside>
  <aside id="boundary-panel" class="floating-panel boundary-panel" hidden><h2>路网通行口</h2><p>点击道路端点设置通行口。双向道路在同一端点同时进出，单向道路按方向自动判断。</p>${button("auto-ports", "自动识别外部通行口", "log-in")}<p class="muted">右键点击通行口，即可取消。</p></aside>
  <aside id="templates-panel" class="floating-panel templates-panel" hidden><div class="panel-heading"><h2>路网模板</h2>${button("close-templates", "关闭", "x", "icon-only")}</div><div id="template-list"></div></aside>
- <div class="tool-rail" role="toolbar" aria-label="地图工具"><button data-tool="select" title="选择道路 V" aria-label="选择道路 V">${icon("mouse-pointer-2")}</button><button data-action="roads" title="道路资产" aria-label="道路资产">${icon("route")}</button><button data-tool="boundary" title="路网通行口 I" aria-label="路网通行口 I">${icon("log-in")}</button><button data-tool="turn" title="车道转向 J" aria-label="车道转向 J">${icon("corner-up-right")}</button><button data-tool="delete" title="拆除道路 B" aria-label="拆除道路 B">${icon("trash-2")}</button></div>
+ <div class="tool-rail" role="toolbar" aria-label="地图工具"><button data-tool="select" title="选择道路 V" aria-label="选择道路 V">${icon("mouse-pointer-2")}</button><button data-action="roads" title="道路资产" aria-label="道路资产">${icon("route")}</button><button data-tool="boundary" title="路网通行口 I" aria-label="路网通行口 I">${icon("log-in")}</button><button data-tool="signal" title="路口红绿灯 K" aria-label="路口红绿灯 K">${trafficLightIcon}</button><button data-tool="turn" title="车道转向 J" aria-label="车道转向 J">${icon("corner-up-right")}</button><button data-tool="delete" title="拆除道路 B" aria-label="拆除道路 B">${icon("trash-2")}</button></div>
  <section id="road-dock" class="road-dock" aria-label="道路资产栏"><div class="dock-heading"><nav class="asset-categories" aria-label="道路分类"><button data-category="city">城市道路</button><button data-category="oneway">单向道路</button><button data-category="highway">高速与匝道</button><button data-category="transition">车道过渡</button></nav>${button("close-roads", "收起道路资产", "x", "icon-only")}</div><div id="asset-list" class="asset-list"></div><div class="construction-tools"><div class="build-modes" role="toolbar" aria-label="道路建造方式"><button data-tool="line" title="直线 L" aria-label="直线 L">${icon("move-right")}<span>直线</span></button><button data-tool="curve" title="曲线 C" aria-label="曲线 C">${icon("spline")}<span>曲线</span></button><button data-tool="upgrade" title="升级道路 U" aria-label="升级道路 U">${icon("wrench")}<span>升级</span></button></div><div class="build-height">${button("height-down", "降低道路 PageDown", "arrow-down", "icon-only")}<span id="build-height-label">地面</span>${button("height-up", "抬高道路 PageUp", "arrow-up", "icon-only")}</div><button id="snap-toggle" data-action="snap" title="道路吸附" aria-pressed="true">${icon("magnet")}<span>吸附</span></button><button data-action="alignment" id="alignment-mode" title="单向道路接口对齐：自动、中线、左缘、右缘；地图中按 Tab 切换">对齐：自动</button><span id="asset-description"></span></div><div id="lane-build-tools" class="lane-build-tools" hidden><button id="lane-snap-toggle" data-action="lane-snap" aria-pressed="true" title="按车道吸附；地图中按 Tab 切换候选">${icon("magnet")}车道吸附</button><div class="lane-count-control"><span>起点</span><button data-build-count="lanesStart" data-delta="-1" aria-label="减少起点车道">${icon("minus")}</button><output id="build-start-count">1</output><button data-build-count="lanesStart" data-delta="1" aria-label="增加起点车道">${icon("plus")}</button></div><div class="lane-count-control"><span>终点</span><button data-build-count="lanesEnd" data-delta="-1" aria-label="减少终点车道">${icon("minus")}</button><output id="build-end-count">1</output><button data-build-count="lanesEnd" data-delta="1" aria-label="增加终点车道">${icon("plus")}</button></div><div class="build-side" aria-label="增减及分合流方向"><button data-build-side="left">左侧</button><button data-build-side="right">右侧</button></div><div id="branch-controls" class="branch-controls" hidden><div class="lane-count-control"><span>匝道</span><button data-branch-delta="-1" aria-label="减少匝道车道">${icon("minus")}</button><output id="branch-count">1</output><button data-branch-delta="1" aria-label="增加匝道车道">${icon("plus")}</button></div><label for="branch-length">分离长度 <output id="branch-length-label">65 m</output></label><input id="branch-length" type="range" min="20" max="180" step="5" value="65" aria-label="分离长度"></div></div></section>
  <div class="map-status"><span id="tool-hint">选择道路资产开始建造。</span><span id="mode-badge">选择</span></div></main>
  <footer class="simulation-bar"><div class="simulation-actions">${button("play", "开始测试", "play", "primary")}${button("reset-sim", "重置测试", "rotate-ccw", "icon-only")}<div class="speed-buttons" aria-label="模拟速度"><button data-speed="1" class="active">1×</button><button data-speed="2">2×</button><button data-speed="4">4×</button></div></div><div class="traffic-control"><div class="traffic-heading"><label for="traffic-range">车流量</label><output id="traffic-total" aria-live="off">目标 24 辆/分</output></div><div class="traffic-inputs"><input id="traffic-range" type="range" min="0" max="400" step="1" value="100" aria-label="车流强度"><label class="traffic-percentage"><input id="traffic-level" type="number" min="0" max="400" step="1" value="100" aria-label="车流百分比"><span>%</span></label></div></div><div class="sim-stat"><span>在途</span><strong id="stat-active">0</strong></div><div class="sim-stat"><span>已通过</span><strong id="stat-completed">0</strong></div><div class="sim-stat"><span>排队</span><strong id="stat-queued">0</strong></div><div class="sim-stat average-stat"><span>平均通行</span><strong id="stat-average">—</strong></div><span id="sim-note">基础车流</span><button data-tool="boundary" class="footer-ports">${icon("log-in")}设置通行口</button></footer>
@@ -220,6 +221,9 @@ function renderSavedMaps() {
   }
 }
 function render() {
+  document
+    .querySelector<HTMLElement>("#toast")!
+    .classList.toggle("signal-toast", editor.tool === "signal");
   const name = document.querySelector<HTMLInputElement>("#project-name")!;
   if (document.activeElement !== name) name.value = editor.project.name;
   document.querySelector("#scene-name")!.textContent = editor.project.name;
@@ -229,7 +233,8 @@ function render() {
     !dockOpen ||
     editor.tool === "boundary" ||
     editor.tool === "delete" ||
-    editor.tool === "turn";
+    editor.tool === "turn" ||
+    editor.tool === "signal";
   document.querySelector<HTMLElement>("#map-menu")!.hidden = !menuOpen;
   if (menuOpen) renderSavedMaps();
   document.querySelector<HTMLElement>("#empty-hint")!.hidden =
@@ -239,6 +244,28 @@ function render() {
   const selection = document.querySelector<HTMLElement>("#selection-panel")!;
   selection.hidden = !editor.active || editor.tool !== "select";
   selection.innerHTML = selection.hidden ? "" : selectedPanel();
+  const signalPanel = document.querySelector<HTMLElement>("#signal-panel")!;
+  signalPanel.hidden = editor.tool !== "signal";
+  if (!signalPanel.hidden) {
+    const advancedOpen =
+      !!signalPanel.querySelector<HTMLDetailsElement>("details")?.open;
+    const focusedTiming =
+      document.activeElement instanceof HTMLInputElement
+        ? document.activeElement.dataset.signalTime
+        : undefined;
+    const scrollTop = signalPanel.scrollTop;
+    signalPanel.innerHTML = trafficLightPanel(editor);
+    const advanced = signalPanel.querySelector<HTMLDetailsElement>("details");
+    if (advanced) advanced.open = advancedOpen;
+    if (focusedTiming)
+      signalPanel
+        .querySelector<HTMLInputElement>(
+          `[data-signal-time="${CSS.escape(focusedTiming)}"]`,
+        )
+        ?.focus({ preventScroll: true });
+    signalPanel.scrollTop = scrollTop;
+    updateTrafficLightPanel(editor);
+  }
   const turnPanel = document.querySelector<HTMLElement>("#turn-panel")!;
   turnPanel.hidden = editor.tool !== "turn";
   const turnRoad = editor.project.roads.find(
@@ -323,6 +350,7 @@ function render() {
       delete: "拆除 B",
       boundary: "设置通行口",
       turn: "车道转向 J",
+      signal: "红绿灯 K",
     } as const
   )[editor.tool];
   document.querySelector("#mode-badge")!.className =
@@ -384,6 +412,13 @@ function loadProject(project: Project, saveName?: string) {
 document.addEventListener("click", (e) => {
   const target = (e.target as HTMLElement).closest<HTMLElement>("button");
   if (!target) return;
+  if (target.dataset.signalMode) {
+    editor.signalTool.change(
+      "mode",
+      target.dataset.signalMode as "protected" | "sequential",
+    );
+    return;
+  }
   if (target.dataset.buildCount) {
     editor.changeBuildCount(
       target.dataset.buildCount as "lanesStart" | "lanesEnd",
@@ -508,6 +543,18 @@ document.addEventListener("click", (e) => {
     dockOpen = false;
     editor.setTool("select");
     render();
+    return;
+  }
+  if (action === "leave-signals") {
+    editor.setTool("select");
+    return;
+  }
+  if (action === "enable-signal") {
+    editor.signalTool.enable();
+    return;
+  }
+  if (action === "remove-signal") {
+    editor.signalTool.remove();
     return;
   }
   if (action === "leave-turns") {
@@ -680,12 +727,28 @@ document.querySelector("#traffic-level")!.addEventListener("change", (e) => {
   }
   commitTraffic();
 });
+document.addEventListener("input", (e) => {
+  const input = e.target as HTMLInputElement;
+  if (input.dataset.signalTime)
+    input.parentElement!.querySelector("output")!.textContent =
+      `${input.value} s`;
+});
+document.addEventListener("change", (e) => {
+  const input = e.target as HTMLInputElement;
+  if (input.dataset.signalTime)
+    editor.signalTool.change(
+      input.dataset.signalTime as
+        "green" | "leftGreen" | "yellow" | "allRed" | "offset",
+      Number(input.value),
+    );
+});
 let last = performance.now(),
   lastStats = 0;
 function frame(now: number) {
   editor.simulation.update((now - last) / 1000);
   last = now;
   editor.scene.updateCars(editor.simulation.vehicles);
+  editor.scene.trafficLights.update(editor.simulation.trafficLights);
   editor.scene.render();
   if (now - lastStats > 250) {
     lastStats = now;
@@ -703,6 +766,7 @@ function frame(now: number) {
     document.querySelector("#sim-note")!.textContent =
       `${sim.routeCount} 条可达路径`;
     syncTraffic(false);
+    updateTrafficLightPanel(editor);
   }
   requestAnimationFrame(frame);
 }

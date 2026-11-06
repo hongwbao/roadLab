@@ -1,21 +1,21 @@
 {
-  "recorded_at": "2026-11-06T10:46:24.974837+00:00",
-  "latest_change": "车道级建造：单向1–6车道，端点指定车道或连续车道组吸附，持久车道引用，左右通用分合流，中段外侧匝道，以及地图车道转向规则。已接受的预测交通AI算法保持原样；第三批道路工具暂缓。",
+  "recorded_at": "2026-11-06T11:58:12.595591+00:00",
+  "latest_change": "已统一部署红绿灯、道路自动过渡和自动分段。信号控制独立模块，支持绿黄全红、保护左转/逐进口、真实停止线与清空；窄屏提示遮挡已修复并通过真实指针验证。文件归属与串行集成规范已在AGENTS.md生效。",
   "checks": [
     {
       "command": "npm run check",
       "exit_code": 0,
-      "passed_cases": 115,
-      "scope": "格式、类型、构建及全部核心测试；本轮新增车道建造15项，包含指定车道真实通行、分组、分流、引用维护、转向可达性与多上游接入。"
+      "passed_cases": 149,
+      "scope": "完整格式、类型、构建和149核心测试；包含14项信号测试、15项自动过渡、5项自动分段。"
     },
     {
       "command": "PLAYWRIGHT_PORT=5174 npm run test:e2e",
       "exit_code": 0,
-      "passed_cases": 34,
+      "passed_cases": 42,
       "last_run": {
         "status": "passed",
         "failedTests": [],
-        "scope": "当前发布版本完整34项浏览器测试通过；额外验证切换分合流资产后按钮、预览与实际车道方向一致。"
+        "scope": "最终整合代码完整42项浏览器回归通过，包含真实指针连续调整黄灯与全红、旧有建路和车道规则、自动过渡及分段。"
       }
     },
     {
@@ -58,8 +58,8 @@
         "completed": 269,
         "active": 35,
         "overlaps": 0,
-        "maxMove": 0.8150340927633692,
-        "maxAngle": 0.054621179974812306,
+        "maxMove": 0.8150340927633408,
+        "maxAngle": 0.054621179974820626,
         "turns": 0,
         "checkpoints": [87, 180, 269]
       }
@@ -79,11 +79,20 @@
     "tests/predictive-junction.test.ts",
     "tests/deadlock-recovery.test.ts",
     "docs/ROAD_BUILDING.md",
-    "tests/lane-building.test.ts"
+    "tests/lane-building.test.ts",
+    "docs/TRAFFIC_LIGHTS.md",
+    "docs/AUTO_TRANSITIONS.md",
+    "docs/ROAD_SEGMENTS.md",
+    "AGENTS.md",
+    "docs/COLLABORATION.md",
+    "tests/traffic-lights.test.ts",
+    "tests/browser/traffic-lights.spec.ts",
+    "tests/auto-transitions.test.ts",
+    "tests/road-segments.test.ts"
   ],
   "limitations": [
     "桌面键鼠为目标平台；窄屏布局不等于完整触控编辑。",
-    "交通模型未经真实数据校准；无信号路口采用出口容量检查及局部预测让行，保留实际车身保护；400% 长时间高压运行仍可能死锁，有限倒退恢复不能保证解开已挤满的路口。尚无信号灯、停车或多种交通方式。",
+    "交通模型未经真实数据校准；未设信号的路口继续预测让行，可按路口添加信号灯；400%高压长时间运行仍可能死锁，清空阶段可能因出口回堵而延长。尚无行人相位、感应配时或多种交通方式。",
     "偏移对齐适用于单向且近似平行的端点接口，不覆盖任意位置的平行道路偏移。",
     "复杂道路的几何和净空检查采用采样。",
     "本机保存属于当前浏览器与网址，JSON 导出用于可移植备份。"
@@ -141,8 +150,7 @@
       ],
       "errors": [],
       "passed": true,
-      "bundle": "index-C_Ctsm9M.js",
-      "preview_fixed": true,
+      "bundle": "index-DlKoXIIv.js",
       "predictive_enabled_verified": true
     },
     "unsignalized_policy": {
@@ -151,7 +159,8 @@
       "stable_pair_priorities": true,
       "body_overlap_guard": true,
       "traffic_lights": false,
-      "oversaturation_queue_is_allowed": true
+      "oversaturation_queue_is_allowed": true,
+      "scope": "仅指未设置信号的路口；红绿灯功能可单独按路口启用。"
     },
     "crosswalk_motion": {
       "admission_lookahead_metres": 80,
@@ -216,8 +225,8 @@
     "evidence_mode": "审查员查看源码、有效截图、测试及状态记录，未声称亲自执行浏览器。",
     "recorded_at": "2026-11-05T11:59:28.249890+00:00"
   },
-  "branch": "feature/lane-level-road-building",
-  "baseline_commit": "6eb920c",
+  "branch": "feature/traffic-lights",
+  "baseline_commit": "724bbe9",
   "road_building": {
     "documentation": "docs/ROAD_BUILDING.md",
     "single_direction_lanes_per_end": [1, 6],
@@ -232,18 +241,9 @@
     "status": "deployed and verified",
     "deployment": {
       "url": "http://192.168.31.167:5173/",
-      "bundle": "index-C_Ctsm9M.js",
+      "bundle": "index-DlKoXIIv.js",
       "frozen_preview": true,
-      "baseline_traffic_ai_unchanged": true,
-      "production_lane_tools": {
-        "url": "http://192.168.31.167:5173/",
-        "prediction": true,
-        "laneControls": true,
-        "fourLaneAsset": true,
-        "turnPanel": true,
-        "errors": [],
-        "passed": true
-      }
+      "verified_by_final_browser_suite": true
     },
     "ui_review": {
       "initial_disposition": "fix",
@@ -253,5 +253,75 @@
       "verdict_disposition": "ship",
       "verdict_scope": "F1 resolved; five desktop/compact screenshots valid; no claim of comprehensive defect-free certification"
     }
+  },
+  "traffic_lights": {
+    "documentation": "docs/TRAFFIC_LIGHTS.md",
+    "modules": [
+      "src/core/traffic-signals.ts",
+      "src/simulation/traffic-lights.ts",
+      "src/editor/traffic-light-tool.ts",
+      "src/render/traffic-lights.ts",
+      "src/ui/traffic-light-panel.ts"
+    ],
+    "optional_per_junction": true,
+    "default_mode": "protected",
+    "modes": ["protected", "sequential"],
+    "default_seconds": {
+      "green": 20,
+      "left_green": 8,
+      "yellow": 3,
+      "all_red": 2
+    },
+    "simulation_time": true,
+    "clearance_extension": true,
+    "already_admitted_vehicles_clear": true,
+    "receiving_lane_capacity_required": true,
+    "body_guard_preserved": true,
+    "right_turn_on_red": false,
+    "source_test_cases": 14,
+    "ui_review": {
+      "initial_disposition": "fix",
+      "material_finding": "R1: compact toast could cover and intercept all-red timing slider",
+      "verdict": "ship",
+      "scope": "R1 resolved, four fresh screenshots valid; not a comprehensive defect-free certification"
+    },
+    "review_deployment_bundle": "index-vUJO5Pc1.js",
+    "latest_source_bundle": "index-DlKoXIIv.js",
+    "status": "deployed and verified",
+    "deployment": {
+      "url": "http://192.168.31.167:5173/",
+      "bundle": "index-DlKoXIIv.js",
+      "production_smoke": {
+        "signals": 1,
+        "green": true,
+        "yellow": true,
+        "allRed": true,
+        "nextPhase": 1,
+        "visuals": 16,
+        "prediction": true,
+        "compactToastClear": true,
+        "toastPassesPointers": true,
+        "pointerTimingChanged": true,
+        "url": "http://192.168.31.167:5173/",
+        "errors": [],
+        "passed": true
+      },
+      "review_snapshot_preserved": true
+    }
+  },
+  "road_network_integration": {
+    "auto_transitions": "docs/AUTO_TRANSITIONS.md",
+    "automatic_segments": "docs/ROAD_SEGMENTS.md",
+    "segment_target_metres": 120,
+    "automatic_transition_cases": 15,
+    "segment_cases": 5,
+    "feature_sessions_delivered": true,
+    "status": "deployed and verified"
+  },
+  "collaboration": {
+    "instructions": "AGENTS.md",
+    "documentation": "docs/COLLABORATION.md",
+    "rule_commit": "e834d26",
+    "policy": "one writer per file; shared entry points, Git writes and deployment integrated serially"
   }
 }
