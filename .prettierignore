@@ -8,3 +8,4 @@ coverage/
 .impeccable/
 PRODUCT.md
 package-lock.json
+.coordination/
