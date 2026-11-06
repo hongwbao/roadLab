@@ -1,0 +1,2004 @@
+{
+  "source": {
+    "assembly": "Game, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null",
+    "sha256": "721e7e17bf74299aa2b988c1bd07e90874bb8bc72d263229500c4bf639e7e4ee",
+    "mvid": "36b776ac-5007-4e06-81b3-242b2abfd5b6",
+    "methods": [
+      {
+        "type": "Game.Vehicles.VehicleUtils",
+        "name": "GetMaxDriveSpeed",
+        "token": "0x060003ae",
+        "signature": "Single GetMaxDriveSpeed(Game.Prefabs.CarData, Game.Net.CarLane)"
+      },
+      {
+        "type": "Game.Vehicles.VehicleUtils",
+        "name": "GetMaxDriveSpeed",
+        "token": "0x060003af",
+        "signature": "Single GetMaxDriveSpeed(Game.Prefabs.CarData, Single, Single)"
+      },
+      {
+        "type": "Game.Vehicles.VehicleUtils",
+        "name": "GetMaxBrakingSpeed",
+        "token": "0x060003b1",
+        "signature": "Single GetMaxBrakingSpeed(Game.Prefabs.CarData, Single, Single)"
+      },
+      {
+        "type": "Game.Vehicles.VehicleUtils",
+        "name": "GetMaxBrakingSpeed",
+        "token": "0x060003b2",
+        "signature": "Single GetMaxBrakingSpeed(Game.Prefabs.CarData, Single, Single, Single)"
+      },
+      {
+        "type": "Game.Vehicles.VehicleUtils",
+        "name": "GetBrakingDistance",
+        "token": "0x060003b3",
+        "signature": "Single GetBrakingDistance(Game.Prefabs.CarData, Single, Single)"
+      },
+      {
+        "type": "Game.Vehicles.VehicleUtils",
+        "name": "CalculateSpeedRange",
+        "token": "0x060003b4",
+        "signature": "Colossal.Mathematics.Bounds1 CalculateSpeedRange(Game.Prefabs.CarData, Single, Single)"
+      },
+      {
+        "type": "Game.Vehicles.VehicleUtils",
+        "name": "GetDrivingStyle",
+        "token": "0x060003b9",
+        "signature": "Void GetDrivingStyle(UInt32, Game.Common.PseudoRandomSeed, Boolean, Single ByRef)"
+      },
+      {
+        "type": "Game.Net.NetUtils",
+        "name": "CalculateCurviness",
+        "token": "0x060041d5",
+        "signature": "Single CalculateCurviness(Game.Net.Curve, Single)"
+      }
+    ],
+    "dependencies": [
+      {
+        "name": "Unity.Mathematics.dll",
+        "sha256": "5dc946dc41fb5d7ff233665dfd986ad6be9016c94241365a414108c1f7798c45"
+      },
+      {
+        "name": "Colossal.Mathematics.dll",
+        "sha256": "b76952dca8852052f2ee3eb9903a104019343de52f5f4888e27a622e466883ee"
+      }
+    ],
+    "generator": "Direct reflection invocation of original Game.dll; no decompiled method body copied into oracle",
+    "parameterOrigin": "CarBasePrefab class defaults + VehicleInitializeSystem unit conversion; asset overrides unavailable"
+  },
+  "parameters": {
+    "maxSpeed": 55.555557,
+    "acceleration": 5,
+    "braking": 10,
+    "turningX": 1.5707964,
+    "turningY": 0.2617994
+  },
+  "records": [
+    {
+      "method": "GetMaxDriveSpeed",
+      "input": [0, 0],
+      "output": 0
+    },
+    {
+      "method": "GetMaxDriveSpeed",
+      "input": [0, 0.002],
+      "output": 0
+    },
+    {
+      "method": "GetMaxDriveSpeed",
+      "input": [0, 0.01],
+      "output": 0
+    },
+    {
+      "method": "GetMaxDriveSpeed",
+      "input": [0, 0.04],
+      "output": 0
+    },
+    {
+      "method": "GetMaxDriveSpeed",
+      "input": [0, 0.15],
+      "output": 0
+    },
+    {
+      "method": "GetMaxDriveSpeed",
+      "input": [0, 1],
+      "output": 0
+    },
+    {
+      "method": "GetMaxDriveSpeed",
+      "input": [1, 0],
+      "output": 1
+    },
+    {
+      "method": "GetMaxDriveSpeed",
+      "input": [1, 0.002],
+      "output": 1
+    },
+    {
+      "method": "GetMaxDriveSpeed",
+      "input": [1, 0.01],
+      "output": 1
+    },
+    {
+      "method": "GetMaxDriveSpeed",
+      "input": [1, 0.04],
+      "output": 1
+    },
+    {
+      "method": "GetMaxDriveSpeed",
+      "input": [1, 0.15],
+      "output": 1
+    },
+    {
+      "method": "GetMaxDriveSpeed",
+      "input": [1, 1],
+      "output": 1
+    },
+    {
+      "method": "GetMaxDriveSpeed",
+      "input": [8.333333, 0],
+      "output": 8.333333
+    },
+    {
+      "method": "GetMaxDriveSpeed",
+      "input": [8.333333, 0.002],
+      "output": 8.333333
+    },
+    {
+      "method": "GetMaxDriveSpeed",
+      "input": [8.333333, 0.01],
+      "output": 8.333333
+    },
+    {
+      "method": "GetMaxDriveSpeed",
+      "input": [8.333333, 0.04],
+      "output": 8.333333
+    },
+    {
+      "method": "GetMaxDriveSpeed",
+      "input": [8.333333, 0.15],
+      "output": 8.333333
+    },
+    {
+      "method": "GetMaxDriveSpeed",
+      "input": [8.333333, 1],
+      "output": 1.5346372
+    },
+    {
+      "method": "GetMaxDriveSpeed",
+      "input": [13.888889, 0],
+      "output": 13.888889
+    },
+    {
+      "method": "GetMaxDriveSpeed",
+      "input": [13.888889, 0.002],
+      "output": 13.888889
+    },
+    {
+      "method": "GetMaxDriveSpeed",
+      "input": [13.888889, 0.01],
+      "output": 13.888889
+    },
+    {
+      "method": "GetMaxDriveSpeed",
+      "input": [13.888889, 0.04],
+      "output": 13.888889
+    },
+    {
+      "method": "GetMaxDriveSpeed",
+      "input": [13.888889, 0.15],
+      "output": 9.05035
+    },
+    {
+      "method": "GetMaxDriveSpeed",
+      "input": [13.888889, 1],
+      "output": 1.5346372
+    },
+    {
+      "method": "GetMaxDriveSpeed",
+      "input": [27.777779, 0],
+      "output": 27.777779
+    },
+    {
+      "method": "GetMaxDriveSpeed",
+      "input": [27.777779, 0.002],
+      "output": 27.777779
+    },
+    {
+      "method": "GetMaxDriveSpeed",
+      "input": [27.777779, 0.01],
+      "output": 27.777779
+    },
+    {
+      "method": "GetMaxDriveSpeed",
+      "input": [27.777779, 0.04],
+      "output": 24.712841
+    },
+    {
+      "method": "GetMaxDriveSpeed",
+      "input": [27.777779, 0.15],
+      "output": 9.05035
+    },
+    {
+      "method": "GetMaxDriveSpeed",
+      "input": [27.777779, 1],
+      "output": 1.5346372
+    },
+    {
+      "method": "GetMaxDriveSpeed",
+      "input": [55.555557, 0],
+      "output": 55.555557
+    },
+    {
+      "method": "GetMaxDriveSpeed",
+      "input": [55.555557, 0.002],
+      "output": 55.555557
+    },
+    {
+      "method": "GetMaxDriveSpeed",
+      "input": [55.555557, 0.01],
+      "output": 46.8029
+    },
+    {
+      "method": "GetMaxDriveSpeed",
+      "input": [55.555557, 0.04],
+      "output": 24.712841
+    },
+    {
+      "method": "GetMaxDriveSpeed",
+      "input": [55.555557, 0.15],
+      "output": 9.05035
+    },
+    {
+      "method": "GetMaxDriveSpeed",
+      "input": [55.555557, 1],
+      "output": 1.5346372
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [-5, 0],
+      "output": 0
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [-5, 0, 0],
+      "output": 0
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [-5, 1, 0],
+      "output": 0
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [-5, 10, 0],
+      "output": 0
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [-5, 30, 0],
+      "output": 28.284271
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [0, 0],
+      "output": 0
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [0, 0, 0],
+      "output": 0
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [0, 1, 0],
+      "output": 1
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [0, 10, 0],
+      "output": 10
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [0, 30, 0],
+      "output": 30
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [0.001, 0],
+      "output": 0.14142136
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [0.001, 0, 0],
+      "output": 0.14142136
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [0.001, 1, 0],
+      "output": 1.0099505
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [0.001, 10, 0],
+      "output": 10.000999
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [0.001, 30, 0],
+      "output": 30.000334
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [0.5, 0],
+      "output": 3.1622777
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [0.5, 0, 0],
+      "output": 3.1622777
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [0.5, 1, 0],
+      "output": 3.3166249
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [0.5, 10, 0],
+      "output": 10.488089
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [0.5, 30, 0],
+      "output": 30.166206
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [1, 0],
+      "output": 4.472136
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [1, 0, 0],
+      "output": 4.472136
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [1, 1, 0],
+      "output": 4.582576
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [1, 10, 0],
+      "output": 10.954452
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [1, 30, 0],
+      "output": 30.331501
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [5, 0],
+      "output": 10
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [5, 0, 0],
+      "output": 10
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [5, 1, 0],
+      "output": 10.049875
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [5, 10, 0],
+      "output": 14.142136
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [5, 30, 0],
+      "output": 31.622776
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [20, 0],
+      "output": 20
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [20, 0, 0],
+      "output": 20
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [20, 1, 0],
+      "output": 20.024984
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [20, 10, 0],
+      "output": 22.36068
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [20, 30, 0],
+      "output": 36.05551
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [80, 0],
+      "output": 40
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [80, 0, 0],
+      "output": 40
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [80, 1, 0],
+      "output": 40.012497
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [80, 10, 0],
+      "output": 41.231056
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [80, 30, 0],
+      "output": 50
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [250, 0],
+      "output": 70.71068
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [250, 0, 0],
+      "output": 70.71068
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [250, 1, 0],
+      "output": 70.71775
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [250, 10, 0],
+      "output": 71.41428
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [250, 30, 0],
+      "output": 76.811455
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [-5, 0.025],
+      "output": 0
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [-5, 0, 0.025],
+      "output": 0
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [-5, 1, 0.025],
+      "output": 0
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [-5, 10, 0.025],
+      "output": 0
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [-5, 30, 0.025],
+      "output": 28.035376
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [0, 0.025],
+      "output": 0
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [0, 0, 0.025],
+      "output": 0
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [0, 1, 0.025],
+      "output": 0.7807764
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [0, 10, 0.025],
+      "output": 9.753124
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [0, 30, 0.025],
+      "output": 29.751041
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [0.001, 0.025],
+      "output": 0.037228137
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [0.001, 0, 0.025],
+      "output": 0.037228137
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [0.001, 1, 0.025],
+      "output": 0.7904326
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [0.001, 10, 0.025],
+      "output": 9.754124
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [0.001, 30, 0.025],
+      "output": 29.751375
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [0.5, 0.025],
+      "output": 2.9221444
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [0.5, 0, 0.025],
+      "output": 2.9221444
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [0.5, 1, 0.025],
+      "output": 3.0760336
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [0.5, 10, 0.025],
+      "output": 10.241068
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [0.5, 30, 0.025],
+      "output": 29.917242
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [1, 0.025],
+      "output": 4.2291183
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [1, 0, 0.025],
+      "output": 4.2291183
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [1, 1, 0.025],
+      "output": 4.33939
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [1, 10, 0.025],
+      "output": 10.707303
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [1, 30, 0.025],
+      "output": 30.082533
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [5, 0.025],
+      "output": 9.753124
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [5, 0, 0.025],
+      "output": 9.753124
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [5, 1, 0.025],
+      "output": 9.802984
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [5, 10, 0.025],
+      "output": 13.894345
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [5, 30, 0.025],
+      "output": 31.373764
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [20, 0.025],
+      "output": 19.751562
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [20, 0, 0.025],
+      "output": 19.751562
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [20, 1, 0.025],
+      "output": 19.776545
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [20, 10, 0.025],
+      "output": 22.112078
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [20, 30, 0.025],
+      "output": 35.80638
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [80, 0.025],
+      "output": 39.750782
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [80, 0, 0.025],
+      "output": 39.750782
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [80, 1, 0.025],
+      "output": 39.76328
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [80, 10, 0.025],
+      "output": 40.981815
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [80, 30, 0.025],
+      "output": 49.750626
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [250, 0.025],
+      "output": 70.46112
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [250, 0, 0.025],
+      "output": 70.46112
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [250, 1, 0.025],
+      "output": 70.46819
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [250, 10, 0.025],
+      "output": 71.16472
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [250, 30, 0.025],
+      "output": 76.56187
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [-5, 0.26666668],
+      "output": 0
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [-5, 0, 0.26666668],
+      "output": 0
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [-5, 1, 0.26666668],
+      "output": 0
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [-5, 10, 0.26666668],
+      "output": 4.7683716e-7
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [-5, 30, 0.26666668],
+      "output": 25.743034
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [0, 0.26666668],
+      "output": 0
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [0, 0, 0.26666668],
+      "output": 0
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [0, 1, 0.26666668],
+      "output": 0.1813345
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [0, 10, 0.26666668],
+      "output": 7.682783
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [0, 30, 0.26666668],
+      "output": 27.451618
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [0.001, 0.26666668],
+      "output": 0.0037474632
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [0.001, 0, 0.26666668],
+      "output": 0.0037474632
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [0.001, 1, 0.26666668],
+      "output": 0.18484354
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [0.001, 10, 0.26666668],
+      "output": 7.683749
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [0.001, 30, 0.26666668],
+      "output": 27.451952
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [0.5, 0.26666668],
+      "output": 1.4698913
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [0.5, 0, 0.26666668],
+      "output": 1.4698913
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [0.5, 1, 0.26666668],
+      "output": 1.5890481
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [0.5, 10, 0.26666668],
+      "output": 8.155122
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [0.5, 30, 0.26666668],
+      "output": 27.617176
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [1, 0.26666668],
+      "output": 2.5401661
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [1, 0, 0.26666668],
+      "output": 2.5401661
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [1, 1, 0.26666668],
+      "output": 2.6353242
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [1, 10, 0.26666668],
+      "output": 8.60769
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [1, 30, 0.26666668],
+      "output": 27.781834
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [5, 0.26666668],
+      "output": 7.682783
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [5, 0, 0.26666668],
+      "output": 7.682783
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [5, 1, 0.26666668],
+      "output": 7.730983
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [5, 10, 0.26666668],
+      "output": 11.724689
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [5, 30, 0.26666668],
+      "output": 29.068348
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [20, 0.26666668],
+      "output": 17.510328
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [20, 0, 0.26666668],
+      "output": 17.510328
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [20, 1, 0.26666668],
+      "output": 17.535093
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [20, 10, 0.26666668],
+      "output": 19.85246
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [20, 30, 0.26666668],
+      "output": 33.487324
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [80, 0.26666668],
+      "output": 37.422123
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [80, 0, 0.26666668],
+      "output": 37.422123
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [80, 1, 0.26666668],
+      "output": 37.434593
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [80, 10, 0.26666668],
+      "output": 38.65053
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [80, 30, 0.26666668],
+      "output": 47.404392
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [250, 0.26666668],
+      "output": 68.094284
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [250, 0, 0.26666668],
+      "output": 68.094284
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [250, 1, 0.26666668],
+      "output": 68.10135
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [250, 10, 0.26666668],
+      "output": 68.79739
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [250, 30, 0.26666668],
+      "output": 74.19107
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [-5, 0.5666667],
+      "output": 0
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [-5, 0, 0.5666667],
+      "output": 0
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [-5, 1, 0.5666667],
+      "output": 0
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [-5, 10, 0.5666667],
+      "output": 0
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [-5, 30, 0.5666667],
+      "output": 23.179668
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [0, 0.5666667],
+      "output": 0
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [0, 0, 0.5666667],
+      "output": 0
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [0, 1, 0.5666667],
+      "output": 0.08755875
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [0, 10, 0.5666667],
+      "output": 5.8272934
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [0, 30, 0.5666667],
+      "output": 24.863827
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [0.001, 0.5666667],
+      "output": 0.0017642975
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [0.001, 0, 0.5666667],
+      "output": 0.0017642975
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [0.001, 1, 0.5666667],
+      "output": 0.08929634
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [0.001, 10, 0.5666667],
+      "output": 5.828163
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [0.001, 30, 0.5666667],
+      "output": 24.864155
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [0.5, 0.5666667],
+      "output": 0.8226409
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [0.5, 0, 0.5666667],
+      "output": 0.8226409
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [0.5, 1, 0.5666667],
+      "output": 0.8992386
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [0.5, 10, 0.5666667],
+      "output": 6.2543697
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [0.5, 30, 0.5666667],
+      "output": 25.02716
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [1, 0.5666667],
+      "output": 1.552136
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [1, 0, 0.5666667],
+      "output": 1.552136
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [1, 1, 0.5666667],
+      "output": 1.6210704
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [1, 10, 0.5666667],
+      "output": 6.666666
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [1, 30, 0.5666667],
+      "output": 25.189629
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [5, 0.5666667],
+      "output": 5.8272934
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [5, 0, 0.5666667],
+      "output": 5.8272934
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [5, 1, 0.5666667],
+      "output": 5.8707123
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [5, 10, 0.5666667],
+      "output": 9.568526
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [5, 30, 0.5666667],
+      "output": 26.459816
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [20, 0.5666667],
+      "output": 15.120616
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [20, 0, 0.5666667],
+      "output": 15.120616
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [20, 1, 0.5666667],
+      "output": 15.144654
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [20, 10, 0.5666667],
+      "output": 17.400867
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [20, 30, 0.5666667],
+      "output": 30.831429
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [80, 0.5666667],
+      "output": 34.732727
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [80, 0, 0.5666667],
+      "output": 34.732727
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [80, 1, 0.5666667],
+      "output": 34.745102
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [80, 10, 0.5666667],
+      "output": 35.95197
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [80, 30, 0.5666667],
+      "output": 44.65342
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [250, 0.5666667],
+      "output": 65.27071
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [250, 0, 0.5666667],
+      "output": 65.27071
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [250, 1, 0.5666667],
+      "output": 65.27776
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [250, 10, 0.5666667],
+      "output": 65.97209
+    },
+    {
+      "method": "GetMaxBrakingSpeed",
+      "input": [250, 30, 0.5666667],
+      "output": 71.35354
+    },
+    {
+      "method": "GetBrakingDistance",
+      "input": [0, 0],
+      "output": 0
+    },
+    {
+      "method": "CalculateSpeedRange",
+      "input": [0, 0],
+      "output": [0, 0]
+    },
+    {
+      "method": "GetBrakingDistance",
+      "input": [0, 0.025],
+      "output": 0
+    },
+    {
+      "method": "CalculateSpeedRange",
+      "input": [0, 0.025],
+      "output": [0, 0.125]
+    },
+    {
+      "method": "GetBrakingDistance",
+      "input": [0, 0.26666668],
+      "output": 0
+    },
+    {
+      "method": "CalculateSpeedRange",
+      "input": [0, 0.26666668],
+      "output": [0, 1.3333334]
+    },
+    {
+      "method": "GetBrakingDistance",
+      "input": [0, 0.5666667],
+      "output": 0
+    },
+    {
+      "method": "CalculateSpeedRange",
+      "input": [0, 0.5666667],
+      "output": [0, 2.8333335]
+    },
+    {
+      "method": "GetBrakingDistance",
+      "input": [0.01, 0],
+      "output": 5e-6
+    },
+    {
+      "method": "CalculateSpeedRange",
+      "input": [0.01, 0],
+      "output": [0.01, 0.01]
+    },
+    {
+      "method": "GetBrakingDistance",
+      "input": [0.01, 0.025],
+      "output": 0.00025500002
+    },
+    {
+      "method": "CalculateSpeedRange",
+      "input": [0.01, 0.025],
+      "output": [0, 0.13402939]
+    },
+    {
+      "method": "GetBrakingDistance",
+      "input": [0.01, 0.26666668],
+      "output": 0.0026716667
+    },
+    {
+      "method": "CalculateSpeedRange",
+      "input": [0.01, 0.26666668],
+      "output": [0, 1.3329802]
+    },
+    {
+      "method": "GetBrakingDistance",
+      "input": [0.01, 0.5666667],
+      "output": 0.005671667
+    },
+    {
+      "method": "CalculateSpeedRange",
+      "input": [0.01, 0.5666667],
+      "output": [0, 2.821333]
+    },
+    {
+      "method": "GetBrakingDistance",
+      "input": [0.5, 0],
+      "output": 0.0125
+    },
+    {
+      "method": "CalculateSpeedRange",
+      "input": [0.5, 0],
+      "output": [0.5, 0.5]
+    },
+    {
+      "method": "GetBrakingDistance",
+      "input": [0.5, 0.025],
+      "output": 0.025
+    },
+    {
+      "method": "CalculateSpeedRange",
+      "input": [0.5, 0.025],
+      "output": [0.25, 0.61802244]
+    },
+    {
+      "method": "GetBrakingDistance",
+      "input": [0.5, 0.26666668],
+      "output": 0.14583334
+    },
+    {
+      "method": "CalculateSpeedRange",
+      "input": [0.5, 0.26666668],
+      "output": [0, 1.7589059]
+    },
+    {
+      "method": "GetBrakingDistance",
+      "input": [0.5, 0.5666667],
+      "output": 0.29583335
+    },
+    {
+      "method": "CalculateSpeedRange",
+      "input": [0.5, 0.5666667],
+      "output": [0, 3.1751752]
+    },
+    {
+      "method": "GetBrakingDistance",
+      "input": [5, 0],
+      "output": 1.25
+    },
+    {
+      "method": "CalculateSpeedRange",
+      "input": [5, 0],
+      "output": [5, 5]
+    },
+    {
+      "method": "GetBrakingDistance",
+      "input": [5, 0.025],
+      "output": 1.375
+    },
+    {
+      "method": "CalculateSpeedRange",
+      "input": [5, 0.025],
+      "output": [4.75, 5.1018767]
+    },
+    {
+      "method": "GetBrakingDistance",
+      "input": [5, 0.26666668],
+      "output": 2.5833335
+    },
+    {
+      "method": "CalculateSpeedRange",
+      "input": [5, 0.26666668],
+      "output": [2.3333333, 6.086684]
+    },
+    {
+      "method": "GetBrakingDistance",
+      "input": [5, 0.5666667],
+      "output": 4.0833335
+    },
+    {
+      "method": "CalculateSpeedRange",
+      "input": [5, 0.5666667],
+      "output": [0, 7.309204]
+    },
+    {
+      "method": "GetBrakingDistance",
+      "input": [10, 0],
+      "output": 5
+    },
+    {
+      "method": "CalculateSpeedRange",
+      "input": [10, 0],
+      "output": [10, 10]
+    },
+    {
+      "method": "GetBrakingDistance",
+      "input": [10, 0.025],
+      "output": 5.25
+    },
+    {
+      "method": "CalculateSpeedRange",
+      "input": [10, 0.025],
+      "output": [9.75, 10.09118]
+    },
+    {
+      "method": "GetBrakingDistance",
+      "input": [10, 0.26666668],
+      "output": 7.666667
+    },
+    {
+      "method": "CalculateSpeedRange",
+      "input": [10, 0.26666668],
+      "output": [7.333333, 10.972583]
+    },
+    {
+      "method": "GetBrakingDistance",
+      "input": [10, 0.5666667],
+      "output": 10.666667
+    },
+    {
+      "method": "CalculateSpeedRange",
+      "input": [10, 0.5666667],
+      "output": [4.333333, 12.066739]
+    },
+    {
+      "method": "GetBrakingDistance",
+      "input": [25, 0],
+      "output": 31.25
+    },
+    {
+      "method": "CalculateSpeedRange",
+      "input": [25, 0],
+      "output": [25, 25]
+    },
+    {
+      "method": "GetBrakingDistance",
+      "input": [25, 0.025],
+      "output": 31.875
+    },
+    {
+      "method": "CalculateSpeedRange",
+      "input": [25, 0.025],
+      "output": [24.75, 25.066673]
+    },
+    {
+      "method": "GetBrakingDistance",
+      "input": [25, 0.26666668],
+      "output": 37.916668
+    },
+    {
+      "method": "CalculateSpeedRange",
+      "input": [25, 0.26666668],
+      "output": [22.333334, 25.711178]
+    },
+    {
+      "method": "GetBrakingDistance",
+      "input": [25, 0.5666667],
+      "output": 45.416668
+    },
+    {
+      "method": "CalculateSpeedRange",
+      "input": [25, 0.5666667],
+      "output": [19.333332, 26.511251]
+    },
+    {
+      "method": "GetBrakingDistance",
+      "input": [50, 0],
+      "output": 125
+    },
+    {
+      "method": "CalculateSpeedRange",
+      "input": [50, 0],
+      "output": [50, 50]
+    },
+    {
+      "method": "GetBrakingDistance",
+      "input": [50, 0.025],
+      "output": 126.25
+    },
+    {
+      "method": "CalculateSpeedRange",
+      "input": [50, 0.025],
+      "output": [49.75, 50.024475]
+    },
+    {
+      "method": "GetBrakingDistance",
+      "input": [50, 0.26666668],
+      "output": 138.33333
+    },
+    {
+      "method": "CalculateSpeedRange",
+      "input": [50, 0.26666668],
+      "output": [47.333332, 50.261066]
+    },
+    {
+      "method": "GetBrakingDistance",
+      "input": [50, 0.5666667],
+      "output": 153.33334
+    },
+    {
+      "method": "CalculateSpeedRange",
+      "input": [50, 0.5666667],
+      "output": [44.333332, 50.554768]
+    },
+    {
+      "method": "GetBrakingDistance",
+      "input": [55.555557, 0],
+      "output": 154.321
+    },
+    {
+      "method": "CalculateSpeedRange",
+      "input": [55.555557, 0],
+      "output": [55.555557, 55.555557]
+    },
+    {
+      "method": "GetBrakingDistance",
+      "input": [55.555557, 0.025],
+      "output": 155.70988
+    },
+    {
+      "method": "CalculateSpeedRange",
+      "input": [55.555557, 0.025],
+      "output": [55.305557, 55.555557]
+    },
+    {
+      "method": "GetBrakingDistance",
+      "input": [55.555557, 0.26666668],
+      "output": 169.13582
+    },
+    {
+      "method": "CalculateSpeedRange",
+      "input": [55.555557, 0.26666668],
+      "output": [52.88889, 55.555557]
+    },
+    {
+      "method": "GetBrakingDistance",
+      "input": [55.555557, 0.5666667],
+      "output": 185.80249
+    },
+    {
+      "method": "CalculateSpeedRange",
+      "input": [55.555557, 0.5666667],
+      "output": [49.88889, 55.555557]
+    },
+    {
+      "method": "GetBrakingDistance",
+      "input": [80, 0],
+      "output": 320
+    },
+    {
+      "method": "CalculateSpeedRange",
+      "input": [80, 0],
+      "output": [80, 80]
+    },
+    {
+      "method": "GetBrakingDistance",
+      "input": [80, 0.025],
+      "output": 322
+    },
+    {
+      "method": "CalculateSpeedRange",
+      "input": [80, 0.025],
+      "output": [79.75, 79.75]
+    },
+    {
+      "method": "GetBrakingDistance",
+      "input": [80, 0.26666668],
+      "output": 341.33334
+    },
+    {
+      "method": "CalculateSpeedRange",
+      "input": [80, 0.26666668],
+      "output": [77.333336, 77.333336]
+    },
+    {
+      "method": "GetBrakingDistance",
+      "input": [80, 0.5666667],
+      "output": 365.33334
+    },
+    {
+      "method": "CalculateSpeedRange",
+      "input": [80, 0.5666667],
+      "output": [74.333336, 74.333336]
+    },
+    {
+      "method": "GetDrivingStyle",
+      "input": [0, 0, 0],
+      "output": 0.106866226
+    },
+    {
+      "method": "GetDrivingStyle",
+      "input": [0, 0, 1],
+      "output": 0.10343311
+    },
+    {
+      "method": "GetDrivingStyle",
+      "input": [1, 0, 0],
+      "output": 0.10678676
+    },
+    {
+      "method": "GetDrivingStyle",
+      "input": [1, 0, 1],
+      "output": 0.103393376
+    },
+    {
+      "method": "GetDrivingStyle",
+      "input": [15, 0, 0],
+      "output": 0.10572198
+    },
+    {
+      "method": "GetDrivingStyle",
+      "input": [15, 0, 1],
+      "output": 0.10286099
+    },
+    {
+      "method": "GetDrivingStyle",
+      "input": [100, 0, 0],
+      "output": 0.10119547
+    },
+    {
+      "method": "GetDrivingStyle",
+      "input": [100, 0, 1],
+      "output": 0.10059773
+    },
+    {
+      "method": "GetDrivingStyle",
+      "input": [1024, 0, 0],
+      "output": 0.24804485
+    },
+    {
+      "method": "GetDrivingStyle",
+      "input": [1024, 0, 1],
+      "output": 0.17402242
+    },
+    {
+      "method": "GetDrivingStyle",
+      "input": [4095, 0, 0],
+      "output": 0.106946126
+    },
+    {
+      "method": "GetDrivingStyle",
+      "input": [4095, 0, 1],
+      "output": 0.10347306
+    },
+    {
+      "method": "GetDrivingStyle",
+      "input": [4096, 0, 0],
+      "output": 0.106866226
+    },
+    {
+      "method": "GetDrivingStyle",
+      "input": [4096, 0, 1],
+      "output": 0.10343311
+    },
+    {
+      "method": "GetDrivingStyle",
+      "input": [0, 1, 0],
+      "output": 0.46772498
+    },
+    {
+      "method": "GetDrivingStyle",
+      "input": [0, 1, 1],
+      "output": 0.28386247
+    },
+    {
+      "method": "GetDrivingStyle",
+      "input": [1, 1, 0],
+      "output": 0.46789187
+    },
+    {
+      "method": "GetDrivingStyle",
+      "input": [1, 1, 1],
+      "output": 0.28394595
+    },
+    {
+      "method": "GetDrivingStyle",
+      "input": [15, 1, 0],
+      "output": 0.47018707
+    },
+    {
+      "method": "GetDrivingStyle",
+      "input": [15, 1, 1],
+      "output": 0.28509355
+    },
+    {
+      "method": "GetDrivingStyle",
+      "input": [100, 1, 0],
+      "output": 0.4824015
+    },
+    {
+      "method": "GetDrivingStyle",
+      "input": [100, 1, 1],
+      "output": 0.29120073
+    },
+    {
+      "method": "GetDrivingStyle",
+      "input": [1024, 1, 0],
+      "output": 0.40894192
+    },
+    {
+      "method": "GetDrivingStyle",
+      "input": [1024, 1, 1],
+      "output": 0.25447097
+    },
+    {
+      "method": "GetDrivingStyle",
+      "input": [4095, 1, 0],
+      "output": 0.46755773
+    },
+    {
+      "method": "GetDrivingStyle",
+      "input": [4095, 1, 1],
+      "output": 0.28377885
+    },
+    {
+      "method": "GetDrivingStyle",
+      "input": [4096, 1, 0],
+      "output": 0.46772498
+    },
+    {
+      "method": "GetDrivingStyle",
+      "input": [4096, 1, 1],
+      "output": 0.28386247
+    },
+    {
+      "method": "GetDrivingStyle",
+      "input": [0, 71, 0],
+      "output": 0.41503802
+    },
+    {
+      "method": "GetDrivingStyle",
+      "input": [0, 71, 1],
+      "output": 0.257519
+    },
+    {
+      "method": "GetDrivingStyle",
+      "input": [1, 71, 0],
+      "output": 0.41478693
+    },
+    {
+      "method": "GetDrivingStyle",
+      "input": [1, 71, 1],
+      "output": 0.25739348
+    },
+    {
+      "method": "GetDrivingStyle",
+      "input": [15, 71, 0],
+      "output": 0.4112434
+    },
+    {
+      "method": "GetDrivingStyle",
+      "input": [15, 71, 1],
+      "output": 0.2556217
+    },
+    {
+      "method": "GetDrivingStyle",
+      "input": [100, 71, 0],
+      "output": 0.38868898
+    },
+    {
+      "method": "GetDrivingStyle",
+      "input": [100, 71, 1],
+      "output": 0.24434449
+    },
+    {
+      "method": "GetDrivingStyle",
+      "input": [1024, 71, 0],
+      "output": 0.13639604
+    },
+    {
+      "method": "GetDrivingStyle",
+      "input": [1024, 71, 1],
+      "output": 0.118198015
+    },
+    {
+      "method": "GetDrivingStyle",
+      "input": [4095, 71, 0],
+      "output": 0.41528884
+    },
+    {
+      "method": "GetDrivingStyle",
+      "input": [4095, 71, 1],
+      "output": 0.25764441
+    },
+    {
+      "method": "GetDrivingStyle",
+      "input": [4096, 71, 0],
+      "output": 0.41503802
+    },
+    {
+      "method": "GetDrivingStyle",
+      "input": [4096, 71, 1],
+      "output": 0.257519
+    },
+    {
+      "method": "GetDrivingStyle",
+      "input": [0, 65535, 0],
+      "output": 0.1494919
+    },
+    {
+      "method": "GetDrivingStyle",
+      "input": [0, 65535, 1],
+      "output": 0.12474595
+    },
+    {
+      "method": "GetDrivingStyle",
+      "input": [1, 65535, 0],
+      "output": 0.14929004
+    },
+    {
+      "method": "GetDrivingStyle",
+      "input": [1, 65535, 1],
+      "output": 0.12464502
+    },
+    {
+      "method": "GetDrivingStyle",
+      "input": [15, 65535, 0],
+      "output": 0.14650142
+    },
+    {
+      "method": "GetDrivingStyle",
+      "input": [15, 65535, 1],
+      "output": 0.12325071
+    },
+    {
+      "method": "GetDrivingStyle",
+      "input": [100, 65535, 0],
+      "output": 0.13113445
+    },
+    {
+      "method": "GetDrivingStyle",
+      "input": [100, 65535, 1],
+      "output": 0.11556722
+    },
+    {
+      "method": "GetDrivingStyle",
+      "input": [1024, 65535, 0],
+      "output": 0.16829084
+    },
+    {
+      "method": "GetDrivingStyle",
+      "input": [1024, 65535, 1],
+      "output": 0.13414541
+    },
+    {
+      "method": "GetDrivingStyle",
+      "input": [4095, 65535, 0],
+      "output": 0.14969404
+    },
+    {
+      "method": "GetDrivingStyle",
+      "input": [4095, 65535, 1],
+      "output": 0.12484702
+    },
+    {
+      "method": "GetDrivingStyle",
+      "input": [4096, 65535, 0],
+      "output": 0.1494919
+    },
+    {
+      "method": "GetDrivingStyle",
+      "input": [4096, 65535, 1],
+      "output": 0.12474595
+    },
+    {
+      "method": "CalculateCurviness",
+      "input": [0, 0, 0, 30, 0, 0, 60, 0, 0, 90, 0, 0, 0.05, 3.5],
+      "output": 0
+    },
+    {
+      "method": "CalculateCurviness",
+      "input": [0, 0, 0, 30, 0, 0, 60, 0, 0, 90, 0, 0, 0.05, 20],
+      "output": 0
+    },
+    {
+      "method": "CalculateCurviness",
+      "input": [0, 0, 0, 30, 0, 0, 60, 0, 0, 90, 0, 0, 5, 3.5],
+      "output": 0
+    },
+    {
+      "method": "CalculateCurviness",
+      "input": [0, 0, 0, 30, 0, 0, 60, 0, 0, 90, 0, 0, 5, 20],
+      "output": 0
+    },
+    {
+      "method": "CalculateCurviness",
+      "input": [0, 0, 0, 30, 0, 0, 60, 0, 0, 90, 0, 0, 47, 3.5],
+      "output": 0
+    },
+    {
+      "method": "CalculateCurviness",
+      "input": [0, 0, 0, 30, 0, 0, 60, 0, 0, 90, 0, 0, 47, 20],
+      "output": 0
+    },
+    {
+      "method": "CalculateCurviness",
+      "input": [0, 0, 0, 30, 0, 0, 60, 0, 0, 90, 0, 0, 120, 3.5],
+      "output": 0
+    },
+    {
+      "method": "CalculateCurviness",
+      "input": [0, 0, 0, 30, 0, 0, 60, 0, 0, 90, 0, 0, 120, 20],
+      "output": 0
+    },
+    {
+      "method": "CalculateCurviness",
+      "input": [
+        0, 0, 0, 0, 0, 16.568542, 13.431458, 0, 30, 30, 0, 30, 0.05, 3.5
+      ],
+      "output": 0
+    },
+    {
+      "method": "CalculateCurviness",
+      "input": [
+        0, 0, 0, 0, 0, 16.568542, 13.431458, 0, 30, 30, 0, 30, 0.05, 20
+      ],
+      "output": 0
+    },
+    {
+      "method": "CalculateCurviness",
+      "input": [0, 0, 0, 0, 0, 16.568542, 13.431458, 0, 30, 30, 0, 30, 5, 3.5],
+      "output": 0.033358447
+    },
+    {
+      "method": "CalculateCurviness",
+      "input": [0, 0, 0, 0, 0, 16.568542, 13.431458, 0, 30, 30, 0, 30, 5, 20],
+      "output": 0.0333339
+    },
+    {
+      "method": "CalculateCurviness",
+      "input": [0, 0, 0, 0, 0, 16.568542, 13.431458, 0, 30, 30, 0, 30, 47, 3.5],
+      "output": 0.033365406
+    },
+    {
+      "method": "CalculateCurviness",
+      "input": [0, 0, 0, 0, 0, 16.568542, 13.431458, 0, 30, 30, 0, 30, 47, 20],
+      "output": 0.033365406
+    },
+    {
+      "method": "CalculateCurviness",
+      "input": [
+        0, 0, 0, 0, 0, 16.568542, 13.431458, 0, 30, 30, 0, 30, 120, 3.5
+      ],
+      "output": 0.033365406
+    },
+    {
+      "method": "CalculateCurviness",
+      "input": [0, 0, 0, 0, 0, 16.568542, 13.431458, 0, 30, 30, 0, 30, 120, 20],
+      "output": 0.033365406
+    },
+    {
+      "method": "CalculateCurviness",
+      "input": [0, 0, 0, 40, 0, 80, 60, 0, -80, 100, 0, 0, 0.05, 3.5],
+      "output": 0
+    },
+    {
+      "method": "CalculateCurviness",
+      "input": [0, 0, 0, 40, 0, 80, 60, 0, -80, 100, 0, 0, 0.05, 20],
+      "output": 0
+    },
+    {
+      "method": "CalculateCurviness",
+      "input": [0, 0, 0, 40, 0, 80, 60, 0, -80, 100, 0, 0, 5, 3.5],
+      "output": 0.028881166
+    },
+    {
+      "method": "CalculateCurviness",
+      "input": [0, 0, 0, 40, 0, 80, 60, 0, -80, 100, 0, 0, 5, 20],
+      "output": 0.0006533405
+    },
+    {
+      "method": "CalculateCurviness",
+      "input": [0, 0, 0, 40, 0, 80, 60, 0, -80, 100, 0, 0, 47, 3.5],
+      "output": 0.03688282
+    },
+    {
+      "method": "CalculateCurviness",
+      "input": [0, 0, 0, 40, 0, 80, 60, 0, -80, 100, 0, 0, 47, 20],
+      "output": 0.03688282
+    },
+    {
+      "method": "CalculateCurviness",
+      "input": [0, 0, 0, 40, 0, 80, 60, 0, -80, 100, 0, 0, 120, 3.5],
+      "output": 0.03688282
+    },
+    {
+      "method": "CalculateCurviness",
+      "input": [0, 0, 0, 40, 0, 80, 60, 0, -80, 100, 0, 0, 120, 20],
+      "output": 0.03688282
+    },
+    {
+      "method": "CalculateCurviness",
+      "input": [0, 0, 0, 30, 15, 0, 60, 15, 0, 90, 0, 0, 0.05, 3.5],
+      "output": 0
+    },
+    {
+      "method": "CalculateCurviness",
+      "input": [0, 0, 0, 30, 15, 0, 60, 15, 0, 90, 0, 0, 0.05, 20],
+      "output": 0
+    },
+    {
+      "method": "CalculateCurviness",
+      "input": [0, 0, 0, 30, 15, 0, 60, 15, 0, 90, 0, 0, 5, 3.5],
+      "output": 0.010594895
+    },
+    {
+      "method": "CalculateCurviness",
+      "input": [0, 0, 0, 30, 15, 0, 60, 15, 0, 90, 0, 0, 5, 20],
+      "output": 0.009952939
+    },
+    {
+      "method": "CalculateCurviness",
+      "input": [0, 0, 0, 30, 15, 0, 60, 15, 0, 90, 0, 0, 47, 3.5],
+      "output": 0.010776869
+    },
+    {
+      "method": "CalculateCurviness",
+      "input": [0, 0, 0, 30, 15, 0, 60, 15, 0, 90, 0, 0, 47, 20],
+      "output": 0.010776869
+    },
+    {
+      "method": "CalculateCurviness",
+      "input": [0, 0, 0, 30, 15, 0, 60, 15, 0, 90, 0, 0, 120, 3.5],
+      "output": 0.010776869
+    },
+    {
+      "method": "CalculateCurviness",
+      "input": [0, 0, 0, 30, 15, 0, 60, 15, 0, 90, 0, 0, 120, 20],
+      "output": 0.010776869
+    },
+    {
+      "method": "CalculateCurviness",
+      "input": [0, 0, 0, 0, 0, 0, 5, 0, 5, 10, 0, 5, 0.05, 3.5],
+      "output": 0
+    },
+    {
+      "method": "CalculateCurviness",
+      "input": [0, 0, 0, 0, 0, 0, 5, 0, 5, 10, 0, 5, 0.05, 20],
+      "output": 0
+    },
+    {
+      "method": "CalculateCurviness",
+      "input": [0, 0, 0, 0, 0, 0, 5, 0, 5, 10, 0, 5, 5, 3.5],
+      "output": 0.078890994
+    },
+    {
+      "method": "CalculateCurviness",
+      "input": [0, 0, 0, 0, 0, 0, 5, 0, 5, 10, 0, 5, 5, 20],
+      "output": 0.0017846468
+    },
+    {
+      "method": "CalculateCurviness",
+      "input": [0, 0, 0, 0, 0, 0, 5, 0, 5, 10, 0, 5, 47, 3.5],
+      "output": 0.10074809
+    },
+    {
+      "method": "CalculateCurviness",
+      "input": [0, 0, 0, 0, 0, 0, 5, 0, 5, 10, 0, 5, 47, 20],
+      "output": 0.10074809
+    },
+    {
+      "method": "CalculateCurviness",
+      "input": [0, 0, 0, 0, 0, 0, 5, 0, 5, 10, 0, 5, 120, 3.5],
+      "output": 0.10074809
+    },
+    {
+      "method": "CalculateCurviness",
+      "input": [0, 0, 0, 0, 0, 0, 5, 0, 5, 10, 0, 5, 120, 20],
+      "output": 0.10074809
+    }
+  ]
+}

@@ -1,0 +1,774 @@
+{
+  "assembly": "Game, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null",
+  "mvid": "36b776ac-5007-4e06-81b3-242b2abfd5b6",
+  "source": "Original Managed/Game.dll invoked by reflection under .NET 8; no translated formula oracle",
+  "switches": [
+    {
+      "distance": 0,
+      "coefficient": 1,
+      "expected": 0
+    },
+    {
+      "distance": 0,
+      "coefficient": 5,
+      "expected": 0
+    },
+    {
+      "distance": 0,
+      "coefficient": 7,
+      "expected": 0
+    },
+    {
+      "distance": 0,
+      "coefficient": 35,
+      "expected": 0
+    },
+    {
+      "distance": 0,
+      "coefficient": 1.03,
+      "expected": 0
+    },
+    {
+      "distance": 1,
+      "coefficient": 1,
+      "expected": 1
+    },
+    {
+      "distance": 1,
+      "coefficient": 5,
+      "expected": 5
+    },
+    {
+      "distance": 1,
+      "coefficient": 7,
+      "expected": 7
+    },
+    {
+      "distance": 1,
+      "coefficient": 35,
+      "expected": 35
+    },
+    {
+      "distance": 1,
+      "coefficient": 1.03,
+      "expected": 1.03
+    },
+    {
+      "distance": 2,
+      "coefficient": 1,
+      "expected": 8
+    },
+    {
+      "distance": 2,
+      "coefficient": 5,
+      "expected": 40
+    },
+    {
+      "distance": 2,
+      "coefficient": 7,
+      "expected": 56
+    },
+    {
+      "distance": 2,
+      "coefficient": 35,
+      "expected": 280
+    },
+    {
+      "distance": 2,
+      "coefficient": 1.03,
+      "expected": 8.24
+    },
+    {
+      "distance": 3,
+      "coefficient": 1,
+      "expected": 27
+    },
+    {
+      "distance": 3,
+      "coefficient": 5,
+      "expected": 135
+    },
+    {
+      "distance": 3,
+      "coefficient": 7,
+      "expected": 189
+    },
+    {
+      "distance": 3,
+      "coefficient": 35,
+      "expected": 945
+    },
+    {
+      "distance": 3,
+      "coefficient": 1.03,
+      "expected": 27.81
+    }
+  ],
+  "priorities": [
+    {
+      "lanePriority": 100,
+      "vehiclePriority": 101,
+      "expected": 0
+    },
+    {
+      "lanePriority": 102,
+      "vehiclePriority": 100,
+      "expected": 2
+    },
+    {
+      "lanePriority": 255,
+      "vehiclePriority": 108,
+      "expected": 147
+    },
+    {
+      "lanePriority": 0,
+      "vehiclePriority": 0,
+      "expected": 0
+    }
+  ],
+  "paths": [
+    {
+      "scenario": 0,
+      "spec": {
+        "length": 120,
+        "maxSpeed": 20,
+        "flowOffset": 0,
+        "costs": [2, 3, 4, 5],
+        "methods": 2,
+        "secondary": false
+      },
+      "parameters": {
+        "maxSpeed": [30, 10],
+        "walkSpeed": [1.5, 1],
+        "weights": [1, 2, 3, 4],
+        "methods": 2,
+        "ignoreFlow": false
+      },
+      "speed": 20,
+      "cost": 46
+    },
+    {
+      "scenario": 1,
+      "spec": {
+        "length": 120,
+        "maxSpeed": 20,
+        "flowOffset": 64,
+        "costs": [2, 3, 4, 5],
+        "methods": 2,
+        "secondary": false
+      },
+      "parameters": {
+        "maxSpeed": [30, 10],
+        "walkSpeed": [1.5, 1],
+        "weights": [1, 2, 3, 4],
+        "methods": 2,
+        "ignoreFlow": false
+      },
+      "speed": 15,
+      "cost": 48
+    },
+    {
+      "scenario": 2,
+      "spec": {
+        "length": 120,
+        "maxSpeed": 20,
+        "flowOffset": 255,
+        "costs": [2, 3, 4, 5],
+        "methods": 2,
+        "secondary": false
+      },
+      "parameters": {
+        "maxSpeed": [30, 10],
+        "walkSpeed": [1.5, 1],
+        "weights": [1, 2, 3, 4],
+        "methods": 2,
+        "ignoreFlow": false
+      },
+      "speed": 0.078125,
+      "cost": 1576
+    },
+    {
+      "scenario": 3,
+      "spec": {
+        "length": 120,
+        "maxSpeed": 20,
+        "flowOffset": 0,
+        "costs": [2, 3, 4, 5],
+        "methods": 2,
+        "secondary": true
+      },
+      "parameters": {
+        "maxSpeed": [30, 10],
+        "walkSpeed": [1.5, 1],
+        "weights": [1, 2, 3, 4],
+        "methods": 2,
+        "ignoreFlow": false
+      },
+      "speed": 10,
+      "cost": 52
+    },
+    {
+      "scenario": 4,
+      "spec": {
+        "length": 120,
+        "maxSpeed": 20,
+        "flowOffset": 200,
+        "costs": [2, 3, 4, 5],
+        "methods": 2,
+        "secondary": false
+      },
+      "parameters": {
+        "maxSpeed": [30, 10],
+        "walkSpeed": [1.5, 1],
+        "weights": [1, 2, 3, 4],
+        "methods": 2,
+        "ignoreFlow": true
+      },
+      "speed": 20,
+      "cost": 46
+    },
+    {
+      "scenario": 5,
+      "spec": {
+        "length": 120,
+        "maxSpeed": 20,
+        "flowOffset": 0,
+        "costs": [2, 3, 4, 5],
+        "methods": 1,
+        "secondary": false
+      },
+      "parameters": {
+        "maxSpeed": [30, 10],
+        "walkSpeed": [1.5, 1],
+        "weights": [1, 2, 3, 4],
+        "methods": 1,
+        "ignoreFlow": false
+      },
+      "speed": 1.5,
+      "cost": 120
+    },
+    {
+      "scenario": 6,
+      "spec": {
+        "length": 120,
+        "maxSpeed": 20,
+        "flowOffset": 0,
+        "costs": [2, 3, 4, 5],
+        "methods": 4,
+        "secondary": false
+      },
+      "parameters": {
+        "maxSpeed": [30, 10],
+        "walkSpeed": [1.5, 1],
+        "weights": [1, 2, 3, 4],
+        "methods": 4,
+        "ignoreFlow": false
+      },
+      "speed": 20,
+      "cost": 46
+    },
+    {
+      "scenario": 7,
+      "spec": {
+        "length": 120,
+        "maxSpeed": 40,
+        "flowOffset": 0,
+        "costs": [2, 3, 4, 5],
+        "methods": 2,
+        "secondary": false
+      },
+      "parameters": {
+        "maxSpeed": [30, 10],
+        "walkSpeed": [1.5, 1],
+        "weights": [1, 2, 3, 4],
+        "methods": 2,
+        "ignoreFlow": false
+      },
+      "speed": 30,
+      "cost": 44
+    },
+    {
+      "scenario": 8,
+      "spec": {
+        "length": 120,
+        "maxSpeed": 20,
+        "flowOffset": 0,
+        "costs": [2, 3, 4, 5],
+        "methods": 2,
+        "secondary": false
+      },
+      "parameters": {
+        "maxSpeed": [30, 10],
+        "walkSpeed": [1.5, 1],
+        "weights": [1, 0, 0, 0],
+        "methods": 2,
+        "ignoreFlow": false
+      },
+      "speed": 20,
+      "cost": 8
+    },
+    {
+      "scenario": 9,
+      "spec": {
+        "length": 120,
+        "maxSpeed": 20,
+        "flowOffset": 0,
+        "costs": [2, 3, 4, 5],
+        "methods": 2,
+        "secondary": false
+      },
+      "parameters": {
+        "maxSpeed": [30, 10],
+        "walkSpeed": [1.5, 1],
+        "weights": [0, 1, 0, 0],
+        "methods": 2,
+        "ignoreFlow": false
+      },
+      "speed": 20,
+      "cost": 3
+    },
+    {
+      "scenario": 10,
+      "spec": {
+        "length": 120,
+        "maxSpeed": 20,
+        "flowOffset": 0,
+        "costs": [2, 3, 4, 5],
+        "methods": 2,
+        "secondary": false
+      },
+      "parameters": {
+        "maxSpeed": [30, 10],
+        "walkSpeed": [1.5, 1],
+        "weights": [0, 0, 1, 0],
+        "methods": 2,
+        "ignoreFlow": false
+      },
+      "speed": 20,
+      "cost": 4
+    },
+    {
+      "scenario": 11,
+      "spec": {
+        "length": 120,
+        "maxSpeed": 20,
+        "flowOffset": 0,
+        "costs": [2, 3, 4, 5],
+        "methods": 2,
+        "secondary": false
+      },
+      "parameters": {
+        "maxSpeed": [30, 10],
+        "walkSpeed": [1.5, 1],
+        "weights": [0, 0, 0, 1],
+        "methods": 2,
+        "ignoreFlow": false
+      },
+      "speed": 20,
+      "cost": 5
+    }
+  ],
+  "citizens": [
+    {
+      "scenario": 0,
+      "input": {
+        "leisureCounter": 0,
+        "householdCitizens": 3,
+        "consumptionPerDay": 5000,
+        "comfortRandom": 0.1588875,
+        "movedIn": true,
+        "movingAwayTouristOrCommuter": false
+      },
+      "expected": [20, 2, 1.5, 1.317775]
+    },
+    {
+      "scenario": 1,
+      "input": {
+        "leisureCounter": 255,
+        "householdCitizens": 3,
+        "consumptionPerDay": 5000,
+        "comfortRandom": 0.58275163,
+        "movedIn": true,
+        "movingAwayTouristOrCommuter": false
+      },
+      "expected": [1.25, 2, 1.5, 2.1655033]
+    },
+    {
+      "scenario": 2,
+      "input": {
+        "leisureCounter": 0,
+        "householdCitizens": 3,
+        "consumptionPerDay": 5000,
+        "comfortRandom": 0.76651967,
+        "movedIn": true,
+        "movingAwayTouristOrCommuter": false
+      },
+      "expected": [20, 2, 1.5, 2.5330393]
+    },
+    {
+      "scenario": 3,
+      "input": {
+        "leisureCounter": 255,
+        "householdCitizens": 3,
+        "consumptionPerDay": 5000,
+        "comfortRandom": 0.47548378,
+        "movedIn": false,
+        "movingAwayTouristOrCommuter": false
+      },
+      "expected": [1.25, 2, 0.15, 1.9509676]
+    },
+    {
+      "scenario": 4,
+      "input": {
+        "leisureCounter": 0,
+        "householdCitizens": 3,
+        "consumptionPerDay": 5000,
+        "comfortRandom": 0.8886968,
+        "movedIn": false,
+        "movingAwayTouristOrCommuter": false
+      },
+      "expected": [20, 2, 0.15, 2.7773936]
+    },
+    {
+      "scenario": 5,
+      "input": {
+        "leisureCounter": 255,
+        "householdCitizens": 3,
+        "consumptionPerDay": 5000,
+        "comfortRandom": 0.36722267,
+        "movedIn": false,
+        "movingAwayTouristOrCommuter": true
+      },
+      "expected": [1.25, 2, 1.5, 1.7344453]
+    }
+  ],
+  "carSpecs": [
+    {
+      "scenario": 0,
+      "input": {
+        "length": 100,
+        "laneCrossCount": 2,
+        "approach": false,
+        "turning": false,
+        "uTurn": false,
+        "unsafe": false,
+        "highway": false,
+        "forbidden": false
+      },
+      "expected": [0, 0, 1, 4]
+    },
+    {
+      "scenario": 1,
+      "input": {
+        "length": 100,
+        "laneCrossCount": 2,
+        "approach": false,
+        "turning": true,
+        "uTurn": false,
+        "unsafe": false,
+        "highway": false,
+        "forbidden": false
+      },
+      "expected": [0, 0, 1, 5]
+    },
+    {
+      "scenario": 2,
+      "input": {
+        "length": 100,
+        "laneCrossCount": 2,
+        "approach": false,
+        "turning": false,
+        "uTurn": true,
+        "unsafe": false,
+        "highway": false,
+        "forbidden": false
+      },
+      "expected": [0, 0, 1, 14]
+    },
+    {
+      "scenario": 3,
+      "input": {
+        "length": 100,
+        "laneCrossCount": 2,
+        "approach": false,
+        "turning": false,
+        "uTurn": true,
+        "unsafe": true,
+        "highway": true,
+        "forbidden": false
+      },
+      "expected": [10, 150, 21, 64]
+    },
+    {
+      "scenario": 4,
+      "input": {
+        "length": 100,
+        "laneCrossCount": 2,
+        "approach": true,
+        "turning": true,
+        "uTurn": false,
+        "unsafe": false,
+        "highway": false,
+        "forbidden": false
+      },
+      "expected": [0, 0, 1, 4]
+    },
+    {
+      "scenario": 5,
+      "input": {
+        "length": 100,
+        "laneCrossCount": 2,
+        "approach": false,
+        "turning": false,
+        "uTurn": false,
+        "unsafe": false,
+        "highway": false,
+        "forbidden": true
+      },
+      "expected": [10, 100, 21, 54]
+    }
+  ],
+  "flows": [
+    {
+      "duration": 0,
+      "distance": 0,
+      "expected": 1
+    },
+    {
+      "duration": 10,
+      "distance": 0,
+      "expected": 0
+    },
+    {
+      "duration": 10,
+      "distance": 5,
+      "expected": 0.5
+    },
+    {
+      "duration": 10,
+      "distance": 20,
+      "expected": 1
+    }
+  ],
+  "edges": [
+    {
+      "scenario": 0,
+      "spec": {
+        "length": 120,
+        "maxSpeed": 20,
+        "flowOffset": 0,
+        "costs": [2, 3, 4, 5],
+        "methods": 2
+      },
+      "parameters": {
+        "maxSpeed": [30, 10],
+        "walkSpeed": [1.5, 1],
+        "weights": [1, 2, 3, 4],
+        "methods": 2
+      },
+      "options": {
+        "trafficRulePenalty": false,
+        "avoidBicycles": false,
+        "requireAuthorization": false,
+        "authorized": false,
+        "freeForward": false,
+        "freeBackward": false,
+        "boardingOnly": false,
+        "delta": [0, 1]
+      },
+      "expected": 46
+    },
+    {
+      "scenario": 1,
+      "spec": {
+        "length": 120,
+        "maxSpeed": 20,
+        "flowOffset": 0,
+        "costs": [2, 3, 4, 5],
+        "methods": 2
+      },
+      "parameters": {
+        "maxSpeed": [30, 10],
+        "walkSpeed": [1.5, 1],
+        "weights": [1, 2, 3, 4],
+        "methods": 2
+      },
+      "options": {
+        "trafficRulePenalty": true,
+        "avoidBicycles": false,
+        "requireAuthorization": false,
+        "authorized": false,
+        "freeForward": false,
+        "freeBackward": false,
+        "boardingOnly": false,
+        "delta": [0, 1]
+      },
+      "expected": 286
+    },
+    {
+      "scenario": 2,
+      "spec": {
+        "length": 120,
+        "maxSpeed": 20,
+        "flowOffset": 0,
+        "costs": [2, 3, 4, 5],
+        "methods": 2
+      },
+      "parameters": {
+        "maxSpeed": [30, 10],
+        "walkSpeed": [1.5, 1],
+        "weights": [1, 2, 3, 4],
+        "methods": 2
+      },
+      "options": {
+        "trafficRulePenalty": true,
+        "avoidBicycles": true,
+        "requireAuthorization": true,
+        "authorized": false,
+        "freeForward": false,
+        "freeBackward": false,
+        "boardingOnly": false,
+        "delta": [0, 1]
+      },
+      "expected": 534
+    },
+    {
+      "scenario": 3,
+      "spec": {
+        "length": 120,
+        "maxSpeed": 20,
+        "flowOffset": 0,
+        "costs": [2, 3, 4, 5],
+        "methods": 2
+      },
+      "parameters": {
+        "maxSpeed": [30, 10],
+        "walkSpeed": [1.5, 1],
+        "weights": [1, 2, 3, 4],
+        "methods": 2
+      },
+      "options": {
+        "trafficRulePenalty": false,
+        "avoidBicycles": false,
+        "requireAuthorization": false,
+        "authorized": false,
+        "freeForward": true,
+        "freeBackward": false,
+        "boardingOnly": false,
+        "delta": [0, 1]
+      },
+      "expected": 20
+    },
+    {
+      "scenario": 4,
+      "spec": {
+        "length": 120,
+        "maxSpeed": 20,
+        "flowOffset": 0,
+        "costs": [2, 3, 4, 5],
+        "methods": 2
+      },
+      "parameters": {
+        "maxSpeed": [30, 10],
+        "walkSpeed": [1.5, 1],
+        "weights": [1, 2, 3, 4],
+        "methods": 2
+      },
+      "options": {
+        "trafficRulePenalty": false,
+        "avoidBicycles": false,
+        "requireAuthorization": false,
+        "authorized": false,
+        "freeForward": false,
+        "freeBackward": true,
+        "boardingOnly": false,
+        "delta": [1, 0]
+      },
+      "expected": 20
+    },
+    {
+      "scenario": 5,
+      "spec": {
+        "length": 120,
+        "maxSpeed": 20,
+        "flowOffset": 0,
+        "costs": [2, 3, 4, 5],
+        "methods": 1024
+      },
+      "parameters": {
+        "maxSpeed": [30, 10],
+        "walkSpeed": [1.5, 1],
+        "weights": [1, 2, 3, 4],
+        "methods": 1024
+      },
+      "options": {
+        "trafficRulePenalty": false,
+        "avoidBicycles": false,
+        "requireAuthorization": false,
+        "authorized": false,
+        "freeForward": false,
+        "freeBackward": false,
+        "boardingOnly": true,
+        "delta": [0, 1]
+      },
+      "expected": 20
+    },
+    {
+      "scenario": 6,
+      "spec": {
+        "length": 120,
+        "maxSpeed": 20,
+        "flowOffset": 0,
+        "costs": [2, 3, 4, 5],
+        "methods": 2
+      },
+      "parameters": {
+        "maxSpeed": [30, 10],
+        "walkSpeed": [1.5, 1],
+        "weights": [1, 2, 3, 4],
+        "methods": 2
+      },
+      "options": {
+        "trafficRulePenalty": false,
+        "avoidBicycles": false,
+        "requireAuthorization": false,
+        "authorized": true,
+        "freeForward": false,
+        "freeBackward": false,
+        "boardingOnly": false,
+        "delta": [0, 1]
+      },
+      "expected": 246
+    }
+  ],
+  "rounds": [
+    {
+      "value": 0,
+      "expected": 0
+    },
+    {
+      "value": 0.5,
+      "expected": 0
+    },
+    {
+      "value": 1.5,
+      "expected": 2
+    },
+    {
+      "value": 2.5,
+      "expected": 2
+    },
+    {
+      "value": 254.5,
+      "expected": 254
+    },
+    {
+      "value": 255.5,
+      "expected": 256
+    },
+    {
+      "value": 256,
+      "expected": 256
+    }
+  ]
+}
