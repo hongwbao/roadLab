@@ -59,6 +59,13 @@ export type CS2RuntimeVehicleView = Omit<
   temporaryBlocker: boolean;
   fullUpdatePending: boolean;
 };
+export type CS2RuntimeReadonly<T> = T extends readonly (infer Item)[]
+  ? readonly CS2RuntimeReadonly<Item>[]
+  : T extends object
+    ? { readonly [Key in keyof T]: CS2RuntimeReadonly<T[Key]> }
+    : T;
+export type CS2RuntimeReadonlyVehicleView =
+  CS2RuntimeReadonly<CS2RuntimeVehicleView>;
 type StoredVehicle = Omit<CS2RuntimeVehicleView, "nextLanes" | "frames"> & {
   nextLanes: CS2NavigationQueuedLane[];
   frames: CS2RuntimeFrame[];
@@ -198,6 +205,13 @@ const viewCopy = (v: StoredVehicle): CS2RuntimeVehicleView => ({
   nextLanes: v.nextLanes.map((q) => ({ ...q })),
   frames: v.frames.map(frameCopy),
 });
+function freezeSnapshot<T>(value: T): CS2RuntimeReadonly<T> {
+  if (value && typeof value === "object") {
+    for (const child of Object.values(value)) freezeSnapshot(child);
+    Object.freeze(value);
+  }
+  return value as CS2RuntimeReadonly<T>;
+}
 
 /** UpdateGroupJob.FindUpdateIndex: least population, first index wins ties. */
 export function cs2ChooseVehicleUpdateGroup(
@@ -273,6 +287,12 @@ export function cs2ResetUpdatedVehicleFrames(
 export class Cs2VehicleRuntime {
   private lanes: ReadonlyMap<string, CS2NavigationCurve>;
   private vehicles = new Map<CS2RuntimeVehicleId, StoredVehicle>();
+  private readCache = new WeakMap<
+    StoredVehicle,
+    CS2RuntimeReadonlyVehicleView
+  >();
+  private physicalCache = new WeakMap<StoredVehicle, CS2RuntimePhysicalState>();
+  private readList?: readonly CS2RuntimeReadonlyVehicleView[];
   private stepping = false;
   private lastFrame: number;
   constructor(
@@ -373,11 +393,14 @@ export class Cs2VehicleRuntime {
       temporaryBlocker: false,
       fullUpdatePending: false,
     });
+    this.readList = undefined;
     return this.getVehicle(seed.id)!;
   }
   removeVehicle(id: CS2RuntimeVehicleId) {
     this.assertIdle();
-    return this.vehicles.delete(id);
+    const removed = this.vehicles.delete(id);
+    if (removed) this.readList = undefined;
+    return removed;
   }
   getVehicle(id: CS2RuntimeVehicleId) {
     const v = this.vehicles.get(id);
@@ -385,6 +408,32 @@ export class Cs2VehicleRuntime {
   }
   allVehicles() {
     return [...this.vehicles.values()].map(viewCopy);
+  }
+  /** Immutable snapshots are shared until the corresponding vehicle changes. */
+  readVehicle(id: CS2RuntimeVehicleId) {
+    const vehicle = this.vehicles.get(id);
+    return vehicle ? this.readView(vehicle) : undefined;
+  }
+  readVehicles(): readonly CS2RuntimeReadonlyVehicleView[] {
+    return (this.readList ??= Object.freeze(
+      [...this.vehicles.values()].map((vehicle) => this.readView(vehicle)),
+    ));
+  }
+  private readView(vehicle: StoredVehicle) {
+    let snapshot = this.readCache.get(vehicle);
+    if (!snapshot) {
+      snapshot = freezeSnapshot(viewCopy(vehicle));
+      this.readCache.set(vehicle, snapshot);
+    }
+    return snapshot;
+  }
+  private physicalView(vehicle: StoredVehicle) {
+    let snapshot = this.physicalCache.get(vehicle);
+    if (!snapshot) {
+      snapshot = freezeSnapshot(stateCopy(vehicle.state));
+      this.physicalCache.set(vehicle, snapshot);
+    }
+    return snapshot;
   }
   physicalState(id: CS2RuntimeVehicleId) {
     const v = this.vehicles.get(id);
@@ -420,6 +469,9 @@ export class Cs2VehicleRuntime {
     this.assertIdle();
     const v = this.vehicles.get(id);
     if (!v) return undefined;
+    this.readCache.delete(v);
+    this.physicalCache.delete(v);
+    this.readList = undefined;
     if (state) v.state = stateCopy(state);
     v.frames = cs2ResetUpdatedVehicleFrames(
       v.state,
@@ -454,15 +506,7 @@ export class Cs2VehicleRuntime {
         CS2RuntimePhysicalState
       >();
       for (const [id, v] of this.vehicles) {
-        const s = stateCopy(v.state);
-        physicalSnapshot.set(
-          id,
-          Object.freeze({
-            position: Object.freeze(s.position),
-            velocity: Object.freeze(s.velocity),
-            rotation: Object.freeze(s.rotation),
-          }),
-        );
+        physicalSnapshot.set(id, this.physicalView(v));
       }
       const context: CS2RuntimeContext = {
           frame: absoluteFrame,
@@ -632,6 +676,7 @@ export class Cs2VehicleRuntime {
       for (const row of pending)
         if (row.remove) this.vehicles.delete(row.vehicle.id);
         else this.vehicles.set(row.vehicle.id, row.vehicle);
+      if (pending.length) this.readList = undefined;
       this.lastFrame = absoluteFrame;
       return { frame: absoluteFrame, updatedIds, motionIds, events };
     } finally {

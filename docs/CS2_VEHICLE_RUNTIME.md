@@ -70,6 +70,12 @@ const result = runtime.stepFrame(absolute60HzFrame, (vehicle, context) => ({
 
 灯光的 `effects-updated` 另按四槽 aggregate flags 比较计算，不会因为某一槽变化就错误地触发整车效果重建。
 
+## 浏览器读取与分配
+
+`getVehicle/allVehicles` 仍返回独立的可变副本。宿主的只读世界扫描可以使用 `readVehicle/readVehicles`，返回递归冻结、按车辆状态版本缓存的完整快照。未更新的车辆在下一逻辑帧复用同一快照，实际导航/移动提交、完整更新、删除与重新生成会正确刷新。旧快照不会随内部状态变化。
+
+帧开始的物理快照也按同一状态版本复用不可变向量，避免每个 60Hz 帧为全部车辆重复复制四槽和位置。这是宿主的内存分配优化；源调度、随机流、目标/移动数值和公开副本读取契约不变。原多帧 oracle 与独立缓存失效/不可变性测试分别验证两种性质。
+
 ## 更新组分配与显示
 
 原新车更新组不是简单 `id & 15`。`UpdateGroupJob.FindUpdateIndex` 优先使用已有 controller/指定 prefab 组，否则选择当前数量最少的组，同数量取最小索引。运行时接受显式 updateGroup；未给定时用其普通车辆群体的 least-populated 分配器。真实世界其他实体、prefab 和 layout 的组信息仍应由宿主传入。
