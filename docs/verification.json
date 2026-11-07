@@ -1,67 +1,56 @@
 {
-  "recorded_at": "2026-11-07T07:02:49.799830+00:00",
-  "latest_change": "道路优先：原式世界吸附和完整控制点已接实际编辑器实验入口；完整CourseSplit节点归并接线前，正常入口保留兼容建路。预览与提交共用实际吸附点。",
-  "record_type": "用户要求的预览发布与限定范围验证；不是全部交通复刻或长期高压验收通过。",
+  "recorded_at": "2026-11-07T09:45:32.132444+00:00",
+  "latest_change": "路口车道连线与自定义红绿灯已整合发布：J点选入/出车道圆点修改实际路由；K支持逐相位配时、进口转向许可、四相位默认、命名方案与跨路口/JSON复用。",
+  "record_type": "用户授权的功能预览发布与固定构建限定范围验证；不是全部交通复刻或长期高压验收通过。",
   "checks": [
     {
       "command": "npm run build",
       "exit_code": 0,
-      "scope": "固定源码类型/生产构建；未接线几何/节点创建草稿排除；测试源单独归档"
+      "scope": "frozen source whole-project TypeScript and production build"
     },
     {
-      "command": "npx vitest run [12 road/source integration suites]",
+      "command": "npx vitest run [7 core/program/lane/engine suites]",
       "exit_code": 0,
-      "passed_cases": 1972,
-      "scope": "完整课程、吸附与真实世界/点击编排、原式几何、source engine/facade/rendering、自动过渡/分段/车道建造；不是全部交通长期验收"
+      "passed_cases": 127,
+      "scope": "junction control data, signals, actual engine and model integration"
     },
     {
-      "command": "PLAYWRIGHT_PORT=5196 npx playwright test",
+      "command": "PLAYWRIGHT_PORT=5198 npx playwright test",
       "exit_code": 0,
-      "passed_cases": 46,
-      "scope": "固定生产资源，默认兼容入口全部编辑回归及原式实验入口的真实三点曲线、相对格长、Alt高架；测试源见browser-suite-manifest.json"
+      "passed_cases": 50,
+      "scope": "full browser suite against immutable production resources"
     },
     {
-      "command": "PLAYWRIGHT_PORT=5173 npx playwright test tests/browser/editor.spec.ts --grep 'three-click curves use original road fitting'",
-      "exit_code": 0,
-      "passed_cases": 1,
-      "scope": "实际线上原式实验入口建造、预览提交、撤销重做及保存重载"
+      "command": "impeccable finish review",
+      "disposition": "ship",
+      "scope": "two junction control UIs, desktop1440x900 and compact390x844; physics not certified"
     },
     {
-      "command": "SMOKE_URL=http://127.0.0.1:5173/ node .analysis/preview-smoke.mjs",
+      "command": "HTTP SHA-256 verification at localhost and LAN5173",
       "exit_code": 0,
-      "result": {
-        "url": "http://127.0.0.1:5173/",
-        "initial": {
-          "roads": 5,
-          "routes": 2,
-          "model": "cs2-derived",
-          "canvas": true
-        },
-        "traffic": {
-          "elapsed": 61.18333333333333,
-          "generated": 24,
-          "entered": 24,
-          "completed": 14,
-          "visible": 9,
-          "failed": 0
-        },
-        "zeroDemand": {
-          "before": 24,
-          "after": 24,
-          "multiplier": 0
-        },
-        "errors": [],
-        "passed": true
-      }
+      "passed_cases": 10,
+      "scope": "index, release metadata, JavaScript, CSS and worker match frozen release"
+    },
+    {
+      "command": "SMOKE_URL=http://127.0.0.1:5173/ node tests/production.mjs",
+      "exit_code": 0,
+      "scope": "live canvas, initial5roads/2routes, no page or asset errors"
+    },
+    {
+      "command": "PLAYWRIGHT_PORT=5173 npx playwright test [2 junction feature cases]",
+      "exit_code": 0,
+      "passed_cases": 2,
+      "scope": "live dot-to-dot routing/save/restore and signal-preset JSON import/apply"
     }
   ],
   "limitations": [
     "原式吸附实验入口仍使用兼容最终道路应用；完整CourseSplit/节点几何/节点车道与后处理尚未接线，部分端点与附件行为有已知差异。正常入口继续兼容吸附。",
-    "高压分合流仍检出同一显示时刻车身重叠，本次作为预览发布，长期回归未验收。",
+    "高压分合流和有灯路口仍检出车身重叠；保留的protected压力测试基线43/本版51次采样重叠，长期高压回归未验收。本次上线属于功能预览。",
     "完整PersonalCarAI已接实际引擎；完整导航窗口独立模块仍未接engine。",
     "行人、真实停车、公交、货运、应急任务和其他交通方式未完整实现。",
     "普通无灯路口的部分减速经完整原式lane-speed oracle复现，不能按旧恒速假设删除让行行为。",
-    "本次没有推送远程仓库或运行GitHub Actions。"
+    "本次没有推送远程仓库或运行GitHub Actions。",
+    "命名信号方案库保存在当前浏览器；跨浏览器或设备须导出/导入JSON。紧凑布局保留键盘/名称辅助，不代表完整触屏编辑。"
   ],
   "previous_verified_stable_snapshot": {
     "recorded_at": "2026-11-06T11:58:12.595591+00:00",
@@ -411,24 +400,25 @@
     "healthz": "ok"
   },
   "current_deployment": {
-    "version": "source-road-snapping-20261107-145700",
+    "version": "junction-controls-20261107-093858",
     "url": "http://192.168.31.167:5173/",
     "experimental_road_url": "http://192.168.31.167:5173/?construction=source",
-    "bundle": "assets/index-BMqNiVAu.js",
-    "css": "assets/index-CxjdwM7I.css",
-    "source_snapshot": "/home/bhw/repos/interchange-lab/.cache/builds/source-road-snapping-20261107-145700/source",
-    "manifest": "/home/bhw/repos/interchange-lab/.cache/deployments/source-road-snapping-20261107-145700/source-manifest.json",
-    "browser_suite_manifest": "/home/bhw/repos/interchange-lab/.cache/deployments/source-road-snapping-20261107-145700/browser-suite-manifest.json",
+    "source_commit": "452f1779d62ab9fdbbdd46e6a682f1707c076295",
+    "source_snapshot": "/home/bhw/repos/interchange-lab/.cache/builds/junction-controls-20261107-093858/source",
+    "manifest": "/home/bhw/repos/interchange-lab/.cache/deployments/junction-controls-20261107-093858/manifest.json",
+    "bundle": "assets/index-zAFNwwru.js",
+    "css": "assets/index-DpXCUj7E.css",
+    "path_worker": "assets/cs2-path-worker-DFcwOVUm.js",
     "dist_sha256": {
-      "release.json": "d8b4dd1a0008784d6d9e3862ddb7ceb2f24c87f92857a921128171607399a732",
-      "index.html": "dd071cbad88fd151ef6bf337fc9d8dedea31cc97ccceb3c12a038a39b563f2ba",
+      "release.json": "ff0c1fbcb855d8a07be8266d7800e0637f8838a22ce9c4ea62def5894fb315f5",
+      "index.html": "d1eda955dc9779f8662b0131c4ca113cc9a448a242a75edf71f29e98fec2fde6",
       "assets/cs2-path-worker-DFcwOVUm.js": "98850414cebb8d678b7082ac85feaef178e9d67b2bf4f7cbb1707e248b3b074c",
-      "assets/index-CxjdwM7I.css": "b11b42635b0047592bd3a9f4457a3e366ab71e3252a3011661d60cdc0860981c",
-      "assets/index-BMqNiVAu.js": "e9aa576ee8334c5f0d8bbd9dcd757a834f15575d15a3207166500ff8abc4b4fa"
+      "assets/index-DpXCUj7E.css": "171812d17f51d711bf5c396e56c73b7f2e68c568516f905a49c4698c7d394e8a",
+      "assets/index-zAFNwwru.js": "c1ae6cd0361a8eca20c143f42504d170f2c85d82d676b6351da5ba9a7fc700bb"
     },
-    "healthz": "ok",
-    "traffic_model": "cs2-derived",
-    "road_construction_default": "compatible"
+    "http_verification": "/home/bhw/repos/interchange-lab/.cache/deployments/junction-controls-20261107-093858/http-verification.json",
+    "ui_review": "/home/bhw/repos/interchange-lab/.cache/deployments/junction-controls-20261107-093858/ui-review/finish-review.md",
+    "service": "roadlab.service, active"
   },
   "previous_cs2_preview_checks": [
     {
@@ -553,6 +543,90 @@
         "errors": [],
         "passed": true
       }
+    }
+  ],
+  "previous_source_road_snapping_deployment": {
+    "version": "source-road-snapping-20261107-145700",
+    "url": "http://192.168.31.167:5173/",
+    "experimental_road_url": "http://192.168.31.167:5173/?construction=source",
+    "bundle": "assets/index-BMqNiVAu.js",
+    "css": "assets/index-CxjdwM7I.css",
+    "source_snapshot": "/home/bhw/repos/interchange-lab/.cache/builds/source-road-snapping-20261107-145700/source",
+    "manifest": "/home/bhw/repos/interchange-lab/.cache/deployments/source-road-snapping-20261107-145700/source-manifest.json",
+    "browser_suite_manifest": "/home/bhw/repos/interchange-lab/.cache/deployments/source-road-snapping-20261107-145700/browser-suite-manifest.json",
+    "dist_sha256": {
+      "release.json": "d8b4dd1a0008784d6d9e3862ddb7ceb2f24c87f92857a921128171607399a732",
+      "index.html": "dd071cbad88fd151ef6bf337fc9d8dedea31cc97ccceb3c12a038a39b563f2ba",
+      "assets/cs2-path-worker-DFcwOVUm.js": "98850414cebb8d678b7082ac85feaef178e9d67b2bf4f7cbb1707e248b3b074c",
+      "assets/index-CxjdwM7I.css": "b11b42635b0047592bd3a9f4457a3e366ab71e3252a3011661d60cdc0860981c",
+      "assets/index-BMqNiVAu.js": "e9aa576ee8334c5f0d8bbd9dcd757a834f15575d15a3207166500ff8abc4b4fa"
+    },
+    "healthz": "ok",
+    "traffic_model": "cs2-derived",
+    "road_construction_default": "compatible"
+  },
+  "previous_source_road_snapping_checks": [
+    {
+      "command": "npm run build",
+      "exit_code": 0,
+      "scope": "固定源码类型/生产构建；未接线几何/节点创建草稿排除；测试源单独归档"
+    },
+    {
+      "command": "npx vitest run [12 road/source integration suites]",
+      "exit_code": 0,
+      "passed_cases": 1972,
+      "scope": "完整课程、吸附与真实世界/点击编排、原式几何、source engine/facade/rendering、自动过渡/分段/车道建造；不是全部交通长期验收"
+    },
+    {
+      "command": "PLAYWRIGHT_PORT=5196 npx playwright test",
+      "exit_code": 0,
+      "passed_cases": 46,
+      "scope": "固定生产资源，默认兼容入口全部编辑回归及原式实验入口的真实三点曲线、相对格长、Alt高架；测试源见browser-suite-manifest.json"
+    },
+    {
+      "command": "PLAYWRIGHT_PORT=5173 npx playwright test tests/browser/editor.spec.ts --grep 'three-click curves use original road fitting'",
+      "exit_code": 0,
+      "passed_cases": 1,
+      "scope": "实际线上原式实验入口建造、预览提交、撤销重做及保存重载"
+    },
+    {
+      "command": "SMOKE_URL=http://127.0.0.1:5173/ node .analysis/preview-smoke.mjs",
+      "exit_code": 0,
+      "result": {
+        "url": "http://127.0.0.1:5173/",
+        "initial": {
+          "roads": 5,
+          "routes": 2,
+          "model": "cs2-derived",
+          "canvas": true
+        },
+        "traffic": {
+          "elapsed": 61.18333333333333,
+          "generated": 24,
+          "entered": 24,
+          "completed": 14,
+          "visible": 9,
+          "failed": 0
+        },
+        "zeroDemand": {
+          "before": 24,
+          "after": 24,
+          "multiplier": 0
+        },
+        "errors": [],
+        "passed": true
+      }
+    }
+  ],
+  "known_failing_checks": [
+    {
+      "test": "tests/traffic-lights.test.ts: continues serving traffic across multiple signal cycles without body overlap",
+      "status": "failed",
+      "baseline_observed_overlap_samples": 43,
+      "current_observed_overlap_samples": 51,
+      "scope": "120simsec protected-mode pressure; assertion retained, no physics workaround; not included in127 passing feature regression",
+      "baseline_log": "/home/bhw/repos/interchange-lab/.cache/signals/baseline-protected-pressure.log",
+      "current_log": "/home/bhw/repos/interchange-lab/.cache/signals/root-custom-controls.log"
     }
   ]
 }

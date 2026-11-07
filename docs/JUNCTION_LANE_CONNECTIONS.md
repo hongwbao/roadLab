@@ -45,4 +45,4 @@ type JunctionLaneRule = {
 限定严格 TypeScript 和这些文件的 Prettier 检查通过。
 
 `tests/browser/junction-lane-connections.spec.ts` 提供实际鼠标圆点操作、存档重载及紧凑屏键盘焦点回归。
-浏览器验证和部署由集成会话在固定源码快照上统一完成，本模块交付时不宣称这些浏览器检查或上线已经完成。
+2026-11-07 集成发布：固定源码构建、127 项相关核心与引擎测试、50 项完整浏览器回归通过；5173 线上车道连线和方案导入两项复测通过。发布与已知交通压力失败记录见 [验证记录](verification.json)。
