@@ -1,6 +1,7 @@
 import { expect, it } from "vitest";
 import { emptyProject, makeRoad } from "../src/core/model";
 import { v } from "../src/core/math";
+import { cs2RoadCourseControlPoint } from "../src/core/cs2-road-courses";
 import {
   buildCS2RoadLabCourse,
   createCS2RoadLabCourseWorld,
@@ -68,4 +69,37 @@ it("linearizes the grade in the full simple builder and keeps the prototype road
     align: "right",
     width: 3.5,
   });
+});
+
+it("carries original snap node, elevation and quantized parameter into the course transaction", () => {
+  const road = makeRoad(v(), v(100, 0), { id: "existing" }),
+    project = { roads: [road] },
+    world = createCS2RoadLabCourseWorld(project, "asset", road),
+    node = world.edges.get(road.id)!.end!,
+    start = cs2RoadCourseControlPoint(v(100, 0), {
+      originalEntity: node,
+      direction: { x: 1, y: 0 },
+      rotation: { x: 0, y: Math.SQRT1_2, z: 0, w: Math.SQRT1_2 },
+      elevation: 7,
+      curvePosition: 1,
+      snapPriority: { x: 2, y: 0.9 },
+    }),
+    end = cs2RoadCourseControlPoint(v(42, 20), {
+      originalEntity: road.id,
+      curvePosition: 0.4,
+    }),
+    before = structuredClone([start, end]),
+    { source } = buildCS2RoadLabCourse({
+      project,
+      asset: "asset",
+      options: {},
+      points: [v(100, 0), v(42, 20)],
+      controlPoints: [start, end],
+    });
+  expect(source.courses[0].start.entity).toBe(node);
+  expect(source.courses[0].start.elevation).toEqual([7, 7]);
+  expect(source.courses[0].end.entity).toBe(road.id);
+  expect(source.courses[0].end.splitPosition).toBe(Math.fround(0.4));
+  expect(source.courses[0].curve[3]).toEqual(v(42, 20));
+  expect([start, end]).toEqual(before);
 });

@@ -72,6 +72,8 @@ oracle中的脚本reply只是对这些边界的验证，**不是已实现原附�
 
 `/home/bhw/repos/roadlab-reverse/oracles/road-courses/` 保留extract.py、generate.py、Program.cs、World.cs、项目与provenance。机械提取13个完整原方法体，控制流不改；仅用字典查询、托管hash表/命令队列替换native ECS容器，并用委托实际Unity RNG的wrapper记录state。`Game.dll`的NetUtils、ObjectUtils、RandomSeed与`Colossal.MathUtils`实际执行。source方法token、IL SHA、原方法体SHA和容器/依赖替换范围写入fixture。
 
-当前fixture有458个原式输入：346个完整课程世界（直线、Simple、Complex、Continuous），35个GetCoursePos世界、7个Cut范围和70个网格切分参数。包含高程限制、零坡度、窄角与退化回退、双段连续曲线、元数据、Owner缓存/临时对象/升级/附着、原命令次序以及每类依赖的pending和明确回复。另有provenance与独立合约测试，合计460项。它们检查同一次事务恢复时不重复前缀或RNG。
+当前fixture有472个原式输入：346个完整课程世界（直线、Simple、Complex、Continuous），35个GetCoursePos世界、7个Cut范围和84个网格切分参数。包含高程限制、零坡度、窄角与退化回退、双段连续曲线、元数据、Owner缓存/临时对象/升级/附着、原命令次序以及每类依赖的pending和明确回复。另有provenance与独立合约测试，合计474项。它们检查同一次事务恢复时不重复前缀或RNG。
+
+新增的14个零长度切分输入直接重新执行原式C#方法和原Unity数学DLL。启用SnapCellSize时，原式`GetCutPosition(0,t)`中出现`0/0`，Unity的`math.saturate(NaN)`返回1；JavaScript的`Math.min`会传播NaN。移植保留Unity的分支语义，不用小分母或容差替代。
 
 这些证据区分原完整方法体提取、实际DLL数值调用与浏览器世界适配，不等同于整个Unity道路建造系统或完整道路资产已经运行等价。

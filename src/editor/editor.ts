@@ -2,6 +2,12 @@ import { getAsset } from "../core/assets";
 import { automaticTransitionPreview } from "../core/auto-transitions";
 import { buildCS2RoadLabCourse } from "../core/cs2-road-building";
 import {
+  placeCS2RoadLabPoint,
+  type CS2RoadLabPlacementPoint,
+} from "../core/cs2-road-placement";
+import { cs2RoadControlPoint } from "../core/cs2-road-snapping";
+import { cs2RoadLabSnapNodeId } from "../core/cs2-road-snap-world";
+import {
   add,
   center,
   dist,
@@ -77,8 +83,16 @@ export type SnapInfo = {
   lanes?: number[];
   ownLanes?: number[];
   interior?: boolean;
+  /** Explicit RoadLab lane/edge alignment layered on the source-selected road. */
+  custom?: "lane" | "alignment";
 };
 export class Editor {
+  // Source snapping needs the source split/merge transaction before becoming
+  // the default. Explicit URL opt-in keeps its real editor path reviewable.
+  roadConstructionModel: "source" | "compatible" =
+    new URLSearchParams(location.search).get("construction") === "source"
+      ? "source"
+      : "compatible";
   project: Project;
   selected = new Set<string>();
   history = new History();
@@ -121,6 +135,9 @@ export class Editor {
     transitionEnd: 1,
   };
   drawPoints: V[] = [];
+  private drawControlPoints: CS2RoadLabPlacementPoint[] = [];
+  private placementControlPoint?: CS2RoadLabPlacementPoint;
+  private placementMouse?: { x: number; y: number; alt: boolean };
   private drawStartSnap?: SnapInfo;
   continuous = true;
   snapInfo?: SnapInfo;
@@ -253,6 +270,9 @@ export class Editor {
     }
     this.drag = undefined;
     this.drawPoints = [];
+    this.drawControlPoints = [];
+    this.placementControlPoint = undefined;
+    this.placementMouse = undefined;
     this.drawStartSnap = undefined;
     this.snapInfo = undefined;
     this.scene.showPreviews([]);
@@ -313,7 +333,203 @@ export class Editor {
     el.style.top = `${Math.max(68, Math.min(rect.height - 230, p.y - rect.top - 52))}px`;
     el.hidden = false;
   }
+  private snappedForBuild(p: V, exclude?: string, disabled = false): V {
+    this.snapInfo = undefined;
+    const ownEnd = this.drawPoints.length ? 1 : 0,
+      proposed = this.drawPoints.length
+        ? this.draft(p)
+        : makeRoad(p, add(p, v(32, 0)), { ...this.draw }),
+      screen = this.scene.project(p),
+      picked = this.scene.hit(screen.x, screen.y),
+      pickedRoad = this.project.roads.find((r) => r.id === picked?.road),
+      placement = placeCS2RoadLabPoint({
+        project: this.project,
+        proposedRoad: proposed,
+        assetId: this.assetId,
+        raw: p,
+        previous: this.drawControlPoints,
+        mode: this.tool === "curve" ? 1 : 0,
+        snap: this.settings.snap && !disabled,
+        grid: this.settings.grid,
+        excludeRoad: exclude,
+        hit:
+          pickedRoad && picked?.position
+            ? { road: pickedRoad.id, t: nearest(pickedRoad, picked.position).t }
+            : undefined,
+      });
+    this.placementControlPoint = placement.point;
+    const result = placement.point,
+      ref = result.reference,
+      road = ref && this.project.roads.find((r) => r.id === ref.road);
+    // The original candidate priority chooses the road first. Tab lane groups
+    // and explicit edge alignment are this game's requested editing extensions.
+    if (road && ref && !ref.extended) {
+      const t = ref.t,
+        trueEnd = ref.end !== undefined,
+        direction = mul(tangent(road, t), t === 0 ? -1 : 1),
+        template = this.drawPoints.length
+          ? proposed
+          : makeRoad(p, add(p, mul(direction, 32)), { ...this.draw });
+      if (
+        this.laneSnapping &&
+        this.alignment === "auto" &&
+        !this.draw.twoWay &&
+        (trueEnd ||
+          (this.draw.kind === "ramp" &&
+            !road.twoWay &&
+            road.lanesStart === road.lanesEnd &&
+            !road.profile &&
+            t > 0.04 &&
+            t < 0.96))
+      ) {
+        const toward = this.drawPoints.length
+            ? sub(p, this.drawPoints[0])
+            : direction,
+          length = Math.hypot(toward.x, toward.z),
+          parallel =
+            length <= 4 ||
+            Math.abs(toward.x * direction.x + toward.z * direction.z) /
+              length >=
+              0.7,
+          candidates = parallel
+            ? laneAnchors(road, t, template, ownEnd)
+                .filter(
+                  (anchor) =>
+                    trueEnd ||
+                    Math.min(...anchor.lanes) === 0 ||
+                    Math.max(...anchor.lanes) === laneCount(road) - 1,
+                )
+                .map((anchor) => {
+                  const at = this.scene.project(anchor.contact);
+                  return {
+                    anchor,
+                    distance: Math.hypot(screen.x - at.x, screen.y - at.y),
+                  };
+                })
+                .sort((a, b) => a.distance - b.distance)
+            : [];
+        if (candidates.length) {
+          const key = `${road.id}:${t.toFixed(4)}:${ownEnd}`;
+          if (key !== this.laneCandidateKey) {
+            this.laneCandidate = 0;
+            this.laneCandidateKey = key;
+          }
+          this.laneCandidateCount = candidates.length;
+          const { anchor } =
+              candidates[
+                ((this.laneCandidate % candidates.length) + candidates.length) %
+                  candidates.length
+              ],
+            numbers = anchor.lanes.map((lane) => laneNumber(road, lane, t)),
+            offset = dist(anchor.contact, center(road, t));
+          result.position = copy(anchor.position);
+          result.source.position = copy(anchor.contact);
+          this.snapInfo = {
+            kind: "lane",
+            custom: "lane",
+            position: anchor.position,
+            contact: anchor.contact,
+            reference: center(road, t),
+            road: road.id,
+            t,
+            lanes: anchor.lanes,
+            ownLanes: anchor.ownLanes,
+            interior: !trueEnd,
+            text: `车道吸附：${numbers.length === 1 ? `第 ${numbers[0]} 车道` : `第 ${numbers[0]}–${numbers.at(-1)} 车道`} · ${offset.toFixed(2)} m${candidates.length > 1 ? " · Tab 切换" : ""}`,
+          };
+          return result.position;
+        }
+      }
+      this.laneCandidateCount = 0;
+      this.laneCandidateKey = "";
+      if (this.alignment !== "auto" && trueEnd) {
+        const [anchor] = endpointAnchors(
+          road,
+          ref.end!,
+          template,
+          ownEnd,
+          this.alignment,
+        );
+        result.position = copy(anchor.position);
+        result.source.position = copy(anchor.contact);
+        this.snapInfo = {
+          kind: Math.abs(anchor.offset) > 0.05 ? "offset" : "endpoint",
+          custom: "alignment",
+          ...anchor,
+          road: road.id,
+          t,
+          text:
+            Math.abs(anchor.offset) > 0.05
+              ? `偏移吸附：${anchor.alignment === "left" ? "左" : "右"}缘对齐 · ${Math.abs(anchor.offset).toFixed(2)} m`
+              : "吸附：道路端点",
+        };
+        return result.position;
+      }
+      const reference = center(road, t),
+        d = tangent(road, t),
+        delta = sub(result.source.position, reference),
+        offset = -d.z * delta.x + d.x * delta.z,
+        side = trueEnd && Math.abs(offset) > 0.05;
+      this.snapInfo = {
+        kind: side ? "offset" : trueEnd ? "endpoint" : "road",
+        position: result.position,
+        contact: result.source.position,
+        reference: side ? reference : undefined,
+        road: road.id,
+        t,
+        offset,
+        alignment: side ? (offset < 0 ? "left" : "right") : "center",
+        text: side
+          ? `偏移吸附：${offset < 0 ? "左" : "右"}缘对齐 · ${Math.abs(offset).toFixed(2)} m`
+          : trueEnd
+            ? "吸附：道路端点"
+            : "吸附：接入道路，自动生成路口",
+      };
+    } else {
+      this.laneCandidateCount = 0;
+      this.laneCandidateKey = "";
+      if (placement.source && dist(result.source.position, p) > 0.001)
+        this.snapInfo = {
+          kind: this.settings.grid ? "grid" : "angle",
+          position: result.position,
+          contact: result.source.position,
+          text: ref?.extended
+            ? "吸附：道路延长导向线"
+            : this.settings.grid
+              ? "吸附：方向与格长对齐"
+              : "吸附：道路导向线",
+        };
+    }
+    return result.position;
+  }
   snapped(p: V, exclude?: string, disabled = false): V {
+    if (this.building && this.roadConstructionModel === "source")
+      return this.snappedForBuild(p, exclude, disabled);
+    const q = this.snappedCompatible(p, exclude, disabled);
+    if (this.building) {
+      const snap = this.snapInfo;
+      this.placementControlPoint = {
+        position: copy(q),
+        source: { ...cs2RoadControlPoint(snap?.contact ?? q), elevation: q.y },
+        reference:
+          snap?.road && snap.t !== undefined
+            ? {
+                road: snap.road,
+                t: snap.t,
+                ...(snap.t === 0 || snap.t === 1
+                  ? { end: snap.t as 0 | 1 }
+                  : {}),
+                nativeEntity: snap.road,
+                nativeT: snap.t,
+                extended: false,
+                artificialSeam: false,
+              }
+            : undefined,
+      };
+    }
+    return q;
+  }
+  private snappedCompatible(p: V, exclude?: string, disabled = false): V {
     const previous = this.snapInfo;
     this.snapInfo = undefined;
     if (!this.settings.snap || disabled) return p;
@@ -664,12 +880,37 @@ export class Editor {
       if (road.turns) delete road.turns[choice.lane];
     }, "已恢复自动转向规则");
   }
+  private courseControlPoint(placement?: CS2RoadLabPlacementPoint) {
+    if (!placement) return undefined;
+    const source = copy(placement.source),
+      ref = placement.reference;
+    source.position = copy(placement.position);
+    source.originalEntity = null;
+    if (ref && !ref.extended) {
+      const road = this.project.roads.find((r) => r.id === ref.road);
+      if (road) {
+        source.originalEntity =
+          ref.end !== undefined
+            ? cs2RoadLabSnapNodeId(center(road, ref.end))
+            : road.id;
+        // A node can retain HandleCurve's quantized local parameter. Only an
+        // edge identity needs conversion from the native piece to whole-Road t.
+        source.curvePosition =
+          ref.end !== undefined ? placement.source.curvePosition : ref.t;
+      }
+    }
+    return source;
+  }
   private draft(q: V, endSnap?: SnapInfo) {
     let a = this.drawPoints[0] || q;
     const control = this.drawPoints[1];
     // The first click cannot know whether this is a parallel continuation or a turn.
     // Re-evaluate that attachment in both the preview and the committed geometry.
-    if (this.drawStartSnap?.kind === "offset") {
+    if (
+      this.drawStartSnap?.kind === "offset" &&
+      (this.roadConstructionModel === "compatible" ||
+        this.drawStartSnap.custom === "alignment")
+    ) {
       const reference = this.project.roads.find(
         (r) => r.id === this.drawStartSnap!.road,
       );
@@ -689,8 +930,19 @@ export class Editor {
       points: this.tool === "curve" && control ? [a, control, q] : [a, q],
       start: this.drawStartSnap,
       end: endSnap,
+      controlPoints: (this.tool === "curve" && control
+        ? [
+            this.drawControlPoints[0],
+            this.drawControlPoints[1],
+            this.placementControlPoint,
+          ]
+        : [this.drawControlPoints[0], this.placementControlPoint]
+      ).map((p) => this.courseControlPoint(p)),
     }).road;
-    if (this.drawStartSnap?.road) {
+    if (
+      this.drawStartSnap?.road &&
+      (this.roadConstructionModel === "compatible" || this.drawStartSnap.custom)
+    ) {
       const reference = this.project.roads.find(
         (old) => old.id === this.drawStartSnap!.road,
       );
@@ -705,7 +957,8 @@ export class Editor {
     }
     if (
       (endSnap?.kind === "offset" || endSnap?.kind === "endpoint") &&
-      endSnap.road
+      endSnap.road &&
+      (this.roadConstructionModel === "compatible" || endSnap.custom)
     ) {
       const reference = this.project.roads.find(
         (old) => old.id === endSnap.road,
@@ -721,14 +974,23 @@ export class Editor {
           r.knots.at(-1)!.incoming = add(q, mul(d, -sign * handle));
       }
     }
-    if (endSnap?.contact) {
+    if (
+      endSnap?.contact &&
+      (this.roadConstructionModel === "compatible" || endSnap.custom)
+    ) {
       const correction = sub(endSnap.contact, center(r, 1)),
         last = r.knots.at(-1)!;
       last.p = add(last.p, correction);
       last.incoming = add(last.incoming, correction);
       last.outgoing = add(last.outgoing, correction);
     }
-    if (this.tool === "curve" && control)
+    if (
+      this.tool === "curve" &&
+      control &&
+      (this.roadConstructionModel === "compatible" ||
+        this.drawStartSnap?.custom ||
+        endSnap?.custom)
+    )
       for (const end of [0, 1])
         for (const old of this.project.roads) {
           const t = end === 0 ? 1 : 0;
@@ -770,8 +1032,21 @@ export class Editor {
   }
   updatePlacement(raw: V, alt = false) {
     if (!this.building) return;
+    this.placementMouse = undefined;
     this.pointer = { x: raw.x, y: raw.y, z: raw.z };
-    const q = this.snapped(raw, undefined, alt);
+    let q: V;
+    try {
+      q = this.snapped(raw, undefined, alt);
+    } catch {
+      this.placementControlPoint = undefined;
+      this.scene.showPreviews([]);
+      this.scene.showBuildMarker();
+      this.scene.showLaneTarget();
+      this.scene.setHover();
+      this.updateSnapFeedback();
+      this.onStatus("此处道路线形暂不能吸附，请调整位置或按 Alt 关闭吸附。");
+      return;
+    }
     let road: Road;
     if (!this.drawPoints.length) {
       let direction = v(1, 0);
@@ -831,6 +1106,7 @@ export class Editor {
     if (roadLength(r) < 4) {
       this.onToast("道路过短，请将终点移远一点。");
       this.drawPoints.pop();
+      this.drawControlPoints.pop();
       return;
     }
     this.edit(() => {
@@ -921,6 +1197,31 @@ export class Editor {
       !getAsset(this.assetId).action &&
       continuation;
     this.drawPoints = keep ? [copy(center(continuation!, 1))] : [];
+    this.drawControlPoints = keep
+      ? [
+          {
+            position: copy(center(continuation!, 1)),
+            source: {
+              ...cs2RoadControlPoint(center(continuation!, 1)),
+              elevation: center(continuation!, 1).y,
+              direction: {
+                x: tangent(continuation!, 1).x,
+                y: tangent(continuation!, 1).z,
+              },
+            },
+            reference: {
+              road: continuation!.id,
+              t: 1,
+              end: 1,
+              nativeEntity: continuation!.id,
+              nativeT: 1,
+              extended: false,
+              artificialSeam: false,
+            },
+          },
+        ]
+      : [];
+    this.placementControlPoint = undefined;
     this.drawStartSnap = keep
       ? {
           kind: "endpoint",
@@ -979,10 +1280,27 @@ export class Editor {
       return;
     }
     if (this.building) {
-      const q = this.snapped(raw, undefined, e.altKey);
+      let q: V;
+      try {
+        // Commit the control point which produced the visible preview when
+        // the click hasn't moved. Recasting after camera damping can change
+        // float32 rounding at grid ties even at the identical screen pixel.
+        const samePreview =
+          this.placementControlPoint &&
+          this.placementMouse?.x === e.clientX &&
+          this.placementMouse?.y === e.clientY &&
+          this.placementMouse?.alt === e.altKey;
+        q = samePreview
+          ? copy(this.placementControlPoint!.position)
+          : this.snapped(raw, undefined, e.altKey);
+      } catch {
+        this.onToast("此处道路线形暂不能吸附，请调整位置或按 Alt 关闭吸附。");
+        return;
+      }
       if (!this.drawPoints.length)
         this.drawStartSnap = this.snapInfo ? copy(this.snapInfo) : undefined;
       this.drawPoints.push(q);
+      this.drawControlPoints.push(copy(this.placementControlPoint!));
       if (this.drawPoints.length === (this.tool === "line" ? 2 : 3))
         this.finishDraw();
       else this.updatePlacement(raw, e.altKey);
@@ -1052,6 +1370,7 @@ export class Editor {
     }
     if (this.building && this.drawPoints.length) {
       this.drawPoints.pop();
+      this.drawControlPoints.pop();
       if (!this.drawPoints.length) this.drawStartSnap = undefined;
       const raw = this.scene.groundPoint(e.clientX, e.clientY);
       if (raw) this.updatePlacement(raw, e.altKey);
@@ -1197,7 +1516,14 @@ export class Editor {
         return;
       }
       if (this.building) {
-        this.updatePlacement(raw, e.altKey);
+        if (
+          !this.placementControlPoint ||
+          this.placementMouse?.x !== e.clientX ||
+          this.placementMouse?.y !== e.clientY ||
+          this.placementMouse?.alt !== e.altKey
+        )
+          this.updatePlacement(raw, e.altKey);
+        this.placementMouse = { x: e.clientX, y: e.clientY, alt: e.altKey };
         canvas.style.cursor = "crosshair";
         return;
       }
@@ -1389,6 +1715,8 @@ export class Editor {
       if (e.key === "Backspace" && this.drawPoints.length) {
         e.preventDefault();
         this.drawPoints.pop();
+        this.drawControlPoints.pop();
+        if (!this.drawPoints.length) this.drawStartSnap = undefined;
         this.scene.showPreviews([]);
       }
       if (e.key === " ") {
@@ -1641,6 +1969,11 @@ export class Editor {
       tool: this.tool,
       asset: this.assetId,
       snap: this.snapInfo,
+      construction: {
+        model: this.roadConstructionModel,
+        points: this.drawControlPoints,
+        current: this.placementControlPoint,
+      },
       issues: validate(this.project),
       connections: connections(this.project),
       routes: this.simulation.routeCount,

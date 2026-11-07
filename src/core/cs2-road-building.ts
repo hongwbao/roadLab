@@ -18,6 +18,8 @@ export type CS2RoadLabCourseInput = {
   points: readonly [V, V] | readonly [V, V, V];
   start?: CS2RoadLabSnapReference;
   end?: CS2RoadLabSnapReference;
+  /** Complete snap metadata, with entities mapped into the whole-Road course world. */
+  controlPoints?: readonly (CS2RoadCourseControlPoint | undefined)[];
   batchSeed?: number;
 };
 
@@ -83,12 +85,23 @@ export function buildCS2RoadLabCourse(input: CS2RoadLabCourseInput): {
   const controlPoint = (
     position: V,
     snap?: CS2RoadLabSnapReference,
+    source?: CS2RoadCourseControlPoint,
   ): CS2RoadCourseControlPoint =>
     cs2RoadCourseControlPoint(position, {
-      elevation: position.y,
-      originalEntity:
-        snap?.road && world.edges.has(snap.road) ? snap.road : null,
-      curvePosition: snap?.t ?? 0,
+      ...(source && structuredClone(source)),
+      // RoadLab's editable baseline may differ from the physical snap center.
+      position: { ...position },
+      elevation: source?.elevation ?? position.y,
+      originalEntity: source
+        ? source.originalEntity &&
+          (world.edges.has(source.originalEntity) ||
+            world.nodes.has(source.originalEntity))
+          ? source.originalEntity
+          : null
+        : snap?.road && world.edges.has(snap.road)
+          ? snap.road
+          : null,
+      curvePosition: source?.curvePosition ?? snap?.t ?? 0,
     });
   const result = cs2CreateRoadCourses(world, {
     prefab: input.asset,
@@ -97,6 +110,7 @@ export function buildCS2RoadLabCourse(input: CS2RoadLabCourseInput): {
       controlPoint(
         point,
         i === 0 ? input.start : i === points.length - 1 ? input.end : undefined,
+        input.controlPoints?.[i],
       ),
     ),
     // Source seed affects definition metadata; these custom assets have no props.

@@ -387,7 +387,11 @@ export function cs2GetRoadCutPosition(
           : floor % 2 === 0
             ? floor
             : floor + 1;
-  return Math.max(0, Math.min(1, divide(times(round, 8), length)));
+  const ratio = divide(times(round, 8), length);
+  // Unity math.min/max select the other operand for NaN. In particular,
+  // saturate(0 / 0) is 1; JS Math.min would propagate NaN here.
+  const upper = ratio < 1 ? ratio : 1;
+  return upper > 0 ? upper : 0;
 }
 /** Source MathUtils.Divide. */
 function divideCurve(

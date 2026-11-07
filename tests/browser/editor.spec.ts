@@ -62,8 +62,8 @@ test("named map saves can be restored from the UI after resetting and reloading"
   await expect(page.locator(".save-row")).toHaveCount(0);
   expect((await state(page)).project.roads).toHaveLength(5);
 });
-async function open(page: Page) {
-  await page.goto("/");
+async function open(page: Page, sourceConstruction = false) {
+  await page.goto(sourceConstruction ? "/?construction=source" : "/");
   await page.waitForFunction(() => !!(window as any).lab);
   await page.waitForTimeout(100);
 }
@@ -307,27 +307,25 @@ test("draws preset straight and curved roads, cancels strokes, undoes and redoes
 test("three-click curves use original road fitting and preserve geometry through save and undo", async ({
   page,
 }) => {
-  await open(page);
+  await open(page, true);
   await load(page);
   await page.locator('[data-asset="city-2"]').click();
   await page.locator('[data-tool="curve"]').click();
-  await clickWorld(page, -30, -40);
-  await clickWorld(page, -30, 20);
-  const end = await screen(page, 30, 20);
+  await clickWorld(page, -32, -48);
+  await clickWorld(page, -32, 16);
+  const end = await screen(page, 32, 16);
   await page.mouse.move(end.x, end.y);
   const preview = await page.evaluate(() => {
     const editor = (window as any).lab.editor;
-    return editor.draft(
-      editor.snapInfo?.position || editor.pointer,
-      editor.snapInfo,
-    ).knots;
+    return editor.draft(editor.placementControlPoint.position, editor.snapInfo)
+      .knots;
   });
   await page.mouse.click(end.x, end.y);
   const roads = (await state(page)).project.roads;
   expect(roads).toHaveLength(1);
   const knots = roads[0].knots;
-  expect(knots[0].outgoing.z).toBeCloseTo(-6.86291, 3);
-  expect(knots[1].incoming.x).toBeCloseTo(-3.13709, 3);
+  expect(knots[0].outgoing.z).toBeCloseTo(-12.65377, 3);
+  expect(knots[1].incoming.x).toBeCloseTo(-3.34623, 3);
   expect(knots).toEqual(preview);
   await page.keyboard.press("Escape");
   await page.locator('[data-action="undo"]').click();
@@ -340,6 +338,57 @@ test("three-click curves use original road fitting and preserve geometry through
   await page.waitForFunction(() => !!(window as any).lab);
   expect((await state(page)).project.roads[0].knots).toEqual(knots);
 });
+test("source placement preserves the free first point, snaps radial length and clears cancelled control points", async ({
+  page,
+}) => {
+  await open(page, true);
+  await load(page);
+  await page.locator('[data-asset="city-2"]').click();
+  await clickWorld(page, -31.3, -41.2);
+  let s = await state(page);
+  expect(s.construction.points).toHaveLength(1);
+  expect(s.construction.points[0].position.x).toBeCloseTo(-31.3, 3);
+  expect(s.construction.points[0].position.z).toBeCloseTo(-41.2, 3);
+  const end = await screen(page, 30.7, -41.2);
+  await page.mouse.move(end.x, end.y);
+  s = await state(page);
+  const a = s.construction.points[0].source.position,
+    b = s.construction.current.source.position;
+  // The native tool quantizes length relative to the clicked origin, not a
+  // global 5m grid. A 62m pointer distance becomes eight 8m cells.
+  expect(Math.hypot(b.x - a.x, b.z - a.z)).toBeCloseTo(64, 3);
+  await page.keyboard.press("Backspace");
+  expect((await state(page)).construction.points).toHaveLength(0);
+  await page.keyboard.press("Escape");
+  s = await state(page);
+  expect(s.project.roads).toHaveLength(0);
+  expect(s.construction.points).toHaveLength(0);
+  expect(s.construction.current).toBeUndefined();
+});
+
+test("Alt bypasses native snapping while preserving construction elevation", async ({
+  page,
+}) => {
+  await open(page, true);
+  await load(page);
+  await page.locator('[data-asset="city-2"]').click();
+  await page.keyboard.press("PageUp");
+  await page.keyboard.down("Alt");
+  await clickWorld(page, -31.3, -41.2, 8);
+  const end = await screen(page, 28.7, -41.2, 8);
+  await page.mouse.move(end.x, end.y);
+  const current = (await state(page)).construction.current;
+  expect(current.source.elevation).toBe(8);
+  expect(current.source.originalEntity).toBeNull();
+  expect(current.position.x).toBeCloseTo(28.7, 3);
+  await page.mouse.click(end.x, end.y);
+  await page.keyboard.up("Alt");
+  const road = (await state(page)).project.roads[0];
+  expect(road.knots[0].p.y).toBe(8);
+  expect(road.knots[1].p.y).toBe(8);
+  expect(road.knots[1].p.x - road.knots[0].p.x).toBeCloseTo(60, 3);
+});
+
 test("two-way roads have yellow centerlines and elevated supports clear lower roads", async ({
   page,
 }) => {
@@ -370,18 +419,18 @@ test("two-way roads have yellow centerlines and elevated supports clear lower ro
   ).toBe(false);
   await page.screenshot({ path: "artifacts/game-elevated-fixed.png" });
 });
-test("snaps from a visible pixel radius and constructs an exact shared endpoint", async ({
+test("compatible snapping constructs an exact shared endpoint while the source merge pipeline is in progress", async ({
   page,
 }) => {
   await open(page);
   await load(page);
-  await road(page, [-65, -15], [0, -15]);
+  await road(page, [-64, -15], [0, -15]);
   await page.locator('[data-asset="city-2"]').click();
   const p = await screen(page, 0, -15);
-  await page.mouse.move(p.x + 16, p.y + 7);
+  await page.mouse.move(p.x + 5, p.y + 3);
   expect((await state(page)).snap.kind).toBe("endpoint");
   await expect(page.locator("#snap-feedback")).toContainText("端点");
-  await page.mouse.click(p.x + 16, p.y + 7);
+  await page.mouse.click(p.x + 5, p.y + 3);
   await clickWorld(page, 60, -15);
   const s = await state(page);
   expect(s.project.roads).toHaveLength(2);
@@ -695,7 +744,7 @@ test("one-way section snapping aligns outer edges with exact lane continuity", a
   await load(page);
   await page.locator('[data-category="oneway"]').click();
   await page.locator('[data-asset="one-3"]').click();
-  await clickWorld(page, -65, -15);
+  await clickWorld(page, -64, -15);
   await clickWorld(page, 0, -15);
   await endStroke(page);
   await page.locator('[data-asset="one-2"]').click();
@@ -742,11 +791,11 @@ test("one-way section snapping also aligns the road end", async ({ page }) => {
   await page.locator('[data-category="oneway"]').click();
   await page.locator('[data-asset="one-3"]').click();
   await clickWorld(page, 0, -15);
-  await clickWorld(page, 65, -15);
+  await clickWorld(page, 64, -15);
   await endStroke(page);
   await page.locator('[data-asset="one-2"]').click();
   await page.locator("#lane-snap-toggle").click();
-  await clickWorld(page, -65, -16.75);
+  await clickWorld(page, -64, -16.75);
   const endpoint = await screen(page, 0, -16.75);
   await page.mouse.move(endpoint.x, endpoint.y);
   const s = await state(page);
@@ -765,11 +814,11 @@ test("angled road ends snap to a lane edge and blend into the target tangent", a
   await page.locator('[data-category="oneway"]').click();
   await page.locator('[data-asset="one-3"]').click();
   await clickWorld(page, 0, -15);
-  await clickWorld(page, 65, -15);
+  await clickWorld(page, 64, -15);
   await endStroke(page);
   await page.locator('[data-asset="one-2"]').click();
   await page.locator("#lane-snap-toggle").click();
-  await clickWorld(page, -65, -45);
+  await clickWorld(page, -64, -45);
   const endpoint = await screen(page, 0, -16.75);
   await page.mouse.move(endpoint.x, endpoint.y);
   expect((await state(page)).snap.kind).toBe("offset");
@@ -779,16 +828,16 @@ test("angled road ends snap to a lane edge and blend into the target tangent", a
   expect(road.knots.at(-1).incoming.z).toBeCloseTo(-16.75);
   await page.screenshot({ path: "artifacts/game-angled-lane-join.png" });
 });
-test("continuous road building preserves the previous road tangent", async ({
+test("chained straight building follows the original nearby tangent guide", async ({
   page,
 }) => {
   await open(page);
   await load(page);
   await page.locator('[data-category="oneway"]').click();
   await page.locator('[data-asset="one-2"]').click();
-  await clickWorld(page, -60, -20);
+  await clickWorld(page, -64, -20);
   await clickWorld(page, 0, -20);
-  await clickWorld(page, 60, -10);
+  await clickWorld(page, 64, -18);
   const roads = (await state(page)).project.roads;
   expect(roads).toHaveLength(2);
   expect(roads[1].knots[0].p).toEqual(roads[0].knots.at(-1).p);
@@ -803,7 +852,7 @@ for (const endZ of [-60, 10])
     await load(page);
     await page.locator('[data-category="oneway"]').click();
     await page.locator('[data-asset="one-3"]').click();
-    await clickWorld(page, -65, -15);
+    await clickWorld(page, -64, -15);
     await clickWorld(page, 0, -15);
     await endStroke(page);
     await page.locator('[data-asset="one-2"]').click();
@@ -907,7 +956,7 @@ test("two-lane groups can snap to the middle of four lanes and cycle candidates 
   await page.mouse.move(target.x, target.y);
   expect((await state(page)).snap.lanes).toEqual([1, 2]);
   await page.mouse.click(target.x, target.y);
-  await clickWorld(page, 65, -15);
+  await clickWorld(page, 64, -15);
   expect(
     (await state(page)).connections.map((c: any) => [c.from.lane, c.to.lane]),
   ).toEqual([
