@@ -59,7 +59,7 @@
     "完整PersonalCarAI已接实际引擎；完整导航窗口独立模块仍未接engine。",
     "行人、真实停车、公交、货运、应急任务和其他交通方式未完整实现。",
     "普通无灯路口的部分减速经完整原式lane-speed oracle复现，不能按旧恒速假设删除让行行为。",
-    "本次没有推送远程仓库或运行GitHub Actions。",
+    "构建与测试记录来自本机固定版本验证；GitHub Actions 结果未在本次同步中验收。",
     "命名信号方案库保存在当前浏览器；跨浏览器或设备须导出/导入JSON。紧凑布局保留键盘/名称辅助，不代表完整触屏编辑。",
     "编辑性能数据为本机64段道路/16路口场景的编辑事务耗时，不代表任意规模城市帧率；车辆运行网络在开始测试时初始化。"
   ],
@@ -735,5 +735,13 @@
       "after": 37.5
     },
     "scope": "Local headless Chrome edit-handler timings only; not arbitrary city-size frame-rate or throughput guarantees."
+  },
+  "github_sync": {
+    "recorded_at": "2026-11-07T11:00:15.959496+00:00",
+    "repository": "https://github.com/hongwbao/roadLab",
+    "branch": "main",
+    "application_commit": "5832b93dbd75a68286b9a78bd72ccfb5057e7c08",
+    "status": "application commits pushed successfully; this documentation update follows",
+    "ci_status": "not inspected; local verification results are recorded separately"
   }
 }
