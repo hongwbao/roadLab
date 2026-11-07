@@ -5,7 +5,7 @@ import {
   baseBackwardCountAt,
   backwardStart,
   backwardEnd,
-  totalAt,
+  pavementWidth,
   nodePoint,
   center,
   dist,
@@ -61,7 +61,7 @@ export function updateAutomaticTransitions(project: Project) {
           road.lanesStart === road.lanesEnd &&
           backwardStart(road) === backwardEnd(road) &&
           !road.profile,
-        halfWidth: (totalAt(road, end) * road.width) / 2,
+        halfWidth: pavementWidth(road, end) / 2,
         road,
         end,
         position: nodePoint(road, end),

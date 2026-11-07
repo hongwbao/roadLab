@@ -886,6 +886,18 @@ export function parseProject(text: string): Project {
       r.transitionStart >= r.transitionEnd
     )
       throw new Error("道路属性不合法，未替换当前地图。");
+    if (
+      r.median !== undefined &&
+      (!r.median ||
+        typeof r.median !== "object" ||
+        Array.isArray(r.median) ||
+        !r.twoWay ||
+        r.median.kind !== "concrete" ||
+        !finite(r.median.width) ||
+        r.median.width < 0.5 ||
+        r.median.width > 6)
+    )
+      throw new Error("中央隔离带配置不合法。");
     for (const n of [r.backwardLanesStart, r.backwardLanesEnd])
       if (
         n !== undefined &&

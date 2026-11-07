@@ -25,7 +25,7 @@ import {
   type Road,
   type V,
 } from "../core/types";
-import { SIGNAL_STOP_OFFSET, signalForJunction } from "../core/traffic-signals";
+import { signalStopOffset, signalForJunction } from "../core/traffic-signals";
 import {
   CS2_BASE_CAR,
   CS2_NAVIGATION_TIMESTEP,
@@ -493,7 +493,8 @@ export class Cs2TrafficSimulation {
                 j.arms.map((arm) => ({
                   ...arm,
                   trim:
-                    arm.trim + (signalized.has(j.id) ? SIGNAL_STOP_OFFSET : 0),
+                    arm.trim +
+                    (signalized.has(j.id) ? signalStopOffset(arm) : 0),
                 })),
               )
               .find((a) => a.road === road.id && a.end === 0)?.trim ?? 0,
@@ -503,7 +504,8 @@ export class Cs2TrafficSimulation {
                 j.arms.map((arm) => ({
                   ...arm,
                   trim:
-                    arm.trim + (signalized.has(j.id) ? SIGNAL_STOP_OFFSET : 0),
+                    arm.trim +
+                    (signalized.has(j.id) ? signalStopOffset(arm) : 0),
                 })),
               )
               .find((a) => a.road === road.id && a.end === 1)?.trim ?? 0,

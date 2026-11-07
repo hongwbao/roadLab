@@ -1,3 +1,5 @@
+import { buildJunctions } from "../core/junctions";
+import { setRoadMedian, withRoadMedian } from "../core/road-median";
 import { getAsset } from "../core/assets";
 import {
   addRoadsideLanes,
@@ -18,7 +20,7 @@ import {
   dist,
   laneCount,
   laneDirection,
-  totalAt,
+  pavementWidth,
   backwardStart,
   maxGrade,
   mul,
@@ -111,7 +113,15 @@ export class Editor {
   signalTool = new TrafficLightTool(this);
   junctionLaneTool: JunctionLaneTool;
   tool: Tool = "select";
-  upgradeMode: "replace" | "smooth" | "direct" = "replace";
+  upgradeMode: "replace" | "widen" | "median" | "smooth" | "direct" = "replace";
+  medianWidth = 2;
+  medianAction: "add" | "remove" = "add";
+  private upgradePreviewKey = "";
+  private medianTarget?: { road: string; next: Road };
+  private medianPreviewError = "";
+  get isWidening() {
+    return this.tool === "upgrade" && this.upgradeMode === "widen";
+  }
   widening?: { road: string; side: RoadSide };
   assetId = "city-2";
   alignment: Alignment = "auto";
@@ -284,6 +294,8 @@ export class Editor {
   cancel() {
     this.pointerPress = undefined;
     this.widening = undefined;
+    this.upgradePreviewKey = "";
+    this.medianTarget = undefined;
     if (this.drag?.moved && !this.drag.box) {
       this.project = this.drag.snapshot;
       this.stopForEdit();
@@ -304,9 +316,13 @@ export class Editor {
     this.updateSnapFeedback();
   }
   setTool(tool: Tool) {
+    if (tool === "widen") {
+      this.upgradeMode = "widen";
+      tool = "upgrade";
+    }
     this.cancel();
     this.tool = tool;
-    if (tool === "widen" && this.draw.twoWay) {
+    if (this.isWidening && this.draw.twoWay) {
       this.assetId = "one-1";
       Object.assign(this.draw, {
         backwardLanesStart: undefined,
@@ -323,6 +339,7 @@ export class Editor {
   chooseAsset(id: string) {
     this.assetId = id;
     const asset = getAsset(id);
+    if (this.isWidening && asset.options.twoWay) this.upgradeMode = "replace";
     Object.assign(this.draw, {
       backwardLanesStart: undefined,
       backwardLanesEnd: undefined,
@@ -349,11 +366,17 @@ export class Editor {
       boundary: "点击端点设置通行口 · 双向道路同时进出 · 右键取消通行口",
       delete: "拆除模式 · 悬停道路预览 · 左键拆除 · B / Esc 退出",
       upgrade:
-        this.upgradeMode === "replace"
-          ? "先选择道路资产，再点击已有道路替换"
-          : this.upgradeMode === "smooth"
-            ? "点击较宽路段，在与窄路相连的端点添加平滑过渡"
-            : "点击道路恢复直接连接，保留完整车道用于接入分支",
+        this.upgradeMode === "widen"
+          ? "选择单向道路资产 · 悬停道路左右两侧预览 · 点击添加车道"
+          : this.upgradeMode === "median"
+            ? this.medianAction === "remove"
+              ? "悬停预览并点击双向路段，移除中央隔离带"
+              : "悬停预览并点击双向路段，添加中央隔离带"
+            : this.upgradeMode === "replace"
+              ? "先选择道路资产，再点击已有道路替换"
+              : this.upgradeMode === "smooth"
+                ? "点击较宽路段，在与窄路相连的端点添加平滑过渡"
+                : "点击道路恢复直接连接，保留完整车道用于接入分支",
       widen: "选择单向道路资产 · 悬停道路左侧或右侧预览加车道 · 点击添加",
       turn: "点击路口，连接进出车道 · 右键取消选择 · J / Esc 退出",
       signal: "点击路口中心设置红绿灯 · 右键移除 · K / Esc 退出",
@@ -1301,7 +1324,7 @@ export class Editor {
       .filter(
         ({ r, near }) =>
           Math.abs(near.point.y - raw.y) < 1 &&
-          near.distance < (totalAt(r, near.t) * r.width) / 2 + 5,
+          near.distance < pavementWidth(r, near.t) / 2 + 5,
       )
       .sort((a, b) => a.near.distance - b.near.distance);
     const road = candidates[0]?.r;
@@ -1331,6 +1354,70 @@ export class Editor {
       this.scene.showPreviews([]);
       this.scene.showLaneTarget();
       this.onStatus((error as Error).message);
+    }
+  }
+  setUpgradeMode(mode: typeof this.upgradeMode) {
+    this.upgradeMode = mode;
+    this.setTool("upgrade");
+    if (mode === "median" && this.pointer)
+      this.updateUpgradePreview(this.pointer);
+  }
+  updateUpgradePreview(raw: V, hit?: Hit) {
+    if (this.tool !== "upgrade" || this.upgradeMode !== "median") return;
+    this.pointer = raw;
+    const candidate = hit?.road
+      ? this.project.roads.find((r) => r.id === hit.road)
+      : this.project.roads
+          .map((r) => ({ r, near: nearest(r, raw) }))
+          .filter(
+            ({ r, near }) =>
+              Math.abs(near.point.y - raw.y) < 1 &&
+              near.distance < pavementWidth(r, near.t) / 2 + 1.5,
+          )
+          .sort((a, b) => a.near.distance - b.near.distance)[0]?.r;
+    if (!candidate) {
+      this.medianPreviewError = "";
+      this.medianTarget = undefined;
+      this.upgradePreviewKey = "";
+      this.scene.showPreviews([]);
+      this.onStatus(this.instructions());
+      return;
+    }
+    const key = JSON.stringify([
+      candidate,
+      this.medianAction,
+      this.medianWidth,
+    ]);
+    if (key === this.upgradePreviewKey) return;
+    this.upgradePreviewKey = key;
+    this.medianTarget = undefined;
+    this.medianPreviewError = "";
+    this.scene.setHover();
+    try {
+      const next = withRoadMedian(
+        candidate,
+        this.medianAction === "remove" ? null : this.medianWidth,
+      );
+      this.medianTarget = { road: candidate.id, next };
+      const preview = {
+        ...this.project,
+        roads: this.project.roads.map((r) =>
+          r.id === candidate.id ? next : r,
+        ),
+      };
+      this.scene.showPreviews([next], false, {
+        replaceExisting: true,
+        junctions: buildJunctions(preview),
+      });
+      this.onStatus(
+        this.medianAction === "remove"
+          ? "移除中央隔离带 · 点击确认"
+          : `中央实体隔离带 ${this.medianWidth} m · 点击添加`,
+      );
+    } catch (error) {
+      this.medianPreviewError = (error as Error).message;
+      this.scene.showPreviews([]);
+      this.onStatus(this.medianPreviewError);
     }
   }
   private boundaryHit(x: number, y: number) {
@@ -1366,8 +1453,8 @@ export class Editor {
       this.junctionLaneTool.select(e.clientX, e.clientY);
       return;
     }
-    if (this.tool === "widen") {
-      this.updateWidening(raw);
+    if (this.isWidening) {
+      this.updateWidening(hit?.position ?? raw);
       const target = this.widening;
       if (!target) return;
       this.edit(
@@ -1382,6 +1469,29 @@ export class Editor {
       );
       this.scene.showPreviews([]);
       this.scene.showLaneTarget();
+      return;
+    }
+    if (this.tool === "upgrade" && this.upgradeMode === "median") {
+      this.updateUpgradePreview(hit?.position ?? raw, hit);
+      const target = this.medianTarget;
+      if (!target) {
+        if (this.medianPreviewError) this.onToast(this.medianPreviewError);
+        return;
+      }
+      this.edit(
+        () =>
+          setRoadMedian(
+            this.project,
+            target.road,
+            this.medianAction === "remove" ? null : this.medianWidth,
+          ),
+        this.medianAction === "remove"
+          ? "已移除中央隔离带"
+          : "已添加中央隔离带",
+      );
+      this.upgradePreviewKey = "";
+      this.medianTarget = undefined;
+      this.scene.showPreviews([]);
       return;
     }
     if (this.building) {
@@ -1450,6 +1560,7 @@ export class Editor {
               transitionMode: "direct",
               ...getAsset(this.assetId).options,
             });
+            if (!r.twoWay) delete r.median;
             r.name = getAsset(this.assetId).name;
             delete r.profile;
             delete r.widthOrigin;
@@ -1645,9 +1756,16 @@ export class Editor {
         this.scene.rebuild(this.project, this.selected, this.settings);
         return;
       }
-      if (this.tool === "widen") {
+      if (this.isWidening) {
         this.scene.setHover();
-        this.updateWidening(raw);
+        const hit = this.scene.hit(e.clientX, e.clientY);
+        this.updateWidening(hit?.position ?? raw);
+        canvas.style.cursor = "crosshair";
+        return;
+      }
+      if (this.tool === "upgrade" && this.upgradeMode === "median") {
+        const hit = this.scene.hit(e.clientX, e.clientY);
+        this.updateUpgradePreview(hit?.position ?? raw, hit);
         canvas.style.cursor = "crosshair";
         return;
       }

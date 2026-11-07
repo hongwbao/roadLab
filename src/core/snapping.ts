@@ -7,7 +7,7 @@ import {
   point,
   sub,
   tangent,
-  totalAt,
+  pavementWidth,
 } from "./math";
 import { endpointLaneGroups } from "./lane-rules";
 import type { Road, V } from "./types";
@@ -73,9 +73,7 @@ export function endpointAnchors(
     Math.abs(rd.x * nd.x + rd.z * nd.z) > (proposedEnd === 1 ? 0.75 : 0.94);
   const canOffset = !reference.twoWay && !proposed.twoWay && parallel;
   const difference =
-    (totalAt(proposed, proposedEnd) * proposed.width -
-      totalAt(reference, end) * reference.width) /
-    2;
+    (pavementWidth(proposed, proposedEnd) - pavementWidth(reference, end)) / 2;
   const types: Exclude<Alignment, "auto">[] =
     canOffset && Math.abs(difference) > 0.05
       ? mode === "auto"

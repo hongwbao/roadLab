@@ -38,7 +38,8 @@ test("one-lane asset grows an existing one-way road on the hovered side with a r
   await click(page, 50);
   await cancel(page);
   await page.locator('[data-asset="one-1"]').click();
-  await page.locator('[data-tool="widen"]').click();
+  await page.locator('[data-tool="upgrade"]').click();
+  await page.locator('[data-upgrade-mode="widen"]').click();
   const q = await point(page, 0, 4);
   await page.mouse.move(q.x, q.y);
   await expect(page.locator("#tool-hint")).toContainText("右侧增加 1");
@@ -65,7 +66,8 @@ test("two-way 2+2 becomes 2+3 and 3+3 with save and undo keeping direction count
   await click(page, -50);
   await click(page, 50);
   await cancel(page);
-  await page.locator('[data-tool="widen"]').click();
+  await page.locator('[data-tool="upgrade"]').click();
+  await page.locator('[data-upgrade-mode="widen"]').click();
   await click(page, 0, 8);
   let r = (await state(page)).project.roads[0];
   expect(r.twoWay).toBe(true);

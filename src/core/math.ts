@@ -122,6 +122,9 @@ export function totalAt(r: Road, t: number) {
     total += laneWidth(r, lane, t) / r.width;
   return total;
 }
+export const medianWidth = (r: Road) => (r.twoWay ? (r.median?.width ?? 0) : 0);
+export const pavementWidth = (r: Road, t: number) =>
+  totalAt(r, t) * r.width + medianWidth(r);
 /** Editable node reference stays stable when a carriageway grows on one side. */
 export function nodePoint(r: Road, t: number): V {
   const nominal = baseCountAt(r, t) + baseBackwardCountAt(r, t);
@@ -195,7 +198,10 @@ export function lanePoint(r: Road, lane: number, t: number): V {
     center(r, t),
     mul(
       normal(r, t),
-      (-totalAt(r, t) * r.width) / 2 + preceding + laneWidth(r, lane, t) / 2,
+      -pavementWidth(r, t) / 2 +
+        preceding +
+        laneWidth(r, lane, t) / 2 +
+        (lane >= backwardLaneCount(r) ? medianWidth(r) : 0),
     ),
   );
 }
@@ -204,7 +210,16 @@ export function boundaryPoint(r: Road, index: number, t: number): V {
   for (let i = 0; i < index; i++) preceding += laneWidth(r, i, t);
   return add(
     center(r, t),
-    mul(normal(r, t), (-totalAt(r, t) * r.width) / 2 + preceding),
+    mul(
+      normal(r, t),
+      -pavementWidth(r, t) / 2 +
+        preceding +
+        (index === backwardLaneCount(r)
+          ? medianWidth(r) / 2
+          : index > backwardLaneCount(r)
+            ? medianWidth(r)
+            : 0),
+    ),
   );
 }
 export const laneEntryT = (r: Road, lane: number) =>

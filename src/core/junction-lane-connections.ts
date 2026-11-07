@@ -21,7 +21,7 @@ import {
   laneNumber,
   turnOf,
 } from "./lane-rules";
-import { signalForJunction, SIGNAL_STOP_OFFSET } from "./traffic-signals";
+import { signalForJunction, signalStopOffset } from "./traffic-signals";
 import type { Connection, Project, Road, Turn, V } from "./types";
 
 export type JunctionLaneEndpoint = { road: string; lane: number; end: 0 | 1 };
@@ -109,7 +109,7 @@ export function junctionLanePorts(
     if (!road) continue;
     const table = arcTable(road),
       total = table.at(-1)!.s,
-      offset = arm.trim + (signalized ? SIGNAL_STOP_OFFSET : 0),
+      offset = arm.trim + (signalized ? signalStopOffset(arm) : 0),
       t = arcParameter(table, arm.end === 0 ? offset : total - offset);
     for (let lane = 0; lane < laneCount(road); lane++) {
       if (laneWidth(road, lane, arm.end) <= road.width * 0.7) continue;

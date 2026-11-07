@@ -8,8 +8,9 @@ import {
   mul,
   normal,
   tangent,
-  totalAt,
+  pavementWidth,
 } from "./math";
+import { placeJunctionCrosswalk } from "./junction-crosswalks";
 import type { Project, Road, V } from "./types";
 export type Arm = {
   road: string;
@@ -18,6 +19,8 @@ export type Arm = {
   halfWidth: number;
   trim: number;
   t: number;
+  crosswalkT?: number;
+  crosswalkDistance?: number;
 };
 export type Junction = {
   id: string;
@@ -44,7 +47,14 @@ export function convexHull(points: V[]): V[] {
   }
   return [...low.slice(0, -1), ...high.slice(0, -1)];
 }
+const junctionCache = new WeakMap<
+  object,
+  { signature: string; junctions: Junction[] }
+>();
 export function buildJunctions(p: Project): Junction[] {
+  const signature = JSON.stringify(p.roads),
+    cached = junctionCache.get(p);
+  if (cached?.signature === signature) return structuredClone(cached.junctions);
   const groups: { position: V; ends: { r: Road; end: 0 | 1 }[] }[] = [];
   for (const r of p.roads)
     for (const end of [0, 1] as const) {
@@ -67,8 +77,16 @@ export function buildJunctions(p: Project): Junction[] {
       dirs[0].x * dirs[1].x + dirs[0].z * dirs[1].z > -0.94;
     if (g.ends.length < 3 && !corner) continue;
     const radius =
-      Math.max(...g.ends.map(({ r, end }) => (totalAt(r, end) * r.width) / 2)) +
-      2.5;
+      Math.max(
+        ...g.ends.flatMap(({ r, end }) => {
+          const c = center(r, end),
+            n = normal(r, end),
+            half = pavementWidth(r, end) / 2;
+          return [-1, 1].map((side) =>
+            dist(g.position, add(c, mul(n, half * side))),
+          );
+        }),
+      ) + 2.5;
     const arms: Arm[] = g.ends.map(({ r, end }, i) => {
       const table = arcTable(r),
         length = table.at(-1)!.s,
@@ -78,7 +96,7 @@ export function buildJunctions(p: Project): Junction[] {
         road: r.id,
         end,
         direction: dirs[i],
-        halfWidth: (totalAt(r, t) * r.width) / 2 + 0.35,
+        halfWidth: pavementWidth(r, t) / 2 + 0.35,
         trim,
         t,
       };
@@ -101,6 +119,17 @@ export function buildJunctions(p: Project): Junction[] {
       polygon: convexHull(points),
     });
   }
+  for (const junction of result)
+    if (junction.crosswalks)
+      for (const arm of junction.arms) {
+        const road = p.roads.find((r) => r.id === arm.road)!,
+          walk = placeJunctionCrosswalk(road, arm, junction);
+        if (walk) {
+          arm.crosswalkT = walk.t;
+          arm.crosswalkDistance = walk.distance;
+        }
+      }
+  junctionCache.set(p, { signature, junctions: structuredClone(result) });
   return result;
 }
 export function roadRange(road: Road, junctions: Junction[]) {

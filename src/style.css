@@ -1790,3 +1790,31 @@ dialog dd {
     top: 110px;
   }
 }
+
+.upgrade-actions {
+  flex-wrap: wrap;
+  flex-shrink: 1;
+}
+.road-edit-settings {
+  display: flex;
+  align-items: center;
+  gap: 10px 18px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+  font-size: 11px;
+}
+.road-edit-settings .build-modes {
+  align-items: center;
+  flex-wrap: wrap;
+  flex-shrink: 1;
+}
+.road-edit-settings button[aria-pressed="true"] {
+  background: var(--panel-raised);
+  border-color: var(--blue);
+}
+#upgrade-heading {
+  font-size: 13px;
+  font-weight: 500;
+}

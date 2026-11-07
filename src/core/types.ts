@@ -29,6 +29,7 @@ export type Road = {
   /** One-way carriageway offset from its editable reference spline, in metres. */
   sectionOffset?: number;
   transitionMode?: "direct" | "smooth";
+  median?: { kind: "concrete"; width: number };
   twoWay: boolean;
   width: number;
   speed: number;

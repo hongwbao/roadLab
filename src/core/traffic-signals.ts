@@ -1,4 +1,4 @@
-import { buildJunctions, type Junction } from "./junctions";
+import { buildJunctions, type Junction, type Arm } from "./junctions";
 import { dist } from "./math";
 import { copy, uid, type Project, type V } from "./types";
 import {
@@ -20,6 +20,14 @@ export type TrafficSignal = {
   offset: number;
 };
 export const SIGNAL_STOP_OFFSET = 4.5;
+/** Keep one metre between the zebra's outer edge and the stop line. */
+export const signalStopOffset = (
+  arm: Pick<Arm, "trim" | "crosswalkDistance">,
+) =>
+  Math.max(
+    SIGNAL_STOP_OFFSET,
+    (arm.crosswalkDistance ?? arm.trim + 2) + 2.5 - arm.trim,
+  );
 export const signalArmKey = (arm: SignalArm) => `${arm.road}:${arm.end}`;
 export function signalMatches(signal: TrafficSignal, junction: Junction) {
   return junction.arms.filter((a) =>

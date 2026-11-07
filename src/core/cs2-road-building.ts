@@ -1,5 +1,5 @@
 /** RoadLab world adapter for the complete source NetTool course transaction. */
-import { center, laneCount } from "./math";
+import { center, laneCount, medianWidth } from "./math";
 import { makeRoad } from "./model";
 import {
   createCS2RoadCourseWorld,
@@ -54,7 +54,8 @@ export function createCS2RoadLabCourseWorld(
       [
         asset,
         {
-          defaultWidth: laneCount(template) * template.width,
+          defaultWidth:
+            laneCount(template) * template.width + medianWidth(template),
           maxSlopeSteepness: policy.maxSlopeSteepness,
           flags: policy.geometryFlags,
         },

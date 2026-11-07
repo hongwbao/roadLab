@@ -3,8 +3,6 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { buildJunctions, roadRange, type Junction } from "../core/junctions";
 import {
   add,
-  arcParameter,
-  arcTable,
   boundaryPoint,
   backwardLaneCount,
   center,
@@ -21,10 +19,13 @@ import {
   roadLength,
   smooth,
   tangent,
-  totalAt,
+  pavementWidth,
+  medianWidth,
 } from "../core/math";
 import { connections } from "../core/model";
 import { allowedTurns } from "../core/lane-rules";
+import { renderRoadMedian } from "./road-median";
+import { roadCrosswalkQuads } from "../core/junction-crosswalks";
 import { roadSegmentNodes } from "../core/road-segments";
 import type { Project, Road, Settings, V } from "../core/types";
 import type { Step, Vehicle } from "../simulation/simulation";
@@ -59,6 +60,7 @@ export class Scene {
   private junctionList: Junction[] = [];
   private ranges = new Map<string, { start: number; end: number }>();
   private currentProject?: Project;
+  private previewHiddenRoads = new Set<string>();
   private rebuildSignature = "";
   private topologySignature = "";
   private junctionRenderCache = new Map<
@@ -323,6 +325,7 @@ export class Scene {
     group: T.Group,
     material: T.Material = this.mats.asphalt,
     range = { start: 0, end: 1 },
+    medianJunctions: readonly Junction[] = this.junctionList,
   ) {
     const n = Math.max(60, r.knots.length * 35),
       positions: number[] = [],
@@ -331,7 +334,7 @@ export class Scene {
       const t = range.start + ((range.end - range.start) * i) / n,
         c = center(r, t),
         norm = normal(r, t),
-        half = (totalAt(r, t) * r.width) / 2 + 0.35;
+        half = pavementWidth(r, t) / 2 + 0.35;
       for (const sign of [-1, 1]) {
         const q = add(c, mul(norm, half * sign));
         positions.push(q.x, q.y, q.z);
@@ -348,6 +351,16 @@ export class Scene {
     const mesh = new T.Mesh(g, material);
     mesh.userData = { road: r.id };
     group.add(mesh);
+    if (medianWidth(r))
+      renderRoadMedian(
+        this.currentProject ?? { roads: [r] },
+        r,
+        medianJunctions,
+        group,
+        material === this.mats.asphalt || material === this.mats.ghost
+          ? this.mats.side
+          : material,
+      );
     if (material !== this.mats.asphalt) return;
     // A thin deck gives elevated roads a readable edge; columns are visual only.
     for (const sign of [-1, 1]) {
@@ -356,7 +369,7 @@ export class Scene {
         const t = range.start + ((range.end - range.start) * i) / n,
           c = center(r, t),
           norm = normal(r, t),
-          q = add(c, mul(norm, ((totalAt(r, t) * r.width) / 2 + 0.35) * sign));
+          q = add(c, mul(norm, (pavementWidth(r, t) / 2 + 0.35) * sign));
         side.push(q.x, q.y - 0.02, q.z, q.x, q.y - 0.45, q.z);
       }
       const sg = new T.BufferGeometry();
@@ -382,7 +395,7 @@ export class Scene {
       if (other.id === road.id) continue;
       const near = nearest(other, p);
       if (near.point.y > p.y - 0.5) continue;
-      const clearance = (totalAt(other, near.t) * other.width) / 2 + 1.5;
+      const clearance = pavementWidth(other, near.t) / 2 + 1.5;
       if (near.distance < clearance) return false;
     }
     return true;
@@ -523,7 +536,7 @@ export class Scene {
           pts.push(
             add(
               center(r, t),
-              mul(normal(r, t), ((totalAt(r, t) * r.width) / 2 - 0.12) * side),
+              mul(normal(r, t), (pavementWidth(r, t) / 2 - 0.12) * side),
             ),
           );
         }
@@ -541,7 +554,23 @@ export class Scene {
             const t = range.start + ((range.end - range.start) * i) / 100;
             pts.push(boundaryPoint(r, l, t));
           }
-          this.line(pts, this.mats.centerline, details);
+          if (medianWidth(r))
+            for (const side of [-1, 1]) {
+              const edge = pts.map((p, i) =>
+                add(
+                  p,
+                  mul(
+                    normal(
+                      r,
+                      range.start + ((range.end - range.start) * i) / 100,
+                    ),
+                    side * (medianWidth(r) / 2 + 0.12),
+                  ),
+                ),
+              );
+              this.line(edge, this.mats.centerline, details);
+            }
+          else this.line(pts, this.mats.centerline, details);
           continue;
         }
         for (let j = 0; j < 100; j += 5) {
@@ -728,14 +757,14 @@ export class Scene {
           const t = incoming ? 1 - i / 100 : i / 100,
             rp = add(
               center(ramp, t),
-              mul(normal(ramp, t), (-sign * totalAt(ramp, t) * ramp.width) / 2),
+              mul(normal(ramp, t), (-sign * pavementWidth(ramp, t)) / 2),
             ),
             near = nearest(main, rp),
             mp = add(
               center(main, near.t),
               mul(
                 normal(main, near.t),
-                (sign * totalAt(main, near.t) * main.width) / 2,
+                (sign * pavementWidth(main, near.t)) / 2,
               ),
             );
           if (
@@ -778,39 +807,29 @@ export class Scene {
       junctionGroup.add(mesh);
       if (j.crosswalks)
         for (const arm of j.arms) {
-          const r = p.roads.find((r) => r.id === arm.road)!,
-            table = arcTable(r),
-            length = table.at(-1)!.s,
-            offset = Math.min(arm.trim + 2, length * 0.48),
-            t = arcParameter(table, arm.end === 0 ? offset : length - offset),
-            c = center(r, t),
-            d = tangent(r, t),
-            n = normal(r, t),
-            half = (totalAt(r, t) * r.width) / 2 - 0.2;
-          for (let x = -half + 0.35; x < half - 0.2; x += 1) {
-            const mid = add(c, mul(n, x)),
-              points = [
-                add(add(mid, mul(d, -1.5)), mul(n, -0.24)),
-                add(add(mid, mul(d, 1.5)), mul(n, -0.24)),
-                add(add(mid, mul(d, 1.5)), mul(n, 0.24)),
-                add(add(mid, mul(d, -1.5)), mul(n, 0.24)),
-              ];
-            const g = new T.BufferGeometry();
-            g.setAttribute(
+          if (arm.crosswalkT === undefined) continue;
+          const road = p.roads.find((r) => r.id === arm.road)!;
+          for (const points of roadCrosswalkQuads(road, arm.crosswalkT)) {
+            const geometry = new T.BufferGeometry();
+            geometry.setAttribute(
               "position",
               new T.Float32BufferAttribute(
                 points.flatMap((p) => [p.x, p.y + 0.055, p.z]),
                 3,
               ),
             );
-            g.setIndex([0, 1, 2, 0, 2, 3]);
-            g.computeVertexNormals();
-            const m = new T.Mesh(
-              g,
+            geometry.setIndex([0, 1, 2, 0, 2, 3]);
+            geometry.computeVertexNormals();
+            const mesh = new T.Mesh(
+              geometry,
               new T.MeshBasicMaterial({ color: 0xf5f5e9, side: T.DoubleSide }),
             );
-            m.userData = { crosswalk: j.id };
-            junctionGroup.add(m);
+            mesh.userData = {
+              crosswalk: j.id,
+              crosswalkRoad: arm.road,
+              crosswalkEnd: arm.end,
+            };
+            junctionGroup.add(mesh);
           }
         }
       const objects = [...junctionGroup.children];
@@ -822,7 +841,7 @@ export class Scene {
       if (!r) continue;
       const t = port.end === "start" ? 0 : 1,
         q = center(r, t),
-        radius = (totalAt(r, t) * r.width) / 2 + 1.2,
+        radius = pavementWidth(r, t) / 2 + 1.2,
         ring = new T.Mesh(
           new T.TorusGeometry(radius, 0.35, 6, 36),
           new T.MeshBasicMaterial({
@@ -890,7 +909,24 @@ export class Scene {
       group.add(new T.LineSegments(g, mat));
     }
   }
-  showPreviews(roads: Road[], invalid = false) {
+  showPreviews(
+    roads: Road[],
+    invalid = false,
+    options?: { replaceExisting?: boolean; junctions?: readonly Junction[] },
+  ) {
+    for (const id of this.previewHiddenRoads)
+      this.roadRenderCache
+        .get(id)
+        ?.groups.forEach((group) => (group.visible = true));
+    this.previewHiddenRoads.clear();
+    if (options?.replaceExisting)
+      for (const road of roads) {
+        const cached = this.roadRenderCache.get(road.id);
+        if (cached) {
+          cached.groups.forEach((group) => (group.visible = false));
+          this.previewHiddenRoads.add(road.id);
+        }
+      }
     this.clear(this.preview);
     for (const r of roads) {
       for (const p of this.currentProject?.roads.some((old) => old.id === r.id)
@@ -913,6 +949,8 @@ export class Scene {
         r,
         this.preview,
         invalid ? this.mats.invalid : this.mats.ghost,
+        { start: 0, end: 1 },
+        options?.junctions,
       );
       const color = new T.LineBasicMaterial({
         color: invalid ? 0xff7765 : 0x9de2ff,
@@ -925,7 +963,7 @@ export class Scene {
           points.push(
             add(
               center(r, t),
-              mul(normal(r, t), (side * totalAt(r, t) * r.width) / 2),
+              mul(normal(r, t), (side * pavementWidth(r, t)) / 2),
             ),
           );
         }

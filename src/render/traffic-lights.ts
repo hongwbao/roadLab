@@ -13,7 +13,7 @@ import {
 import {
   signalForJunction,
   signalArmKey,
-  SIGNAL_STOP_OFFSET,
+  signalStopOffset,
 } from "../core/traffic-signals";
 import type { Junction } from "../core/junctions";
 import type { Project, Turn } from "../core/types";
@@ -111,7 +111,7 @@ export class TrafficLightRenderer {
         if (!lanes.length) continue;
         const table = arcTable(road),
           length = table.at(-1)!.s,
-          offset = arm.trim + SIGNAL_STOP_OFFSET;
+          offset = arm.trim + signalStopOffset(arm);
         const t = arcParameter(table, arm.end === 0 ? offset : length - offset),
           d = mul(tangent(road, t), direction),
           n = { x: -d.z, y: 0, z: d.x };

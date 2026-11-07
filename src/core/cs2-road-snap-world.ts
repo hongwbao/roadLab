@@ -1,5 +1,13 @@
 /** Explicit RoadLab geometry/assets -> source road-snapping world adapter. */
-import { center, knotAt, normal, point, sub, totalAt } from "./math";
+import {
+  center,
+  knotAt,
+  normal,
+  point,
+  sub,
+  medianWidth,
+  pavementWidth as roadPavementWidth,
+} from "./math";
 import type { Project, Road, V } from "./types";
 import {
   cs2RoadCurveLength,
@@ -110,9 +118,10 @@ const nominalWidth = (r: Road) =>
           r.backwardLanesEnd ?? r.lanesEnd,
         )
       : 0)) *
-  r.width;
+    r.width +
+  medianWidth(r);
 const pavementWidth = (r: Road, t: number) =>
-  totalAt(r, t) * r.width + CS2_ROADLAB_SNAP_WORLD_POLICY.shoulderWidth * 2;
+  roadPavementWidth(r, t) + CS2_ROADLAB_SNAP_WORLD_POLICY.shoulderWidth * 2;
 
 export function cs2RoadLabSnapNodeId(position: V) {
   return `roadlab:node:${JSON.stringify([f(position.x), f(position.y), f(position.z)])}`;
@@ -306,6 +315,7 @@ function roadSnapshot(
     road.backwardLanesStart,
     road.backwardLanesEnd,
     road.sectionOffset,
+    road.median,
     road.twoWay,
     road.width,
     road.align,
