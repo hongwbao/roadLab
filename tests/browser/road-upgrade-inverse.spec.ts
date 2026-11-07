@@ -123,6 +123,8 @@ test("right click reverses lane additions and both transition upgrade modes on t
   await clickRoad(page, -40, 9, "right");
   expect((await road()).lanesStart).toBe(2);
   await page.locator('[data-upgrade-mode="smooth"]').click();
+  await expect(page.locator("#asset-list")).toBeHidden();
+  await expect(page.locator("#upgrade-description")).toContainText("隔离带");
   await clickRoad(page, -40);
   expect((await road()).transitionMode).toBe("smooth");
   await clickRoad(page, -40, 0, "right");

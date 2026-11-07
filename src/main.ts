@@ -371,17 +371,28 @@ function render() {
     });
   const medianMode =
     editor.tool === "upgrade" && editor.upgradeMode === "median";
-  document.querySelector<HTMLElement>(".build-height")!.hidden = medianMode;
-  document.querySelector<HTMLElement>("#snap-toggle")!.hidden = medianMode;
+  const sectionMode =
+    medianMode ||
+    (editor.tool === "upgrade" &&
+      ["smooth", "direct"].includes(editor.upgradeMode));
+  document.querySelector<HTMLElement>(".build-height")!.hidden = sectionMode;
+  document.querySelector<HTMLElement>("#snap-toggle")!.hidden = sectionMode;
   document.querySelector<HTMLElement>("#alignment-mode")!.hidden =
-    medianMode || editor.draw.twoWay;
+    sectionMode || editor.draw.twoWay;
   document.querySelector<HTMLElement>("#median-upgrade-options")!.hidden =
     !medianMode;
   document.querySelector<HTMLElement>("#median-widths")!.hidden =
     editor.medianAction === "remove";
-  document.querySelector<HTMLElement>("#asset-list")!.hidden = medianMode;
-  document.querySelector<HTMLElement>(".asset-categories")!.hidden = medianMode;
-  document.querySelector<HTMLElement>("#upgrade-heading")!.hidden = !medianMode;
+  document.querySelector<HTMLElement>("#asset-list")!.hidden = sectionMode;
+  document.querySelector<HTMLElement>(".asset-categories")!.hidden =
+    sectionMode;
+  document.querySelector<HTMLElement>("#upgrade-heading")!.hidden =
+    !sectionMode;
+  document.querySelector("#upgrade-heading")!.textContent = medianMode
+    ? "中央隔离带"
+    : editor.upgradeMode === "smooth"
+      ? "平滑断面过渡"
+      : "直接连接";
   document
     .querySelectorAll<HTMLElement>("[data-median-action]")
     .forEach((b) =>
@@ -402,8 +413,12 @@ function render() {
     editor.upgradeMode === "median"
       ? "左键应用 · 右键取消此项升级"
       : editor.isWidening
-        ? "选择单向资产，点击道路一侧加车道"
-        : "平滑过渡在较宽路段的连接端点生成";
+        ? "选择单向资产 · 左键加车道，右键减车道"
+        : editor.upgradeMode === "smooth"
+          ? "车道、隔离带及偏移 · 左键过渡，右键取消"
+          : editor.upgradeMode === "direct"
+            ? "左键直接连接 · 右键恢复过渡"
+            : "选择道路资产 · 左键替换，右键恢复";
   renderAssets();
   document.querySelectorAll<HTMLElement>("[data-tool]").forEach((b) => {
     b.classList.toggle("active", b.dataset.tool === editor.tool);
@@ -421,7 +436,7 @@ function render() {
     document.querySelector<HTMLButtonElement>("#alignment-mode")!;
   alignment.hidden = editor.draw.twoWay;
   alignment.textContent = `对齐：${{ auto: "自动", center: "中线", left: "左缘", right: "右缘" }[editor.alignment]}`;
-  if (medianMode)
+  if (sectionMode)
     document.querySelector<HTMLElement>("#alignment-mode")!.hidden = true;
   document.querySelector("#build-height-label")!.textContent =
     editor.draw.endHeight === 0 ? "地面" : `${editor.draw.endHeight} m`;
@@ -429,7 +444,11 @@ function render() {
     ? editor.medianAction === "remove"
       ? "移除中央隔离带"
       : `中央实体隔离带 · ${editor.medianWidth} m`
-    : getAsset(editor.assetId).description;
+    : sectionMode
+      ? editor.upgradeMode === "smooth"
+        ? "道路衔接 · 平滑过渡"
+        : "道路衔接 · 直接连接"
+      : getAsset(editor.assetId).description;
   document.querySelector("#mode-badge")!.textContent = (
     {
       select: "选择",
