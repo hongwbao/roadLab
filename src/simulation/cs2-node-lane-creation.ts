@@ -1,3 +1,5 @@
+import { cs2RoadCurveCurviness as cs2CreatedNodeCurveCurviness } from "../core/cs2-road-curviness";
+export { cs2RoadCurveCurviness as cs2CreatedNodeCurveCurviness } from "../core/cs2-road-curviness";
 /** Source CreateNodeLane and helpers; evidence boundaries: CS2_NODE_LANE_CREATION.md. */
 import type { CS2Point } from "./cs2-driving";
 import type {
@@ -5,13 +7,12 @@ import type {
   CS2LaneCompositionFlags,
   CS2NodeLaneCreationRequest,
 } from "./cs2-lane-generation";
-import { cs2PackPathNode } from "./cs2-network";
+import { cs2PackPathNode } from "../core/cs2-path-node";
 import {
   cs2FitRoadCurve,
   cs2StraightRoadCurve,
   cs2RoadCurveLength,
   cs2RoadCurvePosition,
-  cs2RoadCurveTangent,
 } from "../core/cs2-net-geometry";
 
 type Entity = string | null;
@@ -215,66 +216,6 @@ const distanceXZ = (a: CS2Point, b: CS2Point) => {
   const d = subtract(a, b);
   return f(Math.sqrt(f(f(d.x * d.x) + f(d.z * d.z))));
 };
-
-/** Full NetUtils.CalculateCurviness with original point/tangent float ordering. */
-export function cs2CreatedNodeCurveCurviness(
-  points: Cubic,
-  length: number,
-  width: number,
-) {
-  length = f(length);
-  width = f(width);
-  if (length <= f(0.1)) return 0;
-  const unit = (v: CS2Point) => {
-    const squared = dot(v, v);
-    return squared > f(1.1754944e-38)
-      ? scaled(v, f(1 / f(Math.sqrt(squared))))
-      : undefined;
-  };
-  const part = (a: CS2Point, ta: CS2Point, b: CS2Point, tb: CS2Point) => {
-    const span = distance(a, b),
-      ua = unit(ta),
-      ub = unit(tb);
-    if (!ua || !ub || span < f(1e-6)) return 0;
-    const angle = f(Math.acos(Math.max(-1, Math.min(1, dot(ua, ub)))));
-    return f(times(2, f(Math.sin(times(angle, 0.5)))) / span);
-  };
-  const positions = [
-    points[0],
-    cs2RoadCurvePosition(points, 0.25),
-    cs2RoadCurvePosition(points, 0.5),
-    cs2RoadCurvePosition(points, 0.75),
-    points[3],
-  ];
-  const tangents = [
-    subtract(points[1], points[0]),
-    cs2RoadCurveTangent(points, 0.25),
-    cs2RoadCurveTangent(points, 0.5),
-    cs2RoadCurveTangent(points, 0.75),
-    subtract(points[3], points[2]),
-  ];
-  let maximum = 0;
-  for (let i = 0; i < 4; i++)
-    maximum = Math.max(
-      maximum,
-      part(positions[i], tangents[i], positions[i + 1], tangents[i + 1]),
-    );
-  if (length < times(width, 2)) {
-    const lo = times(width, 0.1),
-      hi = times(width, 2),
-      t = clamp01(f(minus(length, lo) / minus(hi, lo)));
-    const smooth = times(times(t, t), minus(3, times(2, t)));
-    maximum = lerp(
-      Math.min(
-        maximum,
-        part(positions[0], tangents[0], positions[4], tangents[4]),
-      ),
-      maximum,
-      smooth,
-    );
-  }
-  return maximum;
-}
 
 /** Full original CanConnectTrack helper used by fallback prefab selection. */
 export function cs2CanConnectCreatedNodeTrack(input: {

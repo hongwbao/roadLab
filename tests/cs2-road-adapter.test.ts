@@ -1,4 +1,5 @@
 import { expect, it } from "vitest";
+import { readFileSync } from "node:fs";
 import { v } from "../src/core/math";
 import { emptyProject, makeRoad } from "../src/core/model";
 import {
@@ -98,9 +99,21 @@ it("propagates a downstream required lane and counts current objects only ahead"
   expect(chooseCs2RoadLane(groups, 0, true)).toBe(1);
 });
 
-it("builds a zero straight-road curvature and slows a tight curve in the live model", () => {
+it("retains original straight-road rounding and resolves a tight curve in the live model", () => {
   const straight = makeRoad(v(0, 0), v(500, 0), { lanesStart: 1, lanesEnd: 1 });
-  expect(roadLaneCs2Curviness(straight, 0)).toBe(0);
+  const original = JSON.parse(
+    readFileSync(
+      new URL("./fixtures/cs2-road-curviness-oracle.json", import.meta.url),
+      "utf8",
+    ),
+  ).cases.find(
+    (row: { name: string }) => row.name === "roadlab-500m-axis-aligned",
+  );
+  // The actual DLL returns a tiny nonzero curvature after float32 tangent
+  // normalization. Keep the original result instead of forcing a straight 0.
+  expect(roadLaneCs2Curviness(straight, 0)).toBe(
+    Math.fround(original.expected),
+  );
   const bend = makeRoad(
     v(0, 0),
     v(40, 40),
