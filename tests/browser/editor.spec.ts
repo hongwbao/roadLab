@@ -762,14 +762,14 @@ test("one-way section snapping aligns outer edges with exact lane continuity", a
   await endStroke(page);
   await page.locator('[data-asset="one-2"]').click();
   await page.locator("#lane-snap-toggle").click();
-  const p = await screen(page, 0, -16.75);
+  const p = await screen(page, 0, -17);
   await page.mouse.move(p.x, p.y);
   let s = await state(page);
   expect(s.snap.kind).toBe("offset");
   expect(s.snap.alignment).toBe("left");
-  expect(s.snap.offset).toBeCloseTo(-1.75);
+  expect(s.snap.offset).toBeCloseTo(-2);
   await expect(page.locator("#snap-feedback")).toContainText("左缘对齐");
-  await expect(page.locator("#snap-feedback")).toContainText("1.75 m");
+  await expect(page.locator("#snap-feedback")).toContainText("2 m");
   await page.evaluate(() => new Promise(requestAnimationFrame));
   const guide = await page.evaluate(() => {
     const o = (window as any).lab.editor.scene.buildMarker.children.find(
@@ -783,13 +783,13 @@ test("one-way section snapping aligns outer edges with exact lane continuity", a
     ];
   });
   expect(guide[0]).toBeCloseTo(-15);
-  expect(guide[1]).toBeCloseTo(-16.75);
+  expect(guide[1]).toBeCloseTo(-17);
   await page.screenshot({ path: "artifacts/game-offset-snapping.png" });
   await page.mouse.click(p.x, p.y);
-  await clickWorld(page, 60, -16.75);
+  await clickWorld(page, 60, -17);
   s = await state(page);
   expect(s.project.roads).toHaveLength(2);
-  expect(s.project.roads[1].knots[0].p.z).toBeCloseTo(-16.75);
+  expect(s.project.roads[1].knots[0].p.z).toBeCloseTo(-17);
   expect(s.connections.map((c: any) => [c.from.lane, c.to.lane])).toEqual([
     [0, 0],
     [1, 1],
@@ -808,15 +808,15 @@ test("one-way section snapping also aligns the road end", async ({ page }) => {
   await endStroke(page);
   await page.locator('[data-asset="one-2"]').click();
   await page.locator("#lane-snap-toggle").click();
-  await clickWorld(page, -64, -16.75);
-  const endpoint = await screen(page, 0, -16.75);
+  await clickWorld(page, -64, -17);
+  const endpoint = await screen(page, 0, -17);
   await page.mouse.move(endpoint.x, endpoint.y);
   const s = await state(page);
   expect(s.snap.kind).toBe("offset");
-  expect(Math.abs(s.snap.offset)).toBeCloseTo(1.75);
+  expect(Math.abs(s.snap.offset)).toBeCloseTo(2);
   await page.mouse.click(endpoint.x, endpoint.y);
   expect((await state(page)).project.roads[1].knots.at(-1).p.z).toBeCloseTo(
-    -16.75,
+    -17,
   );
 });
 test("angled road ends snap to a lane edge and blend into the target tangent", async ({
@@ -832,13 +832,13 @@ test("angled road ends snap to a lane edge and blend into the target tangent", a
   await page.locator('[data-asset="one-2"]').click();
   await page.locator("#lane-snap-toggle").click();
   await clickWorld(page, -64, -45);
-  const endpoint = await screen(page, 0, -16.75);
+  const endpoint = await screen(page, 0, -17);
   await page.mouse.move(endpoint.x, endpoint.y);
   expect((await state(page)).snap.kind).toBe("offset");
   await page.mouse.click(endpoint.x, endpoint.y);
   const road = (await state(page)).project.roads[1];
-  expect(road.knots.at(-1).p.z).toBeCloseTo(-16.75);
-  expect(road.knots.at(-1).incoming.z).toBeCloseTo(-16.75);
+  expect(road.knots.at(-1).p.z).toBeCloseTo(-17);
+  expect(road.knots.at(-1).incoming.z).toBeCloseTo(-17);
   await page.screenshot({ path: "artifacts/game-angled-lane-join.png" });
 });
 test("chained straight building follows the original nearby tangent guide", async ({

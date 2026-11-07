@@ -52,7 +52,7 @@ test("one-lane asset grows an existing one-way road on the hovered side with a r
   let s = await state(page);
   expect(s.project.roads).toHaveLength(1);
   expect(s.project.roads[0].lanesStart).toBe(3);
-  expect(s.project.roads[0].sectionOffset).toBeCloseTo(1.75);
+  expect(s.project.roads[0].sectionOffset).toBeCloseTo(2);
   expect(s.project.roads[0].autoTaper).toBeUndefined();
   await click(page, 0, -4);
   s = await state(page);

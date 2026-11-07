@@ -26,13 +26,17 @@ test("the elevated example loads a four-direction cloverleaf with isolated throu
   expect(project.roads.filter((r: any) => r.kind === "ramp")).toHaveLength(8);
   expect(project.roads.every((r: any) => r.width === 4)).toBe(true);
   await page.locator("#traffic-level").fill("25");
+  await page.locator("#traffic-level").press("Tab");
   await page.locator('[data-action="play"]').click();
   await expect
     .poll(() => page.evaluate(() => (window as any).lab.getState().routes))
     .toBeGreaterThanOrEqual(12);
-  const traffic = await page.evaluate(() => {
+  const traffic = await page.evaluate(async () => {
     const sim = (window as any).lab.editor.simulation;
-    for (let i = 0; i < 1800; i++) sim.update(0.05);
+    for (let i = 0; i < 1800; i++) {
+      sim.update(0.05);
+      if (i % 40 === 39) await new Promise((resolve) => setTimeout(resolve, 0));
+    }
     return {
       generated: sim.generated,
       completed: sim.completed,

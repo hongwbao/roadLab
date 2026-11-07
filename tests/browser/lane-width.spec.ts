@@ -15,7 +15,8 @@ test("legacy saved roads and templates load as four-metre lanes and remain four 
     project.templates = [
       { id: "old-width", name: "旧宽度模板", roads: [road], connections: [] },
     ];
-    localStorage.setItem("interchange-lab:v1", JSON.stringify(project));
+    (window as any).lab.editor.project = project;
+    (window as any).lab.editor.save();
   });
   await page.reload();
   await page.waitForFunction(() => !!(window as any).lab);

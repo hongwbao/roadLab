@@ -1216,9 +1216,12 @@ export class Scene {
         55,
         Math.max(
           size.x / (2 * tan * this.camera.aspect),
-          (size.z * 0.85 + size.y * 0.6) / (2 * tan),
+          (size.z + size.y * 0.6) / (2 * tan),
         ) * 1.2,
       );
+    this.controls.maxDistance = Math.max(1000, d * 1.15);
+    this.camera.far = Math.max(3000, d + size.length() * 2);
+    this.camera.updateProjectionMatrix();
     this.controls.target.copy(c);
     this.camera.position
       .copy(c)
@@ -1329,6 +1332,14 @@ export class Scene {
   render() {
     this.updateCamera();
     this.controls.update();
+    const near = Math.max(
+      0.2,
+      this.camera.position.distanceTo(this.controls.target) * 0.01,
+    );
+    if (Math.abs(this.camera.near - near) > 0.001) {
+      this.camera.near = near;
+      this.camera.updateProjectionMatrix();
+    }
     const tan = Math.tan(T.MathUtils.degToRad(this.camera.fov / 2)),
       height = this.el.clientHeight;
     const distance = this.camera.position.distanceTo(this.controls.target);
