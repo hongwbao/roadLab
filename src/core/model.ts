@@ -1168,6 +1168,8 @@ export function reconnectIntersections(p: Project): number {
               continue;
             if (interiorA) splitRoad(p, r.id, ta);
             if (interiorB) splitRoad(p, s.id, tb);
+            // Splits can also change neighbouring manual taper geometry.
+            sampled.clear();
             count++;
             hit = true;
             break outer;
