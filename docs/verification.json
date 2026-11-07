@@ -1,54 +1,53 @@
 {
-  "recorded_at": "2026-11-07T16:12:17.833623+00:00",
-  "latest_change": "所有道路和旧存档／模板统一每车道4米；高架示例改为四向苜蓿叶，每方向独立2车道主线＋2车道辅道、8条匝道；修复大范围查看时镜头缩放限制和路面深度闪纹。",
-  "record_type": "车道宽度、存档转换和苜蓿叶测试地图的固定版本功能预览；不是交通高压验收通过。",
+  "recorded_at": "2026-11-07T17:20:13.799636+00:00",
+  "latest_change": "修复相邻中央隔离带缓存收口黑缝；统一升级左键应用、右键反向操作；平滑过渡支持隔离带宽度和横向偏移；依据自定义车道连线提前逐条变道，未准备好时减速等待。",
+  "record_type": "固定版本升级与车道准备功能验证；保留已知交通压力失败，不声称完整原版交通复现或高压验收通过。",
   "checks": [
     {
       "command": "npm run build",
       "exit_code": 0,
-      "scope": "frozen whole-project TypeScript and production bundle"
+      "scope": "exact frozen final UI source whole-project TypeScript and production bundle"
     },
     {
-      "command": "npx vitest run [21 scoped road/model/network/engine suites]",
+      "command": "npx vitest run [23 scoped core/model/network/engine suites]",
       "exit_code": 0,
-      "passed_cases": 254,
-      "scope": "4m assets/maps/migration;all12principal cloverleaf movements,ramp tangent/position/grade,source-network route availability; existing road/signal/median controls"
+      "passed_cases": 271,
+      "scope": "inverse upgrades/references/save restore,median0/2/4m and lateral/asymmetric collars,actual adjacent changes and2car gap/completion;physics sourcebc1c72d has78core/simulation/render files identical to final UI snapshot"
     },
     {
-      "command": "npx vitest run tests/traffic.test.ts",
+      "command": "PLAYWRIGHT_PORT=5199 npx playwright test",
+      "exit_code": 0,
+      "passed_cases": 65,
+      "scope": "full final immutable UI build;real GPUcurb/pavement and source-lane geometry;rightclick inverse/save undo;cloverleaf and4m migration;traffic programs"
+    },
+    {
+      "command": "fixed-ID baseline/current npx vitest run tests/traffic.test.ts",
       "exit_code": 1,
       "passed_cases": 15,
       "failed_cases": 2,
-      "scope": "prior sustained body-overlap failures retained;transition121,junction2samples; preceding release202/93 under same tests"
-    },
-    {
-      "command": "PLAYWRIGHT_PORT=5198 npx playwright test",
-      "exit_code": 1,
-      "passed_cases": 59,
-      "failed_cases": 1,
-      "scope": "full60browser cases on frozen assets; sole failure expected2m but correct feedback prints2.00m"
-    },
-    {
-      "command": "PLAYWRIGHT_PORT=5198 npx playwright test tests/browser/editor.spec.ts --grep one-way-section-snapping",
-      "exit_code": 0,
-      "passed_cases": 1,
-      "scope": "format expectation corrected to2.00m; complete samecase rerun including physical lane/edge continuity;60unique cases covered by full run plusfollowup"
+      "scope": "same clock/road IDs:default transition,junction,merge metrics exactly match preceding release;historical transition121/junction2overlap samples;merge0"
     },
     {
       "command": "impeccable finish review",
       "disposition": "ship",
-      "scope": "existing HUD and cloverleaf map at1440x900/390x844"
+      "scope": "desktop seam and0→4m/2→4m median transitions plus390px compact controls;not physics certification"
     },
     {
       "command": "HTTP SHA-256 at localhost/LAN5173",
       "exit_code": 0,
-      "passed_cases": 10
+      "passed_cases": 10,
+      "scope": "index,metadata,JS,CSS,worker match verified dist"
     },
     {
-      "command": "PLAYWRIGHT_PORT=5173 npx playwright test tests/browser/cloverleaf.spec.ts tests/browser/lane-width.spec.ts",
+      "command": "PLAYWRIGHT_PORT=5173 npx playwright test [new upgrade+cloverleaf+signal preset cases]",
       "exit_code": 0,
-      "passed_cases": 2,
-      "scope": "live loading,90simsec at25%demand with arrivals,old-width restore/template migration/save/reload"
+      "passed_cases": 7,
+      "scope": "live rightclick inverses,persisted replacement restore,neighbor seam cache,median transition GPU/engine/preview,cloverleaf,presetJSON"
+    },
+    {
+      "command": "node .analysis/early-lane-live.mjs",
+      "exit_code": 0,
+      "scope": "actual browser facade and servedsource runtime, authored right-only route,0→1→2→3adjacent changes,575.8m preparation,one completed,no page errors"
     },
     {
       "command": "SMOKE_URL=http://127.0.0.1:5173/ node tests/production.mjs",
@@ -58,7 +57,7 @@
   ],
   "limitations": [
     "原式吸附实验入口仍使用兼容最终道路应用；完整CourseSplit/节点几何/节点车道与后处理尚未接线，部分端点与附件行为有已知差异。正常入口继续兼容吸附。",
-    "此前高压分合流和有灯路口仍检出车身重叠；本次没有修复或重新验收该压力问题，属于功能与编辑性能预览。",
+    "此前高压路段过渡与路口仍检出车身重叠；本次固定ID对照保留失败断言，未通过完整交通压力验收。",
     "完整PersonalCarAI已接实际引擎；完整导航窗口独立模块仍未接engine。",
     "行人、真实停车、公交、货运、应急任务和其他交通方式未完整实现。",
     "普通无灯路口的部分减速经完整原式lane-speed oracle复现，不能按旧恒速假设删除让行行为。",
@@ -66,7 +65,7 @@
     "命名信号方案库保存在当前浏览器；跨浏览器或设备须导出/导入JSON。紧凑布局保留键盘/名称辅助，不代表完整触屏编辑。",
     "编辑性能数据为本机64段道路/16路口场景的编辑事务耗时，不代表任意规模城市帧率；车辆运行网络在开始测试时初始化。",
     "中央隔离带目前仅支持双向道路的实体混凝土形式；锐角进口需要更长的路口缩进，极短进口无安全净空间时不绘制斑马线。",
-    "用户随后补充的隔离带接缝、右键撤销升级、通用断面过渡和提前变道属于下一批，尚未包含在本次发布。"
+    "提前准备针对自定义车道连线的出口约束；目标车道无空隙时减速等待，不能消除超饱和拥堵。道路替换右键恢复只保留该路段最近一次断面记录。"
   ],
   "previous_verified_stable_snapshot": {
     "recorded_at": "2026-11-06T11:58:12.595591+00:00",
@@ -416,23 +415,23 @@
     "healthz": "ok"
   },
   "current_deployment": {
-    "version": "cloverleaf-4m-20261107-160410",
+    "version": "road-upgrades-20261107-170830",
     "url": "http://192.168.31.167:5173/",
-    "source_commit": "e6072c397d1224aef56689bbcd2a783df524dafc",
-    "source_snapshot": "/home/bhw/repos/interchange-lab/.cache/builds/cloverleaf-4m-20261107-160410/source",
-    "manifest": "/home/bhw/repos/interchange-lab/.cache/deployments/cloverleaf-4m-20261107-160410/manifest.json",
-    "bundle": "assets/index-LnjYpTnE.js",
+    "source_commit": "224de0fa267bfb78615a5c4484c75d531d9e81a8",
+    "source_snapshot": "/home/bhw/repos/interchange-lab/.cache/builds/road-upgrades-20261107-170830/source",
+    "manifest": "/home/bhw/repos/interchange-lab/.cache/deployments/road-upgrades-20261107-170830/manifest.json",
+    "bundle": "assets/index-7FachNQa.js",
     "css": "assets/index-CLGHafP6.css",
     "path_worker": "assets/cs2-path-worker-DFcwOVUm.js",
     "dist_sha256": {
       "assets/cs2-path-worker-DFcwOVUm.js": "98850414cebb8d678b7082ac85feaef178e9d67b2bf4f7cbb1707e248b3b074c",
+      "assets/index-7FachNQa.js": "9ccd75f267ba13b72bb8a7d0fe53cadaf54165c315742ce7dfaa758958296e0b",
       "assets/index-CLGHafP6.css": "6d8da3938f27087617d4901bc4fc48d80f028181c425a1d79d3dceab05d287fc",
-      "assets/index-LnjYpTnE.js": "5980613d9ed7c4536e599ecf1253f04773a0931cbe7005a43b46010c1a7d023f",
-      "index.html": "b623908fb14ef80bc0553036bb191320d0fbb6e92918fdece5e0c7744b17206c",
-      "release.json": "e4aa85fa9c19c264548124762d4e06d4b2c6a7317ba6ebe447915509ebf240f3"
+      "index.html": "96bcc20bf0270880115fdbe8b512d5185ce56e2b90927e59df79625cb60e9163",
+      "release.json": "db0248b07bd3a70f438c4199dbb2189b69ef816e91c2e7273f20703e009ebb18"
     },
-    "http_verification": "/home/bhw/repos/interchange-lab/.cache/deployments/cloverleaf-4m-20261107-160410/http-verification.json",
-    "ui_review": "/home/bhw/repos/interchange-lab/.cache/deployments/cloverleaf-4m-20261107-160410/ui-review/finish-review.md",
+    "http_verification": "/home/bhw/repos/interchange-lab/.cache/deployments/road-upgrades-20261107-170830/http-verification.json",
+    "ui_review": "/home/bhw/repos/interchange-lab/.cache/deployments/road-upgrades-20261107-170830/ui-review/finish-review.md",
     "service": "roadlab.service,active"
   },
   "previous_cs2_preview_checks": [
@@ -640,20 +639,20 @@
       "last_observed_release": "junction-controls-20261107-093858",
       "baseline_observed_overlap_samples": 43,
       "last_observed_overlap_samples": 51,
-      "scope": "Retained prior pressure assertion; not included in248 passing feature checks, not rerun in this release, no full traffic pressure acceptance."
+      "scope": "Retained prior protected-pressure assertion;not included in271 scoped passing checks and not rerun in this release;no full traffic pressure acceptance."
     },
     {
       "test": "tests/traffic.test.ts: sustained transition/junction demand body separation",
-      "status": "failed; pre-existing failures independently reproduced on preceding release",
+      "status": "failed;controlled fixed-ID metrics identical to preceding cloverleaf release",
       "baseline_overlap_samples": {
-        "transition": 202,
-        "junction": 93
+        "transition": 121,
+        "junction": 2
       },
       "current_overlap_samples": {
         "transition": 121,
         "junction": 2
       },
-      "scope": "assertions retained; no claimed physics acceptance"
+      "scope": "assertions retained;merge pressure0overlap andpassed;no full pressure acceptance"
     }
   ],
   "previous_junction_controls_deployment": {
@@ -730,12 +729,12 @@
     }
   ],
   "github_sync": {
-    "recorded_at": "2026-11-07T16:12:38.543588+00:00",
+    "recorded_at": "2026-11-07T17:21:59.757822+00:00",
     "repository": "https://github.com/hongwbao/roadLab",
     "branch": "main",
-    "application_commit": "e6072c397d1224aef56689bbcd2a783df524dafc",
-    "status": "application and corrected browser test pushed,remote hash verified;this deployment documentation follows",
-    "ci_status": "not inspected; local scoped checks recorded separately"
+    "application_commit": "224de0fa267bfb78615a5c4484c75d531d9e81a8",
+    "status": "application commit pushed and remote hash verified;this final deployment documentation follows",
+    "ci_status": "not inspected;local scoped verification recorded separately"
   },
   "previous_road_expansion_deployment": {
     "version": "road-expansion-20261107-103432",
@@ -834,12 +833,12 @@
     "scope": "Local headless Chrome edit-handler timings only; not arbitrary city-size frame-rate or throughput guarantees."
   },
   "previous_github_sync": {
-    "recorded_at": "2026-11-07T15:23:57.968681+00:00",
+    "recorded_at": "2026-11-07T16:12:38.543588+00:00",
     "repository": "https://github.com/hongwbao/roadLab",
     "branch": "main",
-    "application_commit": "ac2e8c5ac90482a6ff62e3bda13d87a71070e233",
-    "status": "application commit pushed and remote hash verified; this documentation update follows",
-    "ci_status": "not inspected; local scoped verification recorded separately"
+    "application_commit": "e6072c397d1224aef56689bbcd2a783df524dafc",
+    "status": "application and corrected browser test pushed,remote hash verified;this deployment documentation follows",
+    "ci_status": "not inspected; local scoped checks recorded separately"
   },
   "previous_median_upgrades_deployment": {
     "version": "median-upgrades-20261107-121216",
@@ -915,5 +914,86 @@
     "lane_edits_ms": [18.8, 13.1, 11.1],
     "construction_edit_ms": 55.9,
     "scope": "Local headless Chrome edit-handler timings; geometry safety adds work compared with previous release. Not arbitrary city-scale frame-rate or throughput guarantees."
+  },
+  "previous_cloverleaf_deployment": {
+    "version": "cloverleaf-4m-20261107-160410",
+    "url": "http://192.168.31.167:5173/",
+    "source_commit": "e6072c397d1224aef56689bbcd2a783df524dafc",
+    "source_snapshot": "/home/bhw/repos/interchange-lab/.cache/builds/cloverleaf-4m-20261107-160410/source",
+    "manifest": "/home/bhw/repos/interchange-lab/.cache/deployments/cloverleaf-4m-20261107-160410/manifest.json",
+    "bundle": "assets/index-LnjYpTnE.js",
+    "css": "assets/index-CLGHafP6.css",
+    "path_worker": "assets/cs2-path-worker-DFcwOVUm.js",
+    "dist_sha256": {
+      "assets/cs2-path-worker-DFcwOVUm.js": "98850414cebb8d678b7082ac85feaef178e9d67b2bf4f7cbb1707e248b3b074c",
+      "assets/index-CLGHafP6.css": "6d8da3938f27087617d4901bc4fc48d80f028181c425a1d79d3dceab05d287fc",
+      "assets/index-LnjYpTnE.js": "5980613d9ed7c4536e599ecf1253f04773a0931cbe7005a43b46010c1a7d023f",
+      "index.html": "b623908fb14ef80bc0553036bb191320d0fbb6e92918fdece5e0c7744b17206c",
+      "release.json": "e4aa85fa9c19c264548124762d4e06d4b2c6a7317ba6ebe447915509ebf240f3"
+    },
+    "http_verification": "/home/bhw/repos/interchange-lab/.cache/deployments/cloverleaf-4m-20261107-160410/http-verification.json",
+    "ui_review": "/home/bhw/repos/interchange-lab/.cache/deployments/cloverleaf-4m-20261107-160410/ui-review/finish-review.md",
+    "service": "roadlab.service,active"
+  },
+  "previous_cloverleaf_checks": [
+    {
+      "command": "npm run build",
+      "exit_code": 0,
+      "scope": "frozen whole-project TypeScript and production bundle"
+    },
+    {
+      "command": "npx vitest run [21 scoped road/model/network/engine suites]",
+      "exit_code": 0,
+      "passed_cases": 254,
+      "scope": "4m assets/maps/migration;all12principal cloverleaf movements,ramp tangent/position/grade,source-network route availability; existing road/signal/median controls"
+    },
+    {
+      "command": "npx vitest run tests/traffic.test.ts",
+      "exit_code": 1,
+      "passed_cases": 15,
+      "failed_cases": 2,
+      "scope": "prior sustained body-overlap failures retained;transition121,junction2samples; preceding release202/93 under same tests"
+    },
+    {
+      "command": "PLAYWRIGHT_PORT=5198 npx playwright test",
+      "exit_code": 1,
+      "passed_cases": 59,
+      "failed_cases": 1,
+      "scope": "full60browser cases on frozen assets; sole failure expected2m but correct feedback prints2.00m"
+    },
+    {
+      "command": "PLAYWRIGHT_PORT=5198 npx playwright test tests/browser/editor.spec.ts --grep one-way-section-snapping",
+      "exit_code": 0,
+      "passed_cases": 1,
+      "scope": "format expectation corrected to2.00m; complete samecase rerun including physical lane/edge continuity;60unique cases covered by full run plusfollowup"
+    },
+    {
+      "command": "impeccable finish review",
+      "disposition": "ship",
+      "scope": "existing HUD and cloverleaf map at1440x900/390x844"
+    },
+    {
+      "command": "HTTP SHA-256 at localhost/LAN5173",
+      "exit_code": 0,
+      "passed_cases": 10
+    },
+    {
+      "command": "PLAYWRIGHT_PORT=5173 npx playwright test tests/browser/cloverleaf.spec.ts tests/browser/lane-width.spec.ts",
+      "exit_code": 0,
+      "passed_cases": 2,
+      "scope": "live loading,90simsec at25%demand with arrivals,old-width restore/template migration/save/reload"
+    },
+    {
+      "command": "SMOKE_URL=http://127.0.0.1:5173/ node tests/production.mjs",
+      "exit_code": 0,
+      "scope": "live5roads/2routes/canvas;no page or asset errors"
+    }
+  ],
+  "controlled_pressure_comparison": {
+    "file": "/home/bhw/repos/interchange-lab/.cache/deployments/road-upgrades-20261107-170830/final-physics-comparison.json",
+    "fixed_clock_ms": 1700000000000,
+    "identical": true,
+    "physics_commit": "bc1c72d30ddc2f4917c61d7f6c8edb4434e9e2a9",
+    "same_physics_files_in_final_ui": 78
   }
 }
