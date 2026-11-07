@@ -603,3 +603,9 @@ export function cs2MoveTrailer(input: CS2TrailerInput) {
     },
   };
 }
+
+/** The same original vector operations are used by lane connection generation. */
+export {
+  rotate as cs2RotateMotionVector,
+  horizontalNormalize as cs2NormalizeMotionHorizontal,
+};
