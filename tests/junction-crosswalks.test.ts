@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { buildJunctions } from "../src/core/junctions";
+import { buildJunctions, roadRange } from "../src/core/junctions";
 import {
   center,
   normal,
@@ -9,7 +9,10 @@ import {
   dist,
   v,
 } from "../src/core/math";
-import { roadCrosswalkQuads } from "../src/core/junction-crosswalks";
+import {
+  roadCrosswalkQuads,
+  roadSurfaceTriangles,
+} from "../src/core/junction-crosswalks";
 import { signalStopOffset } from "../src/core/traffic-signals";
 import { emptyProject, makeRoad } from "../src/core/model";
 import { addRoadsideLanes } from "../src/core/road-sections";
@@ -50,17 +53,17 @@ function intersectionArea(subject: V[], clip: V[]) {
     ) / 2
   );
 }
-export function skewFixture(angle = 30) {
+export function skewFixture(angle = 30, length = 100) {
   const p = emptyProject(),
     opts = { twoWay: true, lanesStart: 2, lanesEnd: 2, width: 3.5, speed: 50 };
   p.roads = [
-    makeRoad(v(-100, 0), v(), opts),
-    makeRoad(v(), v(100, 0), opts),
+    makeRoad(v(-length, 0), v(), opts),
+    makeRoad(v(), v(length, 0), opts),
     makeRoad(
       v(),
       v(
-        100 * Math.cos((angle * Math.PI) / 180),
-        100 * Math.sin((angle * Math.PI) / 180),
+        length * Math.cos((angle * Math.PI) / 180),
+        length * Math.sin((angle * Math.PI) / 180),
       ),
       opts,
     ),
@@ -74,7 +77,7 @@ function verify(
   median = false,
   curved = false,
 ) {
-  const p = skewFixture(angle);
+  const p = skewFixture(angle, angle < 30 ? 250 : 100);
   if (side === "left") {
     p.roads[1] = makeRoad(v(), v(100, 0), {
       twoWay: true,
@@ -93,8 +96,16 @@ function verify(
   for (const arm of j.arms) {
     const road = p.roads.find((r) => r.id === arm.road)!;
     expect(arm.crosswalkT).toBeDefined();
-    for (const quad of roadCrosswalkQuads(road, arm.crosswalkT!))
+    for (const quad of roadCrosswalkQuads(road, arm.crosswalkT!)) {
       expect(intersectionArea(quad, j.polygon)).toBeLessThan(1e-8);
+      for (const other of p.roads)
+        if (other.id !== road.id)
+          for (const surface of roadSurfaceTriangles(
+            other,
+            roadRange(other, [j]),
+          ))
+            expect(intersectionArea(quad, surface.polygon)).toBeLessThan(1e-8);
+    }
     expect(arm.trim + signalStopOffset(arm)).toBeGreaterThanOrEqual(
       arm.crosswalkDistance! + 2.5 - 1e-8,
     );
@@ -149,4 +160,23 @@ it("leaves no zebra paint on the central median", () => {
     expect(c.x).toBeGreaterThan(0);
     expect(n.z).toBeCloseTo(1);
   }
+});
+
+it("omits a crossing where a very short acute approach has no physically clear space", () => {
+  const p = skewFixture(15);
+  for (const arm of buildJunctions(p)[0].arms)
+    if (arm.crosswalkT !== undefined) {
+      const j = buildJunctions(p)[0],
+        road = p.roads.find((r) => r.id === arm.road)!;
+      for (const quad of roadCrosswalkQuads(road, arm.crosswalkT))
+        for (const other of p.roads)
+          if (other.id !== road.id)
+            for (const surface of roadSurfaceTriangles(
+              other,
+              roadRange(other, [j]),
+            ))
+              expect(intersectionArea(quad, surface.polygon)).toBeLessThan(
+                1e-8,
+              );
+    }
 });

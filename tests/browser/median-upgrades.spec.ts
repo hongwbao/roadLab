@@ -16,6 +16,36 @@ async function upgrade(page: Page, mode: string) {
   await page.locator('[data-tool="upgrade"]').click();
   await page.locator(`[data-upgrade-mode="${mode}"]`).click();
 }
+function intersectionArea(subject: any[], clip: any[]) {
+  let points = subject;
+  const cross = (a: any, b: any, c: any) =>
+    (b.x - a.x) * (c.z - a.z) - (b.z - a.z) * (c.x - a.x);
+  for (let i = 0; i < clip.length; i++) {
+    const a = clip[i],
+      b = clip[(i + 1) % clip.length],
+      out: any[] = [];
+    for (let k = 0; k < points.length; k++) {
+      const p = points[k],
+        q = points[(k + 1) % points.length],
+        cp = cross(a, b, p),
+        cq = cross(a, b, q);
+      if (cp >= 0) out.push(p);
+      if (cp >= 0 !== cq >= 0) {
+        const t = cp / (cp - cq);
+        out.push({ x: p.x + (q.x - p.x) * t, z: p.z + (q.z - p.z) * t });
+      }
+    }
+    points = out;
+  }
+  return (
+    Math.abs(
+      points.reduce((sum: number, p: any, i: number) => {
+        const q = points[(i + 1) % points.length];
+        return sum + p.x * q.z - p.z * q.x;
+      }, 0),
+    ) / 2
+  );
+}
 test.beforeEach(async ({ page }) => {
   await page.goto("/");
   await page.waitForFunction(() => !!(window as any).lab);
@@ -189,48 +219,47 @@ test("30degree asymmetric junction renders every zebra outside pavement and keep
     return {
       polygon: j.polygon,
       arms: j.arms,
+      surfaces: e.scene.roads.children.flatMap((group: any) =>
+        group.children
+          .filter((m: any) => m.isMesh && m.userData.road && !m.userData.median)
+          .flatMap((m: any) => {
+            const positions = m.geometry.getAttribute("position"),
+              index = m.geometry.getIndex(),
+              triangles: any[] = [];
+            for (let i = 0; i < index.count; i += 3)
+              triangles.push({
+                road: m.userData.road,
+                polygon: [0, 1, 2].map((k) => {
+                  const n = index.getX(i + k);
+                  return { x: positions.getX(n), z: positions.getZ(n) };
+                }),
+              });
+            return triangles;
+          }),
+      ),
       stripes: e.scene.junctionMesh.children
         .filter((m: any) => m.userData.crosswalk === j.id)
         .map((m: any) => {
           const p = m.geometry.getAttribute("position");
-          return Array.from({ length: p.count }, (_, i) => ({
-            x: p.getX(i),
-            z: p.getZ(i),
-          }));
+          return {
+            road: m.userData.crosswalkRoad,
+            polygon: Array.from({ length: p.count }, (_, i) => ({
+              x: p.getX(i),
+              z: p.getZ(i),
+            })),
+          };
         }),
     };
   });
   expect(data.stripes.length).toBeGreaterThan(12);
-  // Independent polygon clipping validates the actual GPU mesh coordinates.
-  for (const quad of data.stripes) {
-    let points = quad;
-    const cross = (a: any, b: any, c: any) =>
-      (b.x - a.x) * (c.z - a.z) - (b.z - a.z) * (c.x - a.x);
-    for (let i = 0; i < data.polygon.length; i++) {
-      const a = data.polygon[i],
-        b = data.polygon[(i + 1) % data.polygon.length],
-        out: any[] = [];
-      for (let k = 0; k < points.length; k++) {
-        const p = points[k],
-          q = points[(k + 1) % points.length],
-          cp = cross(a, b, p),
-          cq = cross(a, b, q);
-        if (cp >= 0) out.push(p);
-        if (cp >= 0 !== cq >= 0) {
-          const t = cp / (cp - cq);
-          out.push({ x: p.x + (q.x - p.x) * t, z: p.z + (q.z - p.z) * t });
-        }
-      }
-      points = out;
-    }
-    const area =
-      Math.abs(
-        points.reduce((sum: number, p: any, i: number) => {
-          const q = points[(i + 1) % points.length];
-          return sum + p.x * q.z - p.z * q.x;
-        }, 0),
-      ) / 2;
-    expect(area).toBeLessThan(1e-7);
+  // Validate actual GPU mesh coordinates against the junction and every other road.
+  for (const stripe of data.stripes) {
+    expect(intersectionArea(stripe.polygon, data.polygon)).toBeLessThan(1e-7);
+    for (const surface of data.surfaces)
+      if (surface.road !== stripe.road)
+        expect(intersectionArea(stripe.polygon, surface.polygon)).toBeLessThan(
+          1e-6,
+        );
   }
   await page.locator('[data-tool="signal"]').click();
   await click(page, 0);

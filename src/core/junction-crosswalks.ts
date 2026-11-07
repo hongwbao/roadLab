@@ -75,11 +75,56 @@ export function roadCrosswalkQuads(road: Road, t: number) {
   }
   return quads;
 }
+type SurfacePiece = {
+  polygon: V[];
+  minX: number;
+  maxX: number;
+  minZ: number;
+  maxZ: number;
+};
+const surfaceCache = new WeakMap<
+  Road,
+  { signature: string; pieces: SurfacePiece[] }
+>();
+/** The same70-sample triangle strip used by the rendered road pavement. */
+export function roadSurfaceTriangles(
+  road: Road,
+  range: { start: number; end: number },
+): SurfacePiece[] {
+  const signature = JSON.stringify([road, range]),
+    cached = surfaceCache.get(road);
+  if (cached?.signature === signature) return cached.pieces;
+  const n = Math.max(60, road.knots.length * 35),
+    edges: V[][] = [];
+  for (let i = 0; i <= n; i++) {
+    const t = range.start + ((range.end - range.start) * i) / n,
+      c = center(road, t),
+      normalAt = normal(road, t),
+      half = pavementWidth(road, t) / 2 + 0.35;
+    edges.push([add(c, mul(normalAt, -half)), add(c, mul(normalAt, half))]);
+  }
+  const pieces: SurfacePiece[] = [];
+  for (let i = 0; i < n; i++)
+    for (const polygon of [
+      [edges[i][0], edges[i + 1][0], edges[i][1]],
+      [edges[i][1], edges[i + 1][0], edges[i + 1][1]],
+    ])
+      pieces.push({
+        polygon,
+        minX: Math.min(...polygon.map((p) => p.x)),
+        maxX: Math.max(...polygon.map((p) => p.x)),
+        minZ: Math.min(...polygon.map((p) => p.z)),
+        maxZ: Math.max(...polygon.map((p) => p.z)),
+      });
+  surfaceCache.set(road, { signature, pieces });
+  return pieces;
+}
 /** Search actual surface clearance, rather than assuming trim+2 clears a skew hull. */
 export function placeJunctionCrosswalk(
   road: Road,
   arm: Arm,
   junction: Junction,
+  obstacles: readonly SurfacePiece[] = [],
 ) {
   const table = arcTable(road),
     length = table.at(-1)!.s,
@@ -88,7 +133,22 @@ export function placeJunctionCrosswalk(
   for (let distance = first; distance <= limit + 1e-8; distance += 0.5) {
     const t = arcParameter(table, arm.end === 0 ? distance : length - distance);
     const envelope = crosswalkEnvelope(road, t);
-    if (!convexPolygonsOverlap(envelope, junction.polygon, 0.2))
-      return { t, distance };
+    if (convexPolygonsOverlap(envelope, junction.polygon, 0.2)) continue;
+    const minX = Math.min(...envelope.map((p) => p.x)),
+      maxX = Math.max(...envelope.map((p) => p.x)),
+      minZ = Math.min(...envelope.map((p) => p.z)),
+      maxZ = Math.max(...envelope.map((p) => p.z));
+    if (
+      obstacles.some(
+        (piece) =>
+          piece.maxX >= minX - 0.2 &&
+          piece.minX <= maxX + 0.2 &&
+          piece.maxZ >= minZ - 0.2 &&
+          piece.minZ <= maxZ + 0.2 &&
+          convexPolygonsOverlap(envelope, piece.polygon, 0.2),
+      )
+    )
+      continue;
+    return { t, distance };
   }
 }

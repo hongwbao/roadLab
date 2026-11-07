@@ -371,6 +371,10 @@ function render() {
     });
   const medianMode =
     editor.tool === "upgrade" && editor.upgradeMode === "median";
+  document.querySelector<HTMLElement>(".build-height")!.hidden = medianMode;
+  document.querySelector<HTMLElement>("#snap-toggle")!.hidden = medianMode;
+  document.querySelector<HTMLElement>("#alignment-mode")!.hidden =
+    medianMode || editor.draw.twoWay;
   document.querySelector<HTMLElement>("#median-upgrade-options")!.hidden =
     !medianMode;
   document.querySelector<HTMLElement>("#median-widths")!.hidden =
@@ -417,11 +421,15 @@ function render() {
     document.querySelector<HTMLButtonElement>("#alignment-mode")!;
   alignment.hidden = editor.draw.twoWay;
   alignment.textContent = `对齐：${{ auto: "自动", center: "中线", left: "左缘", right: "右缘" }[editor.alignment]}`;
+  if (medianMode)
+    document.querySelector<HTMLElement>("#alignment-mode")!.hidden = true;
   document.querySelector("#build-height-label")!.textContent =
     editor.draw.endHeight === 0 ? "地面" : `${editor.draw.endHeight} m`;
-  document.querySelector("#asset-description")!.textContent = getAsset(
-    editor.assetId,
-  ).description;
+  document.querySelector("#asset-description")!.textContent = medianMode
+    ? editor.medianAction === "remove"
+      ? "移除中央隔离带"
+      : `中央实体隔离带 · ${editor.medianWidth} m`
+    : getAsset(editor.assetId).description;
   document.querySelector("#mode-badge")!.textContent = (
     {
       select: "选择",

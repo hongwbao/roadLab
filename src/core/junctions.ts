@@ -10,7 +10,10 @@ import {
   tangent,
   pavementWidth,
 } from "./math";
-import { placeJunctionCrosswalk } from "./junction-crosswalks";
+import {
+  placeJunctionCrosswalk,
+  roadSurfaceTriangles,
+} from "./junction-crosswalks";
 import type { Project, Road, V } from "./types";
 export type Arm = {
   road: string;
@@ -87,10 +90,40 @@ export function buildJunctions(p: Project): Junction[] {
           );
         }),
       ) + 2.5;
+    // Acute approaches need enough length for their whole carriageways to
+    // separate, including asymmetric lateral offsets and shoulders.
+    const desired = g.ends.map(() => radius + 1);
+    for (let i = 0; i < g.ends.length; i++)
+      for (let k = 0; k < g.ends.length; k++) {
+        if (i === k) continue;
+        const a = g.ends[i],
+          b = g.ends[k],
+          ad = dirs[i],
+          bd = dirs[k];
+        const al = Math.hypot(ad.x, ad.z),
+          bl = Math.hypot(bd.x, bd.z);
+        if (al < 1e-6 || bl < 1e-6) continue;
+        const ax = ad.x / al,
+          az = ad.z / al,
+          bx = bd.x / bl,
+          bz = bd.z / bl,
+          cos = ax * bx + az * bz,
+          sin = ax * -bz + az * bx;
+        if (cos <= 0 || Math.abs(sin) < 1e-4) continue;
+        const ac = center(a.r, a.end),
+          bc = center(b.r, b.end),
+          offset = (ac.x - bc.x) * -bz + (ac.z - bc.z) * bx;
+        const halfA = pavementWidth(a.r, a.end) / 2 + 0.35,
+          halfB = pavementWidth(b.r, b.end) / 2 + 0.35;
+        desired[i] = Math.max(
+          desired[i],
+          (halfB + halfA * cos + 0.5 - Math.sign(sin) * offset) / Math.abs(sin),
+        );
+      }
     const arms: Arm[] = g.ends.map(({ r, end }, i) => {
       const table = arcTable(r),
         length = table.at(-1)!.s,
-        trim = Math.min(radius + 1, length * 0.38),
+        trim = Math.min(desired[i], length * 0.38),
         t = arcParameter(table, end === 0 ? trim : length - trim);
       return {
         road: r.id,
@@ -112,23 +145,38 @@ export function buildJunctions(p: Project): Junction[] {
       id: `j:${g.position.x.toFixed(2)},${g.position.y.toFixed(2)},${g.position.z.toFixed(2)}`,
       position: g.position,
       arms,
-      radius,
+      radius: Math.max(radius, ...arms.map((a) => a.trim - 1)),
       crosswalks:
         arms.length >= 3 &&
         g.ends.some(({ r }) => r.kind === "road" && r.speed <= 80),
       polygon: convexHull(points),
     });
   }
+  const ranges = new Map(p.roads.map((r) => [r.id, roadRange(r, result)]));
   for (const junction of result)
-    if (junction.crosswalks)
+    if (junction.crosswalks) {
+      const surfaces = junction.arms.flatMap((arm) => {
+        const road = p.roads.find((r) => r.id === arm.road)!,
+          range = ranges.get(road.id)!;
+        return roadSurfaceTriangles(road, range).map((piece) => ({
+          ...piece,
+          road: road.id,
+        }));
+      });
       for (const arm of junction.arms) {
         const road = p.roads.find((r) => r.id === arm.road)!,
-          walk = placeJunctionCrosswalk(road, arm, junction);
+          walk = placeJunctionCrosswalk(
+            road,
+            arm,
+            junction,
+            surfaces.filter((piece) => piece.road !== road.id),
+          );
         if (walk) {
           arm.crosswalkT = walk.t;
           arm.crosswalkDistance = walk.distance;
         }
       }
+    }
   junctionCache.set(p, { signature, junctions: structuredClone(result) });
   return result;
 }
