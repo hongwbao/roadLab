@@ -1,7 +1,7 @@
 {
-  "recorded_at": "2026-11-07T09:45:32.132444+00:00",
-  "latest_change": "路口车道连线与自定义红绿灯已整合发布：J点选入/出车道圆点修改实际路由；K支持逐相位配时、进口转向许可、四相位默认、命名方案与跨路口/JSON复用。",
-  "record_type": "用户授权的功能预览发布与固定构建限定范围验证；不是全部交通复刻或长期高压验收通过。",
+  "recorded_at": "2026-11-07T10:44:49.809490+00:00",
+  "latest_change": "单侧扩宽、非对称道路与手动过渡已整合发布；默认直接连接，普通道路可分别接入空余车道形成分合流。复用道路/路口几何、车道合法性索引及弧长，车辆网络延至测试启动时编译，优化建路和连线编辑卡顿。",
+  "record_type": "用户授权的功能预览发布与固定版本限定范围验证；不是完整原版交通复现或长期高压验收通过。",
   "checks": [
     {
       "command": "npm run build",
@@ -9,48 +9,59 @@
       "scope": "frozen source whole-project TypeScript and production build"
     },
     {
-      "command": "npx vitest run [7 core/program/lane/engine suites]",
+      "command": "npx vitest run [17 relevant road/model/engine/signal suites]",
       "exit_code": 0,
-      "passed_cases": 127,
-      "scope": "junction control data, signals, actual engine and model integration"
+      "passed_cases": 223,
+      "scope": "asymmetric geometry, lane identity, manual transitions, source simulation and existing road controls"
     },
     {
       "command": "PLAYWRIGHT_PORT=5198 npx playwright test",
       "exit_code": 0,
-      "passed_cases": 50,
-      "scope": "full browser suite against immutable production resources"
+      "passed_cases": 54,
+      "scope": "full browser suite on exact immutable production resources"
+    },
+    {
+      "command": "asymmetric-runtime-smoke.mjs",
+      "exit_code": 0,
+      "scope": "actual2+3 traffic, both directions,30 generated14 completed,0 wrong-side samples/errors"
     },
     {
       "command": "impeccable finish review",
       "disposition": "ship",
-      "scope": "two junction control UIs, desktop1440x900 and compact390x844; physics not certified"
+      "scope": "scoped road expansion/upgrade UI desktop1440x900 and compact390x844; physics/full-touch not certified"
     },
     {
-      "command": "HTTP SHA-256 verification at localhost and LAN5173",
+      "command": "HTTP SHA-256 at localhost/LAN5173",
       "exit_code": 0,
       "passed_cases": 10,
-      "scope": "index, release metadata, JavaScript, CSS and worker match frozen release"
+      "scope": "index,metadata,JavaScript,CSS,worker match verified dist"
     },
     {
       "command": "SMOKE_URL=http://127.0.0.1:5173/ node tests/production.mjs",
       "exit_code": 0,
-      "scope": "live canvas, initial5roads/2routes, no page or asset errors"
+      "scope": "live5roads/2routes/canvas, no page or asset errors"
     },
     {
-      "command": "PLAYWRIGHT_PORT=5173 npx playwright test [2 junction feature cases]",
+      "command": "PLAYWRIGHT_PORT=5173 npx playwright test [8 selected road/phase scenarios]",
       "exit_code": 0,
-      "passed_cases": 2,
-      "scope": "live dot-to-dot routing/save/restore and signal-preset JSON import/apply"
+      "passed_cases": 8,
+      "scope": "live roadside expansion,asymmetric save/undo,spare-lane input,manual transition,deferred network and signal JSON reuse"
+    },
+    {
+      "command": "scoped Prettier and git diff --check",
+      "exit_code": 0,
+      "scope": "delivered source and test files"
     }
   ],
   "limitations": [
     "原式吸附实验入口仍使用兼容最终道路应用；完整CourseSplit/节点几何/节点车道与后处理尚未接线，部分端点与附件行为有已知差异。正常入口继续兼容吸附。",
-    "高压分合流和有灯路口仍检出车身重叠；保留的protected压力测试基线43/本版51次采样重叠，长期高压回归未验收。本次上线属于功能预览。",
+    "此前高压分合流和有灯路口仍检出车身重叠；本次没有修复或重新验收该压力问题，属于功能与编辑性能预览。",
     "完整PersonalCarAI已接实际引擎；完整导航窗口独立模块仍未接engine。",
     "行人、真实停车、公交、货运、应急任务和其他交通方式未完整实现。",
     "普通无灯路口的部分减速经完整原式lane-speed oracle复现，不能按旧恒速假设删除让行行为。",
     "本次没有推送远程仓库或运行GitHub Actions。",
-    "命名信号方案库保存在当前浏览器；跨浏览器或设备须导出/导入JSON。紧凑布局保留键盘/名称辅助，不代表完整触屏编辑。"
+    "命名信号方案库保存在当前浏览器；跨浏览器或设备须导出/导入JSON。紧凑布局保留键盘/名称辅助，不代表完整触屏编辑。",
+    "编辑性能数据为本机64段道路/16路口场景的编辑事务耗时，不代表任意规模城市帧率；车辆运行网络在开始测试时初始化。"
   ],
   "previous_verified_stable_snapshot": {
     "recorded_at": "2026-11-06T11:58:12.595591+00:00",
@@ -400,25 +411,25 @@
     "healthz": "ok"
   },
   "current_deployment": {
-    "version": "junction-controls-20261107-093858",
+    "version": "road-expansion-20261107-103432",
     "url": "http://192.168.31.167:5173/",
     "experimental_road_url": "http://192.168.31.167:5173/?construction=source",
-    "source_commit": "452f1779d62ab9fdbbdd46e6a682f1707c076295",
-    "source_snapshot": "/home/bhw/repos/interchange-lab/.cache/builds/junction-controls-20261107-093858/source",
-    "manifest": "/home/bhw/repos/interchange-lab/.cache/deployments/junction-controls-20261107-093858/manifest.json",
-    "bundle": "assets/index-zAFNwwru.js",
-    "css": "assets/index-DpXCUj7E.css",
+    "source_commit": "d8d83b0bc9499e36d22acfcbbe369eacfaac592f",
+    "source_snapshot": "/home/bhw/repos/interchange-lab/.cache/builds/road-expansion-20261107-103432/source",
+    "manifest": "/home/bhw/repos/interchange-lab/.cache/deployments/road-expansion-20261107-103432/manifest.json",
+    "bundle": "assets/index-DgLFc1D2.js",
+    "css": "assets/index-ClzlgAub.css",
     "path_worker": "assets/cs2-path-worker-DFcwOVUm.js",
     "dist_sha256": {
-      "release.json": "ff0c1fbcb855d8a07be8266d7800e0637f8838a22ce9c4ea62def5894fb315f5",
-      "index.html": "d1eda955dc9779f8662b0131c4ca113cc9a448a242a75edf71f29e98fec2fde6",
+      "release.json": "82eb2ebc28f49fe2dd92de3e3a2f2f51f966ff79d251d8ed4ee51d94ec9a04fa",
+      "index.html": "0f500e619ee8d13a023c59fa542d3180e9874b5a4e459bd97905fa9aab0c1341",
       "assets/cs2-path-worker-DFcwOVUm.js": "98850414cebb8d678b7082ac85feaef178e9d67b2bf4f7cbb1707e248b3b074c",
-      "assets/index-DpXCUj7E.css": "171812d17f51d711bf5c396e56c73b7f2e68c568516f905a49c4698c7d394e8a",
-      "assets/index-zAFNwwru.js": "c1ae6cd0361a8eca20c143f42504d170f2c85d82d676b6351da5ba9a7fc700bb"
+      "assets/index-DgLFc1D2.js": "ca1bfb2d0af9b866dda004445f510f2414ca225b037920051c54f2500ff8ff78",
+      "assets/index-ClzlgAub.css": "f3c5fdde45bb42c34c23a1cafda9520037c5a1e81746efef462116854830ec68"
     },
-    "http_verification": "/home/bhw/repos/interchange-lab/.cache/deployments/junction-controls-20261107-093858/http-verification.json",
-    "ui_review": "/home/bhw/repos/interchange-lab/.cache/deployments/junction-controls-20261107-093858/ui-review/finish-review.md",
-    "service": "roadlab.service, active"
+    "http_verification": "/home/bhw/repos/interchange-lab/.cache/deployments/road-expansion-20261107-103432/http-verification.json",
+    "ui_review": "/home/bhw/repos/interchange-lab/.cache/deployments/road-expansion-20261107-103432/ui-review/finish-review.md",
+    "service": "roadlab.service,active"
   },
   "previous_cs2_preview_checks": [
     {
@@ -621,6 +632,78 @@
   "known_failing_checks": [
     {
       "test": "tests/traffic-lights.test.ts: continues serving traffic across multiple signal cycles without body overlap",
+      "status": "known failure in preceding release;not rerun in this release",
+      "last_observed_release": "junction-controls-20261107-093858",
+      "baseline_observed_overlap_samples": 43,
+      "last_observed_overlap_samples": 51,
+      "scope": "retained pressure assertion; not included in223passing feature checks; no full traffic pressure acceptance"
+    }
+  ],
+  "previous_junction_controls_deployment": {
+    "version": "junction-controls-20261107-093858",
+    "url": "http://192.168.31.167:5173/",
+    "experimental_road_url": "http://192.168.31.167:5173/?construction=source",
+    "source_commit": "452f1779d62ab9fdbbdd46e6a682f1707c076295",
+    "source_snapshot": "/home/bhw/repos/interchange-lab/.cache/builds/junction-controls-20261107-093858/source",
+    "manifest": "/home/bhw/repos/interchange-lab/.cache/deployments/junction-controls-20261107-093858/manifest.json",
+    "bundle": "assets/index-zAFNwwru.js",
+    "css": "assets/index-DpXCUj7E.css",
+    "path_worker": "assets/cs2-path-worker-DFcwOVUm.js",
+    "dist_sha256": {
+      "release.json": "ff0c1fbcb855d8a07be8266d7800e0637f8838a22ce9c4ea62def5894fb315f5",
+      "index.html": "d1eda955dc9779f8662b0131c4ca113cc9a448a242a75edf71f29e98fec2fde6",
+      "assets/cs2-path-worker-DFcwOVUm.js": "98850414cebb8d678b7082ac85feaef178e9d67b2bf4f7cbb1707e248b3b074c",
+      "assets/index-DpXCUj7E.css": "171812d17f51d711bf5c396e56c73b7f2e68c568516f905a49c4698c7d394e8a",
+      "assets/index-zAFNwwru.js": "c1ae6cd0361a8eca20c143f42504d170f2c85d82d676b6351da5ba9a7fc700bb"
+    },
+    "http_verification": "/home/bhw/repos/interchange-lab/.cache/deployments/junction-controls-20261107-093858/http-verification.json",
+    "ui_review": "/home/bhw/repos/interchange-lab/.cache/deployments/junction-controls-20261107-093858/ui-review/finish-review.md",
+    "service": "roadlab.service, active"
+  },
+  "previous_junction_controls_checks": [
+    {
+      "command": "npm run build",
+      "exit_code": 0,
+      "scope": "frozen source whole-project TypeScript and production build"
+    },
+    {
+      "command": "npx vitest run [7 core/program/lane/engine suites]",
+      "exit_code": 0,
+      "passed_cases": 127,
+      "scope": "junction control data, signals, actual engine and model integration"
+    },
+    {
+      "command": "PLAYWRIGHT_PORT=5198 npx playwright test",
+      "exit_code": 0,
+      "passed_cases": 50,
+      "scope": "full browser suite against immutable production resources"
+    },
+    {
+      "command": "impeccable finish review",
+      "disposition": "ship",
+      "scope": "two junction control UIs, desktop1440x900 and compact390x844; physics not certified"
+    },
+    {
+      "command": "HTTP SHA-256 verification at localhost and LAN5173",
+      "exit_code": 0,
+      "passed_cases": 10,
+      "scope": "index, release metadata, JavaScript, CSS and worker match frozen release"
+    },
+    {
+      "command": "SMOKE_URL=http://127.0.0.1:5173/ node tests/production.mjs",
+      "exit_code": 0,
+      "scope": "live canvas, initial5roads/2routes, no page or asset errors"
+    },
+    {
+      "command": "PLAYWRIGHT_PORT=5173 npx playwright test [2 junction feature cases]",
+      "exit_code": 0,
+      "passed_cases": 2,
+      "scope": "live dot-to-dot routing/save/restore and signal-preset JSON import/apply"
+    }
+  ],
+  "previous_junction_controls_known_failing_checks": [
+    {
+      "test": "tests/traffic-lights.test.ts: continues serving traffic across multiple signal cycles without body overlap",
       "status": "failed",
       "baseline_observed_overlap_samples": 43,
       "current_observed_overlap_samples": 51,
@@ -628,5 +711,29 @@
       "baseline_log": "/home/bhw/repos/interchange-lab/.cache/signals/baseline-protected-pressure.log",
       "current_log": "/home/bhw/repos/interchange-lab/.cache/signals/root-custom-controls.log"
     }
-  ]
+  ],
+  "performance": {
+    "recorded_at": "2026-11-07T10:38:26.467107+00:00",
+    "source_commit": "d8d83b0bc9499e36d22acfcbbe369eacfaac592f",
+    "baseline_deployment": "junction-controls-20261107-093858",
+    "workload": {
+      "roads": 64,
+      "junctions": 16,
+      "lanes_per_direction": 2,
+      "portals": 0,
+      "lane_edits": 3,
+      "construction": "one disconnected80m one-way road;65roads after build"
+    },
+    "lane_edits_ms": {
+      "before": [687.5, 662.3999999985099, 689.5],
+      "after": [17.899999998509884, 15.399999998509884, 12.899999998509884],
+      "median_before": 687.5,
+      "median_after": 15.399999998509884
+    },
+    "construction_edit_ms": {
+      "before": 3585.300000000745,
+      "after": 37.5
+    },
+    "scope": "Local headless Chrome edit-handler timings only; not arbitrary city-size frame-rate or throughput guarantees."
+  }
 }
