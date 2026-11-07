@@ -400,7 +400,7 @@ function render() {
     );
   document.querySelector("#upgrade-description")!.textContent =
     editor.upgradeMode === "median"
-      ? "悬停预览，点击路段应用"
+      ? "左键应用 · 右键取消此项升级"
       : editor.isWidening
         ? "选择单向资产，点击道路一侧加车道"
         : "平滑过渡在较宽路段的连接端点生成";

@@ -25,6 +25,7 @@ import {
 import { connections } from "../core/model";
 import { allowedTurns } from "../core/lane-rules";
 import { renderRoadMedian } from "./road-median";
+import { roadMedianRange } from "../core/road-median";
 import { roadCrosswalkQuads } from "../core/junction-crosswalks";
 import { roadSegmentNodes } from "../core/road-segments";
 import type { Project, Road, Settings, V } from "../core/types";
@@ -490,6 +491,7 @@ export class Scene {
       const roadSignature = JSON.stringify([
         r,
         range,
+        r.median ? roadMedianRange(p, r, this.junctionList) : undefined,
         hidden,
         selected.has(r.id),
         settings.paths,

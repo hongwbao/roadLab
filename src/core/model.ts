@@ -48,6 +48,7 @@ import {
 import { updateAutomaticTransitions } from "./auto-transitions";
 import { LANE_WIDTH } from "./road-standards";
 import { cloverleafExample } from "./cloverleaf";
+import { roadSectionKeys } from "./road-upgrades";
 import {
   applyJunctionLaneRules,
   normalizeJunctionLaneRules,
@@ -981,6 +982,27 @@ export function parseProject(text: string): Project {
           (r.twoWay && taper.firstLane !== 0)
         )
           throw new Error("自动过渡参数不合法。");
+    }
+    if (r.replacedSection !== undefined) {
+      if (
+        !r.replacedSection ||
+        typeof r.replacedSection !== "object" ||
+        Array.isArray(r.replacedSection) ||
+        Object.keys(r.replacedSection).some(
+          (key) => !roadSectionKeys.includes(key as any),
+        )
+      )
+        throw new Error("道路替换恢复记录不合法。");
+      parseProject(
+        JSON.stringify({
+          version: 1,
+          name: "道路替换恢复记录",
+          roads: [{ ...r.replacedSection, id: r.id, knots: r.knots }],
+          connections: [],
+          ports: [],
+          templates: [],
+        }),
+      );
     }
     if (r.turns !== undefined) {
       if (!r.turns || typeof r.turns !== "object" || Array.isArray(r.turns))

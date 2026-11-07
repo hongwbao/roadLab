@@ -53,7 +53,30 @@ export type Road = {
   attachments?: { start?: LaneAttachment; end?: LaneAttachment };
   turns?: Record<string, Turn[]>;
   autoTaper?: { start?: AutomaticTaper; end?: AutomaticTaper };
+  /** Last road-asset replacement, restored by right-click in replace mode. */
+  replacedSection?: RoadSection;
 };
+export type RoadSection = Pick<
+  Road,
+  | "name"
+  | "lanesStart"
+  | "lanesEnd"
+  | "backwardLanesStart"
+  | "backwardLanesEnd"
+  | "sectionOffset"
+  | "transitionMode"
+  | "median"
+  | "twoWay"
+  | "width"
+  | "speed"
+  | "align"
+  | "kind"
+  | "highwayRules"
+  | "transitionStart"
+  | "transitionEnd"
+  | "profile"
+  | "widthOrigin"
+>;
 export type LaneRef = { road: string; lane: number };
 export type Connection = {
   id: string;

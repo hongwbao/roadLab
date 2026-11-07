@@ -2,6 +2,7 @@ import { buildJunctions } from "../core/junctions";
 import { setRoadMedian, withRoadMedian } from "../core/road-median";
 import { getAsset } from "../core/assets";
 import { LANE_WIDTH, standardizeLaneWidths } from "../core/road-standards";
+import { replaceRoadSection, revertRoadUpgrade } from "../core/road-upgrades";
 import {
   addRoadsideLanes,
   expandedRoad,
@@ -369,16 +370,16 @@ export class Editor {
       delete: "拆除模式 · 悬停道路预览 · 左键拆除 · B / Esc 退出",
       upgrade:
         this.upgradeMode === "widen"
-          ? "选择单向道路资产 · 悬停道路左右两侧预览 · 点击添加车道"
+          ? "悬停道路左右两侧 · 左键加车道 · 右键减车道"
           : this.upgradeMode === "median"
             ? this.medianAction === "remove"
               ? "悬停预览并点击双向路段，移除中央隔离带"
-              : "悬停预览并点击双向路段，添加中央隔离带"
+              : "左键添加中央隔离带 · 右键移除"
             : this.upgradeMode === "replace"
-              ? "先选择道路资产，再点击已有道路替换"
+              ? "选择道路资产 · 左键替换 · 右键恢复原断面"
               : this.upgradeMode === "smooth"
-                ? "点击较宽路段，在与窄路相连的端点添加平滑过渡"
-                : "点击道路恢复直接连接，保留完整车道用于接入分支",
+                ? "左键添加断面平滑过渡 · 右键取消过渡"
+                : "左键恢复直接连接 · 右键恢复平滑过渡",
       widen: "选择单向道路资产 · 悬停道路左侧或右侧预览加车道 · 点击添加",
       turn: "点击路口，连接进出车道 · 右键取消选择 · J / Esc 退出",
       signal: "点击路口中心设置红绿灯 · 右键移除 · K / Esc 退出",
@@ -1350,7 +1351,7 @@ export class Editor {
         candidates[0].near.t,
       );
       this.onStatus(
-        `${side === "left" ? "左侧" : "右侧"}增加 ${count} 条车道 · ${next.twoWay ? `${backwardStart(next)}＋${next.lanesStart}` : `${next.lanesStart}`} 车道 · 点击确认`,
+        `${side === "left" ? "左侧" : "右侧"}增加 ${count} 条车道 · ${next.twoWay ? `${backwardStart(next)}＋${next.lanesStart}` : `${next.lanesStart}`} 车道 · 左键添加 · 右键减少`,
       );
     } catch (error) {
       this.scene.showPreviews([]);
@@ -1414,7 +1415,7 @@ export class Editor {
       this.onStatus(
         this.medianAction === "remove"
           ? "移除中央隔离带 · 点击确认"
-          : `中央实体隔离带 ${this.medianWidth} m · 点击添加`,
+          : `中央实体隔离带 ${this.medianWidth} m · 左键添加 · 右键移除`,
       );
     } catch (error) {
       this.medianPreviewError = (error as Error).message;
@@ -1555,17 +1556,12 @@ export class Editor {
             r.transitionMode = "direct";
             delete r.autoTaper;
           } else {
-            Object.assign(r, {
-              backwardLanesStart: undefined,
-              backwardLanesEnd: undefined,
-              sectionOffset: undefined,
-              transitionMode: "direct",
-              ...getAsset(this.assetId).options,
-            });
-            if (!r.twoWay) delete r.median;
-            r.name = getAsset(this.assetId).name;
-            delete r.profile;
-            delete r.widthOrigin;
+            replaceRoadSection(
+              this.project,
+              r.id,
+              getAsset(this.assetId).options,
+              getAsset(this.assetId).name,
+            );
             reconnectIntersections(this.project);
           }
         },
@@ -1585,6 +1581,32 @@ export class Editor {
   }
 
   private rightClick(e: PointerEvent) {
+    if (this.tool === "upgrade") {
+      const hit = this.scene.hit(e.clientX, e.clientY);
+      if (hit?.road) {
+        const road = this.project.roads.find((r) => r.id === hit.road)!;
+        this.edit(
+          () =>
+            revertRoadUpgrade(
+              this.project,
+              road.id,
+              this.upgradeMode,
+              roadSideAt(road, hit.position ?? center(road, 0.5)),
+              this.draw.lanesStart,
+            ),
+          this.upgradeMode === "median"
+            ? "已移除中央隔离带"
+            : this.upgradeMode === "widen"
+              ? "已减少车道"
+              : "已取消此项道路升级",
+        );
+        this.upgradePreviewKey = "";
+        this.medianTarget = undefined;
+        this.scene.showPreviews([]);
+        this.scene.showLaneTarget();
+        return;
+      }
+    }
     if (
       this.tool === "turn" &&
       this.junctionLaneTool.rightClick(e.clientX, e.clientY)
