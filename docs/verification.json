@@ -1,30 +1,30 @@
 {
-  "recorded_at": "2026-11-07T06:28:50.990722+00:00",
-  "latest_change": "道路建造成为当前优先任务；已发布原式Straight/Simple课程建造、曲线拟合和高程线性化，预览与提交共用。原式吸附/节点车道生成后续接线未混入本次版本。",
+  "recorded_at": "2026-11-07T07:02:49.799830+00:00",
+  "latest_change": "道路优先：原式世界吸附和完整控制点已接实际编辑器实验入口；完整CourseSplit节点归并接线前，正常入口保留兼容建路。预览与提交共用实际吸附点。",
   "record_type": "用户要求的预览发布与限定范围验证；不是全部交通复刻或长期高压验收通过。",
   "checks": [
     {
       "command": "npm run build",
-      "scope": "冻结源码类型检查和生产构建；未接线吸附/节点创建草稿排除",
-      "exit_code": 0
+      "exit_code": 0,
+      "scope": "固定源码类型/生产构建；未接线几何/节点创建草稿排除；测试源单独归档"
     },
     {
-      "command": "npx vitest run [road builder, shared geometry, source engine, facade, rendering, auto-transitions, segments, lane building]",
+      "command": "npx vitest run [12 road/source integration suites]",
       "exit_code": 0,
-      "passed_cases": 788,
-      "scope": "8文件，实际道路适配与运行链路；不是全部交通长期验收"
+      "passed_cases": 1972,
+      "scope": "完整课程、吸附与真实世界/点击编排、原式几何、source engine/facade/rendering、自动过渡/分段/车道建造；不是全部交通长期验收"
     },
     {
-      "command": "PLAYWRIGHT_PORT=5193 npx playwright test",
+      "command": "PLAYWRIGHT_PORT=5196 npx playwright test",
       "exit_code": 0,
-      "passed_cases": 44,
-      "scope": "固定生产构建的完整道路、车道、路口、红绿灯、撤销存档与新增三点曲线回归"
+      "passed_cases": 46,
+      "scope": "固定生产资源，默认兼容入口全部编辑回归及原式实验入口的真实三点曲线、相对格长、Alt高架；测试源见browser-suite-manifest.json"
     },
     {
       "command": "PLAYWRIGHT_PORT=5173 npx playwright test tests/browser/editor.spec.ts --grep 'three-click curves use original road fitting'",
       "exit_code": 0,
       "passed_cases": 1,
-      "scope": "实际线上版本真实鼠标建曲线，验证控制柄、预览提交、撤销重做和保存重载"
+      "scope": "实际线上原式实验入口建造、预览提交、撤销重做及保存重载"
     },
     {
       "command": "SMOKE_URL=http://127.0.0.1:5173/ node .analysis/preview-smoke.mjs",
@@ -38,7 +38,7 @@
           "canvas": true
         },
         "traffic": {
-          "elapsed": 61.11666666666667,
+          "elapsed": 61.18333333333333,
           "generated": 24,
           "entered": 24,
           "completed": 14,
@@ -56,8 +56,9 @@
     }
   ],
   "limitations": [
+    "原式吸附实验入口仍使用兼容最终道路应用；完整CourseSplit/节点几何/节点车道与后处理尚未接线，部分端点与附件行为有已知差异。正常入口继续兼容吸附。",
     "高压分合流仍检出同一显示时刻车身重叠，本次作为预览发布，长期回归未验收。",
-    "完整PersonalCarAI已接本地/本次预览；完整导航窗口仍未接engine，原式吸附与节点车道创建正在整合。",
+    "完整PersonalCarAI已接实际引擎；完整导航窗口独立模块仍未接engine。",
     "行人、真实停车、公交、货运、应急任务和其他交通方式未完整实现。",
     "普通无灯路口的部分减速经完整原式lane-speed oracle复现，不能按旧恒速假设删除让行行为。",
     "本次没有推送远程仓库或运行GitHub Actions。"
@@ -410,20 +411,24 @@
     "healthz": "ok"
   },
   "current_deployment": {
-    "version": "source-road-curves-20261107-142015",
+    "version": "source-road-snapping-20261107-145700",
     "url": "http://192.168.31.167:5173/",
-    "bundle": "index-B-NnWHYI.js",
-    "css": "index-CxjdwM7I.css",
-    "source_snapshot": "/home/bhw/repos/interchange-lab/.cache/builds/source-road-curves-20261107-142015/source",
-    "manifest": "/home/bhw/repos/interchange-lab/.cache/deployments/source-road-curves-20261107-142015/manifest.json",
+    "experimental_road_url": "http://192.168.31.167:5173/?construction=source",
+    "bundle": "assets/index-BMqNiVAu.js",
+    "css": "assets/index-CxjdwM7I.css",
+    "source_snapshot": "/home/bhw/repos/interchange-lab/.cache/builds/source-road-snapping-20261107-145700/source",
+    "manifest": "/home/bhw/repos/interchange-lab/.cache/deployments/source-road-snapping-20261107-145700/source-manifest.json",
+    "browser_suite_manifest": "/home/bhw/repos/interchange-lab/.cache/deployments/source-road-snapping-20261107-145700/browser-suite-manifest.json",
     "dist_sha256": {
-      "release.json": "20d3f3a8b571b395118c78a01e6c83ee2e603d6483f173ddbbc7e3ae6ff2ad3a",
-      "index.html": "f990df8e4bfeb68c3c4bf5115c1445b10365aaa9b3399f682ca48e9cf8254549",
+      "release.json": "d8b4dd1a0008784d6d9e3862ddb7ceb2f24c87f92857a921128171607399a732",
+      "index.html": "dd071cbad88fd151ef6bf337fc9d8dedea31cc97ccceb3c12a038a39b563f2ba",
       "assets/cs2-path-worker-DFcwOVUm.js": "98850414cebb8d678b7082ac85feaef178e9d67b2bf4f7cbb1707e248b3b074c",
       "assets/index-CxjdwM7I.css": "b11b42635b0047592bd3a9f4457a3e366ab71e3252a3011661d60cdc0860981c",
-      "assets/index-B-NnWHYI.js": "bb2603dd95d27e5d3fbb3d1c0440f3969a8d9659e0729dc955b934390623e6f0"
+      "assets/index-BMqNiVAu.js": "e9aa576ee8334c5f0d8bbd9dcd757a834f15575d15a3207166500ff8abc4b4fa"
     },
-    "healthz": "ok"
+    "healthz": "ok",
+    "traffic_model": "cs2-derived",
+    "road_construction_default": "compatible"
   },
   "previous_cs2_preview_checks": [
     {
@@ -469,6 +474,75 @@
           "entered": 24,
           "completed": 16,
           "visible": 7,
+          "failed": 0
+        },
+        "zeroDemand": {
+          "before": 24,
+          "after": 24,
+          "multiplier": 0
+        },
+        "errors": [],
+        "passed": true
+      }
+    }
+  ],
+  "previous_road_curve_deployment": {
+    "version": "source-road-curves-20261107-142015",
+    "url": "http://192.168.31.167:5173/",
+    "bundle": "index-B-NnWHYI.js",
+    "css": "index-CxjdwM7I.css",
+    "source_snapshot": "/home/bhw/repos/interchange-lab/.cache/builds/source-road-curves-20261107-142015/source",
+    "manifest": "/home/bhw/repos/interchange-lab/.cache/deployments/source-road-curves-20261107-142015/manifest.json",
+    "dist_sha256": {
+      "release.json": "20d3f3a8b571b395118c78a01e6c83ee2e603d6483f173ddbbc7e3ae6ff2ad3a",
+      "index.html": "f990df8e4bfeb68c3c4bf5115c1445b10365aaa9b3399f682ca48e9cf8254549",
+      "assets/cs2-path-worker-DFcwOVUm.js": "98850414cebb8d678b7082ac85feaef178e9d67b2bf4f7cbb1707e248b3b074c",
+      "assets/index-CxjdwM7I.css": "b11b42635b0047592bd3a9f4457a3e366ab71e3252a3011661d60cdc0860981c",
+      "assets/index-B-NnWHYI.js": "bb2603dd95d27e5d3fbb3d1c0440f3969a8d9659e0729dc955b934390623e6f0"
+    },
+    "healthz": "ok"
+  },
+  "previous_road_curve_checks": [
+    {
+      "command": "npm run build",
+      "scope": "冻结源码类型检查和生产构建；未接线吸附/节点创建草稿排除",
+      "exit_code": 0
+    },
+    {
+      "command": "npx vitest run [road builder, shared geometry, source engine, facade, rendering, auto-transitions, segments, lane building]",
+      "exit_code": 0,
+      "passed_cases": 788,
+      "scope": "8文件，实际道路适配与运行链路；不是全部交通长期验收"
+    },
+    {
+      "command": "PLAYWRIGHT_PORT=5193 npx playwright test",
+      "exit_code": 0,
+      "passed_cases": 44,
+      "scope": "固定生产构建的完整道路、车道、路口、红绿灯、撤销存档与新增三点曲线回归"
+    },
+    {
+      "command": "PLAYWRIGHT_PORT=5173 npx playwright test tests/browser/editor.spec.ts --grep 'three-click curves use original road fitting'",
+      "exit_code": 0,
+      "passed_cases": 1,
+      "scope": "实际线上版本真实鼠标建曲线，验证控制柄、预览提交、撤销重做和保存重载"
+    },
+    {
+      "command": "SMOKE_URL=http://127.0.0.1:5173/ node .analysis/preview-smoke.mjs",
+      "exit_code": 0,
+      "result": {
+        "url": "http://127.0.0.1:5173/",
+        "initial": {
+          "roads": 5,
+          "routes": 2,
+          "model": "cs2-derived",
+          "canvas": true
+        },
+        "traffic": {
+          "elapsed": 61.11666666666667,
+          "generated": 24,
+          "entered": 24,
+          "completed": 14,
+          "visible": 9,
           "failed": 0
         },
         "zeroDemand": {

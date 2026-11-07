@@ -4,8 +4,8 @@
 
 ## 当前版本边界
 
-- 网站现已按用户要求发布 `source-road-curves-20261107-142015` 预览，资源为 `index-B-NnWHYI.js`、`index-CxjdwM7I.css`；原稳定构建保留以便回退。
-- 本次预览的 `Simulation` 已委托 `Cs2TrafficSimulation`。后续完整 owner、导航窗口与车道生成开发使用工作区，网站服务固定快照；两者进度仍须分开描述。
+- 网站现已按用户要求发布 `source-road-snapping-20261107-145700` 预览，资源为 `index-BMqNiVAu.js`、`index-CxjdwM7I.css`；原稳定构建保留以便回退。
+- 本次预览的 `Simulation` 已委托 `Cs2TrafficSimulation`。完整 owner 已在该链路调用；完整导航窗口和源道路节点生成的后续接线使用工作区，网站服务固定快照；两者进度仍须分开描述。
 - 已恢复所提供核心托管程序集的可读实现；这不包含原始 Unity 工程、native player、全部序列化道路/车辆资产，也不等于浏览器运行行为已经相同。导出范围与来源见 [复现记录](CS2_RECONSTRUCTION.md)。
 
 ## 功能与证据
@@ -67,3 +67,7 @@ npx vitest run tests/cs2-simulation.test.ts tests/cs2-personal-car-ai.test.ts te
 ## 道路优先与原式曲线发布
 
 用户明确优先参考原代码复刻道路建造系统。现已发布原式Straight/Simple课程事务与曲线/高程处理；不是仅在独立模块中存在。固定构建类型/生产构建、788核心检查、44完整浏览器用例通过，实际线上三点曲线鼠标/预览/撤销保存也已复测。完整PersonalCarAI已在本次预览调用。完整导航模块438独立对照仍未接实际engine。原式吸附673项与节点连接选择276项已独立完成，正在接实际建造世界；完整节点创建仍在开发。
+
+## 原式道路吸附实验入口
+
+当前固定预览支持`?construction=source`，原式吸附通过真实道路世界和raycast接入鼠标建路，并保留跨点击控制点、物理/可编辑位置与参数语义。默认继续使用兼容吸附；完整CourseSplit端点归并和原GeometrySystem、节点车道后处理尚未接线，不能把实验入口当全部建造等价。当前固定构建1972项定向检查、46项完整浏览器回归通过，线上原式三点曲线和真实出车/0需求复测通过。
