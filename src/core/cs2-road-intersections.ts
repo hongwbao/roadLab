@@ -4787,4 +4787,5 @@ export {
   curveDistance as cs2RoadXZDistance,
   clampLength as cs2ClampRoadCurveLengthRange,
   curveLengthRange as cs2RoadCurveRangeLength,
+  straightHanging as cs2StraightHangingRoadCurve,
 };

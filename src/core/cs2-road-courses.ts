@@ -409,6 +409,7 @@ function divideCurve(
     [{ ...end }, q, c, vec(curve[3])],
   ];
 }
+export { divideCurve as cs2DivideRoadCourseCurve };
 /** Source MathUtils.Cut polynomial, including reversed/partial ranges. */
 export function cs2CutRoadCourseCurve(
   curve: CS2RoadCurve,

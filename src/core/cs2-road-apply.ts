@@ -11,6 +11,7 @@ import {
 export * from "./cs2-road-ecs";
 export { cs2AlignRoadNodes } from "./cs2-road-node-align";
 export { cs2GenerateRoadNodes } from "./cs2-road-node-generation";
+export { cs2GenerateRoadEdges } from "./cs2-road-edge-generation";
 
 type Entity = string | null;
 type Recent = { modificationFrame: number; modificationCost: number };

@@ -57,7 +57,7 @@ motion, the accepted run passed 444 tests. Scoped strict TypeScript checks pass.
 ## Integration boundary
 
 This module is not connected to the published editor yet. GenerateEdges /
-SplitEdge, composition and the final native construction adapter must connect
+SplitEdge is now verified separately. Composition and the final native construction adapter must connect
 the node world to the remaining source geometry/lane stages and saved Project.
 The production editor still runs the previously published implementation.
 These reference checks establish this stage for explicit input worlds; they do

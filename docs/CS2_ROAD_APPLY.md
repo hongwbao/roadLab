@@ -44,7 +44,7 @@ alignment, references and motion, 772 tests pass. Scoped strict TypeScript
 checks pass.
 
 The public facade reexports the independently verified ECS, GenerateNodes and
-NodeAlign modules. GenerateEdges/SplitEdge is still being recovered. The native
+NodeAlign modules. GenerateEdges/SplitEdge is verified in its own source-world tests. The native
 construction stages have not been connected to the production editor or Project
 save model, so these tests do not mean that the complete construction tool or
 all traffic has been replicated. See `CS2_ROAD_NODE_GENERATION.md` and
