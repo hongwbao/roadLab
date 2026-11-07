@@ -46,6 +46,7 @@ import {
   validateTrafficSignals,
 } from "./traffic-signals";
 import { updateAutomaticTransitions } from "./auto-transitions";
+import { LANE_WIDTH } from "./road-standards";
 import {
   applyJunctionLaneRules,
   normalizeJunctionLaneRules,
@@ -81,7 +82,7 @@ export function makeRoad(
     lanesStart: 2,
     lanesEnd: 2,
     twoWay: false,
-    width: 3.6,
+    width: LANE_WIDTH,
     speed: 60,
     align: "center",
     kind: "road",
@@ -108,7 +109,7 @@ export function example(kind = "transition"): Project {
       twoWay: true,
       lanesStart: 1,
       lanesEnd: 1,
-      width: 3.5,
+      width: LANE_WIDTH,
       speed: 50,
     };
     p.roads = [
@@ -127,14 +128,14 @@ export function example(kind = "transition"): Project {
     lanesEnd: 3,
     align: "left",
   });
-  const c = makeRoad(v(-25, 1.8), v(25, 1.8), {
+  const c = makeRoad(v(-25, LANE_WIDTH / 2), v(25, LANE_WIDTH / 2), {
     name: "三车道并行段",
     lanesStart: 3,
     lanesEnd: 3,
   });
   const d = makeRoad(v(25, 0), v(145, 0), { name: "连续主线 · 2 车道" });
   const e = makeRoad(
-    v(25, 5.4),
+    v(25, (3 * LANE_WIDTH) / 2),
     v(145, 65, kind === "elevated" ? 12 : 0),
     {
       name: "平滑驶出匝道",
@@ -143,7 +144,7 @@ export function example(kind = "transition"): Project {
       kind: "ramp",
       speed: 40,
     },
-    v(85, 5.4),
+    v(85, (3 * LANE_WIDTH) / 2),
     v(70, 65, kind === "elevated" ? 12 : 0),
   );
   p.roads = [a, b, c, d, e];

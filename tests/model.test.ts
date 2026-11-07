@@ -34,18 +34,18 @@ describe("2 → 3 → 2+1 physically continuous interchange", () => {
   it("retains the original two lane centerlines during right widening", () => {
     const r = example().roads[1];
     for (const t of [0, 0.1, 0.4, 0.8, 1]) {
-      expect(lanePoint(r, 0, t).z).toBeCloseTo(-1.8, 7);
-      expect(lanePoint(r, 1, t).z).toBeCloseTo(1.8, 7);
+      expect(lanePoint(r, 0, t).z).toBeCloseTo(-2, 7);
+      expect(lanePoint(r, 1, t).z).toBeCloseTo(2, 7);
     }
     expect(laneWidth(r, 2, 0)).toBe(0);
-    expect(laneWidth(r, 2, 1)).toBeCloseTo(3.6);
+    expect(laneWidth(r, 2, 1)).toBeCloseTo(4);
   });
   it("retains the existing right-side lanes when adding a lane on the left", () => {
     const r = example().roads[1];
     r.align = "right";
     for (const t of [0, 0.2, 0.5, 0.9, 1]) {
-      expect(lanePoint(r, 1, t).z).toBeCloseTo(-1.8, 7);
-      expect(lanePoint(r, 2, t).z).toBeCloseTo(1.8, 7);
+      expect(lanePoint(r, 1, t).z).toBeCloseTo(-2, 7);
+      expect(lanePoint(r, 2, t).z).toBeCloseTo(2, 7);
     }
     expect(laneWidth(r, 0, 0)).toBe(0);
   });

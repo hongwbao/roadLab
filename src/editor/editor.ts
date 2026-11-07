@@ -1,6 +1,7 @@
 import { buildJunctions } from "../core/junctions";
 import { setRoadMedian, withRoadMedian } from "../core/road-median";
 import { getAsset } from "../core/assets";
+import { LANE_WIDTH, standardizeLaneWidths } from "../core/road-standards";
 import {
   addRoadsideLanes,
   expandedRoad,
@@ -152,7 +153,7 @@ export class Editor {
     sectionOffset: undefined as number | undefined,
     transitionMode: "direct" as "direct" | "smooth",
     twoWay: true,
-    width: 3.5,
+    width: LANE_WIDTH,
     speed: 50,
     align: "center" as Road["align"],
     kind: "road" as Road["kind"],
@@ -209,6 +210,7 @@ export class Editor {
       if (saved) initial = parseProject(saved);
     } catch {}
     this.project = initial || example();
+    standardizeLaneWidths(this.project);
     normalizePorts(this.project);
     autoJunction(this.project);
     this.scene = new Scene(el);
@@ -2191,6 +2193,7 @@ export class Editor {
     this.cancel();
     this.edit(() => {
       this.project = p;
+      standardizeLaneWidths(this.project);
       this.selected.clear();
     }, "地图已载入，路口已自动连接");
     this.scene.fit(this.project.roads);

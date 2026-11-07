@@ -144,7 +144,7 @@ describe("one shared physical/master lane network", () => {
     expect(network.graph.edges.map((edge) => edge.id)).toEqual([0]);
     expect(
       group.members.map((id) => network.curves.get(id)!.points[0].z),
-    ).toEqual([-1.8, 1.8]);
+    ).toEqual([-2, 2]);
     expect(network.graph.heuristicCosts.road).toEqual([0, 0, 0.01, 0]);
   });
   it("uses an actual single lane as standalone and keeps road speed in m/s", () => {
@@ -296,12 +296,7 @@ describe("one shared physical/master lane network", () => {
   it("accepts the exact caller connector and original Net flags without confusing vehicle flags", () => {
     const p = project(road("a", 0, 100), road("b", 110, 210)),
       c = connect("ab", "a", 0, "b"),
-      points = [
-        v(100, -1.8),
-        v(103, -1.8),
-        v(107, -1.8),
-        v(110, -1.8),
-      ] as const,
+      points = [v(100, -2), v(103, -2), v(107, -2), v(110, -2)] as const,
       geometry: Cs2NetworkConnectionGeometry = {
         points,
         length: 10,
