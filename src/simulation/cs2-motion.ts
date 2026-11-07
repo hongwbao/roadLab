@@ -163,6 +163,16 @@ const matrixQuaternion = (
   return qnormalize({ x: value[0], y: value[1], z: value[2], w: value[3] });
 };
 
+/** Unity quaternion.LookRotation for the already normalized source road tangent. */
+export function cs2LookRotation(
+  forward: CS2MotionVector,
+  up: CS2MotionVector = { x: 0, y: 1, z: 0 },
+) {
+  const c = cross(up, forward);
+  const right = mul(c, f(1 / f(Math.sqrt(dot(c, c)))));
+  return matrixQuaternion(right, cross(forward, right), forward);
+}
+
 /** Unity quaternion.LookRotationSafe, world up is supplied by the original job. */
 export function cs2LookRotationSafe(
   forward: CS2MotionVector,
