@@ -769,7 +769,7 @@ test("one-way section snapping aligns outer edges with exact lane continuity", a
   expect(s.snap.alignment).toBe("left");
   expect(s.snap.offset).toBeCloseTo(-2);
   await expect(page.locator("#snap-feedback")).toContainText("左缘对齐");
-  await expect(page.locator("#snap-feedback")).toContainText("2 m");
+  await expect(page.locator("#snap-feedback")).toContainText("2.00 m");
   await page.evaluate(() => new Promise(requestAnimationFrame));
   const guide = await page.evaluate(() => {
     const o = (window as any).lab.editor.scene.buildMarker.children.find(
