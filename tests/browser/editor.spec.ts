@@ -13,7 +13,7 @@ test("shared traffic map loads in the deployed UI with reachable routes", async 
   await page.locator("#confirm-yes").click();
   expect((await state(page)).project.roads).toHaveLength(18);
   expect((await state(page)).project.trafficMultiplier).toBe(4);
-  expect((await state(page)).routes).toBe(12);
+  await expect.poll(async () => (await state(page)).routes).toBe(12);
   await page.evaluate(() => {
     const sim = (window as any).lab.editor.simulation;
     sim.running = true;
@@ -107,7 +107,7 @@ test("game HUD shows road asset thumbnails at bottom center and no retired tools
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
   await open(page);
-  expect((await state(page)).routes).toBe(2);
+  await expect.poll(async () => (await state(page)).routes).toBe(2);
   await expect(page.locator("#road-dock")).toBeVisible();
   expect(await page.locator(".road-asset svg").count()).toBe(3);
   expect(
@@ -304,6 +304,42 @@ test("draws preset straight and curved roads, cancels strokes, undoes and redoes
   await page.keyboard.press("Escape");
   expect((await state(page)).tool).toBe("select");
 });
+test("three-click curves use original road fitting and preserve geometry through save and undo", async ({
+  page,
+}) => {
+  await open(page);
+  await load(page);
+  await page.locator('[data-asset="city-2"]').click();
+  await page.locator('[data-tool="curve"]').click();
+  await clickWorld(page, -30, -40);
+  await clickWorld(page, -30, 20);
+  const end = await screen(page, 30, 20);
+  await page.mouse.move(end.x, end.y);
+  const preview = await page.evaluate(() => {
+    const editor = (window as any).lab.editor;
+    return editor.draft(
+      editor.snapInfo?.position || editor.pointer,
+      editor.snapInfo,
+    ).knots;
+  });
+  await page.mouse.click(end.x, end.y);
+  const roads = (await state(page)).project.roads;
+  expect(roads).toHaveLength(1);
+  const knots = roads[0].knots;
+  expect(knots[0].outgoing.z).toBeCloseTo(-6.86291, 3);
+  expect(knots[1].incoming.x).toBeCloseTo(-3.13709, 3);
+  expect(knots).toEqual(preview);
+  await page.keyboard.press("Escape");
+  await page.locator('[data-action="undo"]').click();
+  expect((await state(page)).project.roads).toHaveLength(0);
+  await page.locator('[data-action="redo"]').click();
+  expect((await state(page)).project.roads[0].knots).toEqual(knots);
+  await page.locator("#viewport").focus();
+  await page.keyboard.press("Control+s");
+  await page.reload();
+  await page.waitForFunction(() => !!(window as any).lab);
+  expect((await state(page)).project.roads[0].knots).toEqual(knots);
+});
 test("two-way roads have yellow centerlines and elevated supports clear lower roads", async ({
   page,
 }) => {
@@ -388,7 +424,7 @@ test("crossing roads automatically form an unmarked intersection and four zebra 
   expect(s.connections).toHaveLength(12);
   await page.keyboard.press("i");
   await page.locator('[data-action="auto-ports"]').click();
-  expect((await state(page)).routes).toBe(12);
+  await expect.poll(async () => (await state(page)).routes).toBe(12);
   await page.locator('[data-action="fit"]').click();
   await page.screenshot({ path: "artifacts/game-automatic-junction.png" });
 });
@@ -433,7 +469,7 @@ test("two-way endpoint portals serve both roles and right click removes the whol
   await clickWorld(page, 60, -15);
   let s = await state(page);
   expect(s.project.ports.map((p: any) => p.type)).toEqual(["both", "both"]);
-  expect(s.routes).toBe(2);
+  await expect.poll(async () => (await state(page)).routes).toBe(2);
   await clickWorld(page, -60, -15, 0, "right");
   s = await state(page);
   expect(s.project.ports).toHaveLength(1);
@@ -517,6 +553,7 @@ test("traffic controls change demand live while preserving cars, time and statis
       ids: s.vehicles.map((c: any) => c.id),
       generated: s.generated,
       running: s.running,
+      visibleCount: s.renderVehicles().length,
       instanceCounts:
         s === null
           ? []
@@ -528,8 +565,8 @@ test("traffic controls change demand live while preserving cars, time and statis
   expect(after.running).toBe(true);
   expect(after.elapsed).toBeGreaterThan(before.elapsed);
   expect(after.ids.some((id: number) => before.ids.includes(id))).toBe(true);
-  expect(after.instanceCounts[0]).toBe(after.ids.length);
-  expect(after.instanceCounts[2]).toBe(after.ids.length * 4);
+  expect(after.instanceCounts[0]).toBe(after.visibleCount);
+  expect(after.instanceCounts[2]).toBe(after.visibleCount * 4);
   await page.locator('[data-action="play"]').click();
   const g = after.generated;
   await page.waitForTimeout(200);
@@ -597,7 +634,7 @@ test("junction example supports real turning traffic without browser errors", as
   page.on("pageerror", (e) => errors.push(e.message));
   await open(page);
   await load(page, "example-junction");
-  expect((await state(page)).routes).toBe(12);
+  await expect.poll(async () => (await state(page)).routes).toBe(12);
   await page.locator('[data-action="play"]').click();
   await page.locator('[data-speed="4"]').click();
   await page.waitForFunction(
@@ -795,7 +832,7 @@ for (const endZ of [-60, 10])
     await page.locator(".footer-ports").click();
     await page.locator('[data-action="auto-ports"]').click();
     s = await state(page);
-    expect(s.routes).toBe(1);
+    await expect.poll(async () => (await state(page)).routes).toBe(1);
     expect(s.connections.length).toBeGreaterThan(0);
     await page.screenshot({
       path: `artifacts/game-offset-turn-${endZ < 0 ? "negative" : "positive"}.png`,

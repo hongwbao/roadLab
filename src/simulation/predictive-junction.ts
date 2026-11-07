@@ -1,5 +1,6 @@
 import { lerp } from "../core/math";
 import type { V } from "../core/types";
+import { CS2_BASE_CAR, cs2NavigateSpeed, type CS2CarData } from "./cs2-driving";
 import {
   advanceVehicle,
   followingAcceleration,
@@ -22,6 +23,9 @@ export type PredictionAgent = {
   s: number;
   speed: number;
   driver: DriverProfile;
+  drivingModel?: "legacy" | "cs2-derived";
+  cs2Car?: CS2CarData;
+  simulationFrame?: number;
   freeSpeed: number;
   turnSpeed: number;
   exitSpeed: number;
@@ -240,7 +244,19 @@ export class PredictiveJunctionController {
           -agent.driver.emergencyBrake,
           Math.min(
             accelerationCap,
-            followingAcceleration(speed, desired, agent.driver, leader),
+            agent.drivingModel === "cs2-derived"
+              ? cs2NavigateSpeed({
+                  car: agent.cs2Car,
+                  speed,
+                  speedLimit: desired,
+                  leader: leader
+                    ? { ...leader, braking: CS2_BASE_CAR.braking }
+                    : undefined,
+                  seed: agent.id,
+                  simulationFrame: agent.simulationFrame,
+                  timeStep: SAMPLE_TIME,
+                }).acceleration
+              : followingAcceleration(speed, desired, agent.driver, leader),
           ),
         ),
         SAMPLE_TIME,

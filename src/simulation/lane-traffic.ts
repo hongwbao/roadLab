@@ -79,6 +79,31 @@ export class LaneTraffic {
   onConnector(id: string, s: number, exclude: number) {
     return this.around(this.connectors.get(id) ?? [], s, exclude);
   }
+  /** Source navigation costs count lane objects, including stationary cars. */
+  count(
+    road: string,
+    direction: number,
+    lane: number,
+    after = -Infinity,
+    exclude?: number,
+  ) {
+    const list = this.lanes.get(`${road}:${direction}:${lane}`) ?? [];
+    let lo = 0,
+      hi = list.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >>> 1;
+      if (list[mid].s < after) lo = mid + 1;
+      else hi = mid;
+    }
+    let count = list.length - lo;
+    if (exclude !== undefined)
+      for (let i = lo; i < list.length; i++)
+        if (list[i].id === exclude) {
+          count--;
+          break;
+        }
+    return count;
+  }
   private around(list: LaneSample[], s: number, exclude: number) {
     let lo = 0,
       hi = list.length;

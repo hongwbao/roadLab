@@ -1,327 +1,484 @@
 {
-  "recorded_at": "2026-11-06T11:58:12.595591+00:00",
-  "latest_change": "已统一部署红绿灯、道路自动过渡和自动分段。信号控制独立模块，支持绿黄全红、保护左转/逐进口、真实停止线与清空；窄屏提示遮挡已修复并通过真实指针验证。文件归属与串行集成规范已在AGENTS.md生效。",
+  "recorded_at": "2026-11-07T06:28:50.990722+00:00",
+  "latest_change": "道路建造成为当前优先任务；已发布原式Straight/Simple课程建造、曲线拟合和高程线性化，预览与提交共用。原式吸附/节点车道生成后续接线未混入本次版本。",
+  "record_type": "用户要求的预览发布与限定范围验证；不是全部交通复刻或长期高压验收通过。",
   "checks": [
     {
-      "command": "npm run check",
-      "exit_code": 0,
-      "passed_cases": 149,
-      "scope": "完整格式、类型、构建和149核心测试；包含14项信号测试、15项自动过渡、5项自动分段。"
+      "command": "npm run build",
+      "scope": "冻结源码类型检查和生产构建；未接线吸附/节点创建草稿排除",
+      "exit_code": 0
     },
     {
-      "command": "PLAYWRIGHT_PORT=5174 npm run test:e2e",
+      "command": "npx vitest run [road builder, shared geometry, source engine, facade, rendering, auto-transitions, segments, lane building]",
       "exit_code": 0,
-      "passed_cases": 42,
-      "last_run": {
-        "status": "passed",
-        "failedTests": [],
-        "scope": "最终整合代码完整42项浏览器回归通过，包含真实指针连续调整黄灯与全红、旧有建路和车道规则、自动过渡及分段。"
-      }
+      "passed_cases": 788,
+      "scope": "8文件，实际道路适配与运行链路；不是全部交通长期验收"
     },
     {
-      "command": "SMOKE_URL=http://192.168.31.167:5173/ npm run test:smoke",
+      "command": "PLAYWRIGHT_PORT=5193 npx playwright test",
+      "exit_code": 0,
+      "passed_cases": 44,
+      "scope": "固定生产构建的完整道路、车道、路口、红绿灯、撤销存档与新增三点曲线回归"
+    },
+    {
+      "command": "PLAYWRIGHT_PORT=5173 npx playwright test tests/browser/editor.spec.ts --grep 'three-click curves use original road fitting'",
+      "exit_code": 0,
+      "passed_cases": 1,
+      "scope": "实际线上版本真实鼠标建曲线，验证控制柄、预览提交、撤销重做和保存重载"
+    },
+    {
+      "command": "SMOKE_URL=http://127.0.0.1:5173/ node .analysis/preview-smoke.mjs",
       "exit_code": 0,
       "result": {
-        "url": "http://192.168.31.167:5173/",
-        "roads": 5,
-        "routes": 2,
-        "canvas": true,
+        "url": "http://127.0.0.1:5173/",
+        "initial": {
+          "roads": 5,
+          "routes": 2,
+          "model": "cs2-derived",
+          "canvas": true
+        },
+        "traffic": {
+          "elapsed": 61.11666666666667,
+          "generated": 24,
+          "entered": 24,
+          "completed": 14,
+          "visible": 9,
+          "failed": 0
+        },
+        "zeroDemand": {
+          "before": 24,
+          "after": 24,
+          "multiplier": 0
+        },
         "errors": [],
         "passed": true
       }
     }
-  ],
-  "traffic_stress": {
-    "duration_per_case_simulated_seconds": 360,
-    "source_rate_per_minute": 60,
-    "global_multiplier": 4,
-    "metrics": {
-      "transition": {
-        "completed": 327,
-        "active": 26,
-        "overlaps": 0,
-        "maxMove": 0.8316839193894623,
-        "maxAngle": 0.03642330345696515,
-        "turns": 0,
-        "checkpoints": [93, 208, 327]
-      },
-      "junction": {
-        "completed": 178,
-        "active": 58,
-        "overlaps": 0,
-        "maxMove": 0.6886315377404486,
-        "maxAngle": 0.03971554491770179,
-        "turns": 21891,
-        "checkpoints": [57, 120, 178]
-      },
-      "merge": {
-        "completed": 269,
-        "active": 35,
-        "overlaps": 0,
-        "maxMove": 0.8150340927633408,
-        "maxAngle": 0.054621179974820626,
-        "turns": 0,
-        "checkpoints": [87, 180, 269]
-      }
-    },
-    "scope": "当前版本三个固定场景各运行 360 秒，按 0.05 秒观测车身重叠。过渡和汇流验证持续通行；400% 无信号路口验证排队且不穿模，该场景不要求最低通行量。另有 240 秒预测路口压力回归检查末段与各出口持续进展。内部时间步不超过 0.025 秒。"
-  },
-  "evidence": [
-    "docs/images/editor.png",
-    "docs/images/junction.png",
-    "docs/images/offset-snapping.png",
-    "docs/feature-map.json",
-    "docs/csur-design.md",
-    "docs/TRAFFIC_AI.md",
-    "tests/traffic-ai.test.ts",
-    "tests/unsignalized-junction.test.ts",
-    "docs/PATHFINDING.md",
-    "tests/predictive-junction.test.ts",
-    "tests/deadlock-recovery.test.ts",
-    "docs/ROAD_BUILDING.md",
-    "tests/lane-building.test.ts",
-    "docs/TRAFFIC_LIGHTS.md",
-    "docs/AUTO_TRANSITIONS.md",
-    "docs/ROAD_SEGMENTS.md",
-    "AGENTS.md",
-    "docs/COLLABORATION.md",
-    "tests/traffic-lights.test.ts",
-    "tests/browser/traffic-lights.spec.ts",
-    "tests/auto-transitions.test.ts",
-    "tests/road-segments.test.ts"
   ],
   "limitations": [
-    "桌面键鼠为目标平台；窄屏布局不等于完整触控编辑。",
-    "交通模型未经真实数据校准；未设信号的路口继续预测让行，可按路口添加信号灯；400%高压长时间运行仍可能死锁，清空阶段可能因出口回堵而延长。尚无行人相位、感应配时或多种交通方式。",
-    "偏移对齐适用于单向且近似平行的端点接口，不覆盖任意位置的平行道路偏移。",
-    "复杂道路的几何和净空检查采用采样。",
-    "本机保存属于当前浏览器与网址，JSON 导出用于可移植备份。"
+    "高压分合流仍检出同一显示时刻车身重叠，本次作为预览发布，长期回归未验收。",
+    "完整PersonalCarAI已接本地/本次预览；完整导航窗口仍未接engine，原式吸附与节点车道创建正在整合。",
+    "行人、真实停车、公交、货运、应急任务和其他交通方式未完整实现。",
+    "普通无灯路口的部分减速经完整原式lane-speed oracle复现，不能按旧恒速假设删除让行行为。",
+    "本次没有推送远程仓库或运行GitHub Actions。"
   ],
-  "record_type": "当前本地实现及生产演示的验证快照；未将本轮实现推送到远程仓库或运行 GitHub Actions。repository_setup_validation 仅为历史部署记录。",
-  "repository_setup_validation": {
-    "recorded_at": "2026-11-05T12:25:34.654345+00:00",
-    "application_commit": "6c3d681a240b67ec5510d874a6f321d81bc52c9c",
-    "ci_url": "https://github.com/hongwbao/roadLab/actions/runs/42026402295",
-    "clean_install": "npm ci、格式、类型、构建、46项核心测试与20项浏览器测试通过。",
-    "deployment_checks": [
-      "根路径构建浏览器检查通过。",
-      "/roadLab/ 子路径构建浏览器检查通过。",
-      "GitHub Actions 实际构建 Docker 镜像、运行容器及容器浏览器检查通过。"
-    ],
-    "pages_status": "提供手动发布及 PAGES_ENABLED 自动发布配置；未启用公开网站。"
-  },
-  "traffic_ai": {
-    "implementation": "Independent IDM/MOBIL-inspired road traffic model; not Cities: Skylines II source code.",
-    "documentation": ["docs/TRAFFIC_AI.md", "docs/PATHFINDING.md"],
-    "behavioral_cases": 43,
-    "shared_map": {
-      "roads": 18,
-      "routes": 12,
-      "traffic_multiplier": 4,
-      "duration_simulated_seconds": 240,
-      "passed": true,
-      "test": "tests/shared-map.test.ts",
-      "requirements": {
-        "completed_per_60_simulated_seconds": ">150",
-        "completed_per_sink": ">25"
+  "previous_verified_stable_snapshot": {
+    "recorded_at": "2026-11-06T11:58:12.595591+00:00",
+    "latest_change": "已统一部署红绿灯、道路自动过渡和自动分段。信号控制独立模块，支持绿黄全红、保护左转/逐进口、真实停止线与清空；窄屏提示遮挡已修复并通过真实指针验证。文件归属与串行集成规范已在AGENTS.md生效。",
+    "checks": [
+      {
+        "command": "npm run check",
+        "exit_code": 0,
+        "passed_cases": 149,
+        "scope": "完整格式、类型、构建和149核心测试；包含14项信号测试、15项自动过渡、5项自动分段。"
+      },
+      {
+        "command": "PLAYWRIGHT_PORT=5174 npm run test:e2e",
+        "exit_code": 0,
+        "passed_cases": 42,
+        "last_run": {
+          "status": "passed",
+          "failedTests": [],
+          "scope": "最终整合代码完整42项浏览器回归通过，包含真实指针连续调整黄灯与全红、旧有建路和车道规则、自动过渡及分段。"
+        }
+      },
+      {
+        "command": "SMOKE_URL=http://192.168.31.167:5173/ npm run test:smoke",
+        "exit_code": 0,
+        "result": {
+          "url": "http://192.168.31.167:5173/",
+          "roads": 5,
+          "routes": 2,
+          "canvas": true,
+          "errors": [],
+          "passed": true
+        }
       }
+    ],
+    "traffic_stress": {
+      "duration_per_case_simulated_seconds": 360,
+      "source_rate_per_minute": 60,
+      "global_multiplier": 4,
+      "metrics": {
+        "transition": {
+          "completed": 327,
+          "active": 26,
+          "overlaps": 0,
+          "maxMove": 0.8316839193894623,
+          "maxAngle": 0.03642330345696515,
+          "turns": 0,
+          "checkpoints": [93, 208, 327]
+        },
+        "junction": {
+          "completed": 178,
+          "active": 58,
+          "overlaps": 0,
+          "maxMove": 0.6886315377404486,
+          "maxAngle": 0.03971554491770179,
+          "turns": 21891,
+          "checkpoints": [57, 120, 178]
+        },
+        "merge": {
+          "completed": 269,
+          "active": 35,
+          "overlaps": 0,
+          "maxMove": 0.8150340927633408,
+          "maxAngle": 0.054621179974820626,
+          "turns": 0,
+          "checkpoints": [87, 180, 269]
+        }
+      },
+      "scope": "当前版本三个固定场景各运行 360 秒，按 0.05 秒观测车身重叠。过渡和汇流验证持续通行；400% 无信号路口验证排队且不穿模，该场景不要求最低通行量。另有 240 秒预测路口压力回归检查末段与各出口持续进展。内部时间步不超过 0.025 秒。"
     },
-    "live_production": {
-      "url": "http://192.168.31.167:5173/",
-      "map": "十字路口",
-      "scenario": "isolated straight travel through both crosswalks",
-      "cases": [
-        {
-          "reverse": false,
-          "minSpeed": 15,
-          "maxDistanceError": 0.00446257044230991,
-          "entered": true,
-          "exited": true,
+    "evidence": [
+      "docs/images/editor.png",
+      "docs/images/junction.png",
+      "docs/images/offset-snapping.png",
+      "docs/feature-map.json",
+      "docs/csur-design.md",
+      "docs/TRAFFIC_AI.md",
+      "tests/traffic-ai.test.ts",
+      "tests/unsignalized-junction.test.ts",
+      "docs/PATHFINDING.md",
+      "tests/predictive-junction.test.ts",
+      "tests/deadlock-recovery.test.ts",
+      "docs/ROAD_BUILDING.md",
+      "tests/lane-building.test.ts",
+      "docs/TRAFFIC_LIGHTS.md",
+      "docs/AUTO_TRANSITIONS.md",
+      "docs/ROAD_SEGMENTS.md",
+      "AGENTS.md",
+      "docs/COLLABORATION.md",
+      "tests/traffic-lights.test.ts",
+      "tests/browser/traffic-lights.spec.ts",
+      "tests/auto-transitions.test.ts",
+      "tests/road-segments.test.ts"
+    ],
+    "limitations": [
+      "桌面键鼠为目标平台；窄屏布局不等于完整触控编辑。",
+      "交通模型未经真实数据校准；未设信号的路口继续预测让行，可按路口添加信号灯；400%高压长时间运行仍可能死锁，清空阶段可能因出口回堵而延长。尚无行人相位、感应配时或多种交通方式。",
+      "偏移对齐适用于单向且近似平行的端点接口，不覆盖任意位置的平行道路偏移。",
+      "复杂道路的几何和净空检查采用采样。",
+      "本机保存属于当前浏览器与网址，JSON 导出用于可移植备份。"
+    ],
+    "record_type": "当前本地实现及生产演示的验证快照；未将本轮实现推送到远程仓库或运行 GitHub Actions。repository_setup_validation 仅为历史部署记录。",
+    "repository_setup_validation": {
+      "recorded_at": "2026-11-05T12:25:34.654345+00:00",
+      "application_commit": "6c3d681a240b67ec5510d874a6f321d81bc52c9c",
+      "ci_url": "https://github.com/hongwbao/roadLab/actions/runs/42026402295",
+      "clean_install": "npm ci、格式、类型、构建、46项核心测试与20项浏览器测试通过。",
+      "deployment_checks": [
+        "根路径构建浏览器检查通过。",
+        "/roadLab/ 子路径构建浏览器检查通过。",
+        "GitHub Actions 实际构建 Docker 镜像、运行容器及容器浏览器检查通过。"
+      ],
+      "pages_status": "提供手动发布及 PAGES_ENABLED 自动发布配置；未启用公开网站。"
+    },
+    "traffic_ai": {
+      "implementation": "Independent IDM/MOBIL-inspired road traffic model; not Cities: Skylines II source code.",
+      "documentation": ["docs/TRAFFIC_AI.md", "docs/PATHFINDING.md"],
+      "behavioral_cases": 43,
+      "shared_map": {
+        "roads": 18,
+        "routes": 12,
+        "traffic_multiplier": 4,
+        "duration_simulated_seconds": 240,
+        "passed": true,
+        "test": "tests/shared-map.test.ts",
+        "requirements": {
+          "completed_per_60_simulated_seconds": ">150",
+          "completed_per_sink": ">25"
+        }
+      },
+      "live_production": {
+        "url": "http://192.168.31.167:5173/",
+        "map": "十字路口",
+        "scenario": "isolated straight travel through both crosswalks",
+        "cases": [
+          {
+            "reverse": false,
+            "minSpeed": 15,
+            "maxDistanceError": 0.00446257044230991,
+            "entered": true,
+            "exited": true,
+            "safetyStops": 0
+          },
+          {
+            "reverse": true,
+            "minSpeed": 15,
+            "maxDistanceError": 0.0044625704423024715,
+            "entered": true,
+            "exited": true,
+            "safetyStops": 0
+          }
+        ],
+        "errors": [],
+        "passed": true,
+        "bundle": "index-DlKoXIIv.js",
+        "predictive_enabled_verified": true
+      },
+      "unsignalized_policy": {
+        "admission": "destination-lane-capacity plus local predictive yielding",
+        "whole_junction_mutex": false,
+        "stable_pair_priorities": true,
+        "body_overlap_guard": true,
+        "traffic_lights": false,
+        "oversaturation_queue_is_allowed": true,
+        "scope": "仅指未设置信号的路口；红绿灯功能可单独按路口启用。"
+      },
+      "crosswalk_motion": {
+        "admission_lookahead_metres": 80,
+        "preserve_remaining_distance_at_boundaries": true,
+        "ordinary_junction_queue_head_reservation": false,
+        "regressions": "空路口直行速度保持、路口入口和出口位置连续、0 米与 0.1 米道路连接距离保持。",
+        "pedestrian_stop_rule": false
+      },
+      "predictive_yielding": {
+        "enabled_by_default": true,
+        "update_interval_simulated_seconds": 0.1,
+        "horizon_simulated_seconds": 5,
+        "sample_interval_simulated_seconds": 0.2,
+        "body_margin_metres": 0.25,
+        "approaching_candidates_per_lane": 2,
+        "bounded_retreat_max_metres": 1.8,
+        "retreat_speed_metres_per_second": 0.8,
+        "tests": [
+          "tests/predictive-junction.test.ts",
+          "tests/deadlock-recovery.test.ts",
+          "tests/unsignalized-junction.test.ts"
+        ],
+        "status": "accepted experimental version; further algorithm changes paused"
+      },
+      "saved_crossroads_comparison": {
+        "map_storage": "private local copy only; map data not committed",
+        "multiplier": 4,
+        "duration_simulated_seconds": 240,
+        "baseline": {
+          "commit": "dc83da6",
+          "completed": 46,
+          "completed_per_60_seconds": [27, 16, 3, 0]
+        },
+        "accepted_experiment": {
+          "completed": 195,
+          "completed_per_60_seconds": [46, 57, 45, 47],
           "safetyStops": 0
         },
-        {
-          "reverse": true,
-          "minSpeed": 15,
-          "maxDistanceError": 0.0044625704423024715,
-          "entered": true,
-          "exited": true,
-          "safetyStops": 0
-        }
-      ],
-      "errors": [],
-      "passed": true,
-      "bundle": "index-DlKoXIIv.js",
-      "predictive_enabled_verified": true
-    },
-    "unsignalized_policy": {
-      "admission": "destination-lane-capacity plus local predictive yielding",
-      "whole_junction_mutex": false,
-      "stable_pair_priorities": true,
-      "body_overlap_guard": true,
-      "traffic_lights": false,
-      "oversaturation_queue_is_allowed": true,
-      "scope": "仅指未设置信号的路口；红绿灯功能可单独按路口启用。"
-    },
-    "crosswalk_motion": {
-      "admission_lookahead_metres": 80,
-      "preserve_remaining_distance_at_boundaries": true,
-      "ordinary_junction_queue_head_reservation": false,
-      "regressions": "空路口直行速度保持、路口入口和出口位置连续、0 米与 0.1 米道路连接距离保持。",
-      "pedestrian_stop_rule": false
-    },
-    "predictive_yielding": {
-      "enabled_by_default": true,
-      "update_interval_simulated_seconds": 0.1,
-      "horizon_simulated_seconds": 5,
-      "sample_interval_simulated_seconds": 0.2,
-      "body_margin_metres": 0.25,
-      "approaching_candidates_per_lane": 2,
-      "bounded_retreat_max_metres": 1.8,
-      "retreat_speed_metres_per_second": 0.8,
-      "tests": [
-        "tests/predictive-junction.test.ts",
-        "tests/deadlock-recovery.test.ts",
-        "tests/unsignalized-junction.test.ts"
-      ],
-      "status": "accepted experimental version; further algorithm changes paused"
-    },
-    "saved_crossroads_comparison": {
-      "map_storage": "private local copy only; map data not committed",
-      "multiplier": 4,
-      "duration_simulated_seconds": 240,
-      "baseline": {
-        "commit": "dc83da6",
-        "completed": 46,
-        "completed_per_60_seconds": [27, 16, 3, 0]
+        "scope": "Single map and deterministic demand; not a general throughput guarantee."
       },
-      "accepted_experiment": {
-        "completed": 195,
-        "completed_per_60_seconds": [46, 57, 45, 47],
-        "safetyStops": 0
+      "long_stress": {
+        "duration_simulated_seconds": 600,
+        "multiplier": 4,
+        "completed": 222,
+        "completed_per_60_seconds": [46, 57, 45, 47, 18, 8, 1, 0, 0, 0],
+        "deadlockCycles": 259,
+        "retreats": 161,
+        "blockedRetreats": 98,
+        "deadlock_resolved": false,
+        "scope": "Progress stops after about 7 simulated minutes; known limitation accepted for current preview."
+      }
+    },
+    "previous_interaction_review": {
+      "disposition": "ship",
+      "scope": "独立审查员只复核 F1–F4 和新增单向端点偏移吸附的限定范围，不泛化为任意路网或整个产品无缺陷。",
+      "fixes": {
+        "F1": "resolved：通行口模式一键返回道路资产。",
+        "F2": "resolved：页脚进入手工通行口模式，批量识别仅在面板明确触发。",
+        "F3": "resolved：主要按钮悬停白字对比度 5.7156:1。",
+        "F4": "resolved：先选偏移起点后垂直转向，预览和提交统一回到参考中心节点，两个方向均无额外短段且路径可达。"
       },
-      "scope": "Single map and deterministic demand; not a general throughput guarantee."
+      "evidence_mode": "审查员查看源码、有效截图、测试及状态记录，未声称亲自执行浏览器。",
+      "recorded_at": "2026-11-05T11:59:28.249890+00:00"
     },
-    "long_stress": {
-      "duration_simulated_seconds": 600,
-      "multiplier": 4,
-      "completed": 222,
-      "completed_per_60_seconds": [46, 57, 45, 47, 18, 8, 1, 0, 0, 0],
-      "deadlockCycles": 259,
-      "retreats": 161,
-      "blockedRetreats": 98,
-      "deadlock_resolved": false,
-      "scope": "Progress stops after about 7 simulated minutes; known limitation accepted for current preview."
-    }
-  },
-  "previous_interaction_review": {
-    "disposition": "ship",
-    "scope": "独立审查员只复核 F1–F4 和新增单向端点偏移吸附的限定范围，不泛化为任意路网或整个产品无缺陷。",
-    "fixes": {
-      "F1": "resolved：通行口模式一键返回道路资产。",
-      "F2": "resolved：页脚进入手工通行口模式，批量识别仅在面板明确触发。",
-      "F3": "resolved：主要按钮悬停白字对比度 5.7156:1。",
-      "F4": "resolved：先选偏移起点后垂直转向，预览和提交统一回到参考中心节点，两个方向均无额外短段且路径可达。"
-    },
-    "evidence_mode": "审查员查看源码、有效截图、测试及状态记录，未声称亲自执行浏览器。",
-    "recorded_at": "2026-11-05T11:59:28.249890+00:00"
-  },
-  "branch": "feature/traffic-lights",
-  "baseline_commit": "724bbe9",
-  "road_building": {
-    "documentation": "docs/ROAD_BUILDING.md",
-    "single_direction_lanes_per_end": [1, 6],
-    "endpoint_lane_groups": true,
-    "persistent_attachments": true,
-    "mid_segment_ramps": "outer lanes of constant-width one-way mainlines",
-    "generic_split_merge": true,
-    "left_right_transitions": true,
-    "lane_turn_rules": ["left", "straight", "right"],
-    "tests": "tests/lane-building.test.ts",
-    "third_batch_tools": "deferred",
-    "status": "deployed and verified",
-    "deployment": {
-      "url": "http://192.168.31.167:5173/",
-      "bundle": "index-DlKoXIIv.js",
-      "frozen_preview": true,
-      "verified_by_final_browser_suite": true
-    },
-    "ui_review": {
-      "initial_disposition": "fix",
-      "material_findings": [
-        "F1: asset switching could desynchronize displayed and actual branch side"
-      ],
-      "verdict_disposition": "ship",
-      "verdict_scope": "F1 resolved; five desktop/compact screenshots valid; no claim of comprehensive defect-free certification"
-    }
-  },
-  "traffic_lights": {
-    "documentation": "docs/TRAFFIC_LIGHTS.md",
-    "modules": [
-      "src/core/traffic-signals.ts",
-      "src/simulation/traffic-lights.ts",
-      "src/editor/traffic-light-tool.ts",
-      "src/render/traffic-lights.ts",
-      "src/ui/traffic-light-panel.ts"
-    ],
-    "optional_per_junction": true,
-    "default_mode": "protected",
-    "modes": ["protected", "sequential"],
-    "default_seconds": {
-      "green": 20,
-      "left_green": 8,
-      "yellow": 3,
-      "all_red": 2
-    },
-    "simulation_time": true,
-    "clearance_extension": true,
-    "already_admitted_vehicles_clear": true,
-    "receiving_lane_capacity_required": true,
-    "body_guard_preserved": true,
-    "right_turn_on_red": false,
-    "source_test_cases": 14,
-    "ui_review": {
-      "initial_disposition": "fix",
-      "material_finding": "R1: compact toast could cover and intercept all-red timing slider",
-      "verdict": "ship",
-      "scope": "R1 resolved, four fresh screenshots valid; not a comprehensive defect-free certification"
-    },
-    "review_deployment_bundle": "index-vUJO5Pc1.js",
-    "latest_source_bundle": "index-DlKoXIIv.js",
-    "status": "deployed and verified",
-    "deployment": {
-      "url": "http://192.168.31.167:5173/",
-      "bundle": "index-DlKoXIIv.js",
-      "production_smoke": {
-        "signals": 1,
-        "green": true,
-        "yellow": true,
-        "allRed": true,
-        "nextPhase": 1,
-        "visuals": 16,
-        "prediction": true,
-        "compactToastClear": true,
-        "toastPassesPointers": true,
-        "pointerTimingChanged": true,
+    "branch": "feature/traffic-lights",
+    "baseline_commit": "724bbe9",
+    "road_building": {
+      "documentation": "docs/ROAD_BUILDING.md",
+      "single_direction_lanes_per_end": [1, 6],
+      "endpoint_lane_groups": true,
+      "persistent_attachments": true,
+      "mid_segment_ramps": "outer lanes of constant-width one-way mainlines",
+      "generic_split_merge": true,
+      "left_right_transitions": true,
+      "lane_turn_rules": ["left", "straight", "right"],
+      "tests": "tests/lane-building.test.ts",
+      "third_batch_tools": "deferred",
+      "status": "deployed and verified",
+      "deployment": {
         "url": "http://192.168.31.167:5173/",
+        "bundle": "index-DlKoXIIv.js",
+        "frozen_preview": true,
+        "verified_by_final_browser_suite": true
+      },
+      "ui_review": {
+        "initial_disposition": "fix",
+        "material_findings": [
+          "F1: asset switching could desynchronize displayed and actual branch side"
+        ],
+        "verdict_disposition": "ship",
+        "verdict_scope": "F1 resolved; five desktop/compact screenshots valid; no claim of comprehensive defect-free certification"
+      }
+    },
+    "traffic_lights": {
+      "documentation": "docs/TRAFFIC_LIGHTS.md",
+      "modules": [
+        "src/core/traffic-signals.ts",
+        "src/simulation/traffic-lights.ts",
+        "src/editor/traffic-light-tool.ts",
+        "src/render/traffic-lights.ts",
+        "src/ui/traffic-light-panel.ts"
+      ],
+      "optional_per_junction": true,
+      "default_mode": "protected",
+      "modes": ["protected", "sequential"],
+      "default_seconds": {
+        "green": 20,
+        "left_green": 8,
+        "yellow": 3,
+        "all_red": 2
+      },
+      "simulation_time": true,
+      "clearance_extension": true,
+      "already_admitted_vehicles_clear": true,
+      "receiving_lane_capacity_required": true,
+      "body_guard_preserved": true,
+      "right_turn_on_red": false,
+      "source_test_cases": 14,
+      "ui_review": {
+        "initial_disposition": "fix",
+        "material_finding": "R1: compact toast could cover and intercept all-red timing slider",
+        "verdict": "ship",
+        "scope": "R1 resolved, four fresh screenshots valid; not a comprehensive defect-free certification"
+      },
+      "review_deployment_bundle": "index-vUJO5Pc1.js",
+      "latest_source_bundle": "index-DlKoXIIv.js",
+      "status": "deployed and verified",
+      "deployment": {
+        "url": "http://192.168.31.167:5173/",
+        "bundle": "index-DlKoXIIv.js",
+        "production_smoke": {
+          "signals": 1,
+          "green": true,
+          "yellow": true,
+          "allRed": true,
+          "nextPhase": 1,
+          "visuals": 16,
+          "prediction": true,
+          "compactToastClear": true,
+          "toastPassesPointers": true,
+          "pointerTimingChanged": true,
+          "url": "http://192.168.31.167:5173/",
+          "errors": [],
+          "passed": true
+        },
+        "review_snapshot_preserved": true
+      }
+    },
+    "road_network_integration": {
+      "auto_transitions": "docs/AUTO_TRANSITIONS.md",
+      "automatic_segments": "docs/ROAD_SEGMENTS.md",
+      "segment_target_metres": 120,
+      "automatic_transition_cases": 15,
+      "segment_cases": 5,
+      "feature_sessions_delivered": true,
+      "status": "deployed and verified"
+    },
+    "collaboration": {
+      "instructions": "AGENTS.md",
+      "documentation": "docs/COLLABORATION.md",
+      "rule_commit": "e834d26",
+      "policy": "one writer per file; shared entry points, Git writes and deployment integrated serially"
+    }
+  },
+  "previous_cs2_preview_deployment": {
+    "version": "cs2-preview-20261107-134908",
+    "url": "http://192.168.31.167:5173/",
+    "bundle": "index-lVJKs44n.js",
+    "css": "index-CxjdwM7I.css",
+    "path_worker": "cs2-path-worker-DFcwOVUm.js",
+    "traffic_model": "cs2-derived",
+    "source_version": "1.6.0f1",
+    "source_snapshot": "/home/bhw/repos/interchange-lab/.cache/deployments/cs2-preview-20261107-134908/source",
+    "manifest": "/home/bhw/repos/interchange-lab/.cache/deployments/cs2-preview-20261107-134908/manifest.json",
+    "dist_sha256": {
+      "release.json": "23d8d73e40675afa4c6c80a07bf772b97bbd71a2fbffa98e1193d973f8ae1a29",
+      "index.html": "b07fb48ec9971e751d22369419fd07d24f7443f418e5b161682a28f603ce24bf",
+      "assets/cs2-path-worker-DFcwOVUm.js": "98850414cebb8d678b7082ac85feaef178e9d67b2bf4f7cbb1707e248b3b074c",
+      "assets/index-lVJKs44n.js": "0d7a04ca8ec26a57125ff0a37315e56d67774e6d778e6d3e96ffa16aad437f7f",
+      "assets/index-CxjdwM7I.css": "b11b42635b0047592bd3a9f4457a3e366ab71e3252a3011661d60cdc0860981c"
+    },
+    "previous_unit_backup": "/home/bhw/repos/interchange-lab/.cache/deployments/cs2-preview-20261107-134908/previous-roadlab.service",
+    "healthz": "ok"
+  },
+  "current_deployment": {
+    "version": "source-road-curves-20261107-142015",
+    "url": "http://192.168.31.167:5173/",
+    "bundle": "index-B-NnWHYI.js",
+    "css": "index-CxjdwM7I.css",
+    "source_snapshot": "/home/bhw/repos/interchange-lab/.cache/builds/source-road-curves-20261107-142015/source",
+    "manifest": "/home/bhw/repos/interchange-lab/.cache/deployments/source-road-curves-20261107-142015/manifest.json",
+    "dist_sha256": {
+      "release.json": "20d3f3a8b571b395118c78a01e6c83ee2e603d6483f173ddbbc7e3ae6ff2ad3a",
+      "index.html": "f990df8e4bfeb68c3c4bf5115c1445b10365aaa9b3399f682ca48e9cf8254549",
+      "assets/cs2-path-worker-DFcwOVUm.js": "98850414cebb8d678b7082ac85feaef178e9d67b2bf4f7cbb1707e248b3b074c",
+      "assets/index-CxjdwM7I.css": "b11b42635b0047592bd3a9f4457a3e366ab71e3252a3011661d60cdc0860981c",
+      "assets/index-B-NnWHYI.js": "bb2603dd95d27e5d3fbb3d1c0440f3969a8d9659e0729dc955b934390623e6f0"
+    },
+    "healthz": "ok"
+  },
+  "previous_cs2_preview_checks": [
+    {
+      "command": "npm run build",
+      "cwd": "/home/bhw/repos/interchange-lab/.cache/deployments/cs2-preview-20261107-134908/source",
+      "exit_code": 0,
+      "scope": "冻结源码完整TypeScript类型检查与生产构建，排除两项未接线独立模块草稿。"
+    },
+    {
+      "command": "npx vitest run tests/cs2-simulation.test.ts tests/cs2-integration.test.ts tests/car-rendering.test.ts",
+      "exit_code": 0,
+      "passed_cases": 23,
+      "scope": "实际普通车链路、共享入口与按需车辆实例渲染；不是完整城市运行对照。"
+    },
+    {
+      "command": "PLAYWRIGHT_PORT=5191 npx playwright test tests/browser/traffic-lights.spec.ts tests/browser/auto-transitions.spec.ts tests/browser/road-segments.spec.ts tests/browser/editor.spec.ts",
+      "exit_code": 1,
+      "passed_cases": 42,
+      "failed_cases": 1,
+      "scope": "固定生产构建43项浏览器完整运行；唯一失败为旧断言用全部物理车辆数比较可见实例数。"
+    },
+    {
+      "command": "PLAYWRIGHT_PORT=5191 npx playwright test tests/browser/editor.spec.ts --grep 'traffic controls change demand live'",
+      "exit_code": 0,
+      "passed_cases": 1,
+      "scope": "保留车辆/时间/统计与实时需求断言；实例数改与renderVehicles可见集合比较。原Unspawned车辆本来就应暂不显示。修正后同一冻结构建复测通过。"
+    },
+    {
+      "command": "SMOKE_URL=http://127.0.0.1:5173/ node .analysis/preview-smoke.mjs",
+      "exit_code": 0,
+      "scope": "发布后真实浏览器加载、Worker可达性、61模拟秒出车到达、运行中需求降到0与页面错误检查。",
+      "result": {
+        "url": "http://127.0.0.1:5173/",
+        "initial": {
+          "roads": 5,
+          "routes": 2,
+          "model": "cs2-derived",
+          "canvas": true
+        },
+        "traffic": {
+          "elapsed": 61.266666666666666,
+          "generated": 24,
+          "entered": 24,
+          "completed": 16,
+          "visible": 7,
+          "failed": 0
+        },
+        "zeroDemand": {
+          "before": 24,
+          "after": 24,
+          "multiplier": 0
+        },
         "errors": [],
         "passed": true
-      },
-      "review_snapshot_preserved": true
+      }
     }
-  },
-  "road_network_integration": {
-    "auto_transitions": "docs/AUTO_TRANSITIONS.md",
-    "automatic_segments": "docs/ROAD_SEGMENTS.md",
-    "segment_target_metres": 120,
-    "automatic_transition_cases": 15,
-    "segment_cases": 5,
-    "feature_sessions_delivered": true,
-    "status": "deployed and verified"
-  },
-  "collaboration": {
-    "instructions": "AGENTS.md",
-    "documentation": "docs/COLLABORATION.md",
-    "rule_commit": "e834d26",
-    "policy": "one writer per file; shared entry points, Git writes and deployment integrated serially"
-  }
+  ]
 }

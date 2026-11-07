@@ -6,7 +6,7 @@ export type TrafficSignal = {
   id: string;
   position: V;
   arms: SignalArm[];
-  mode: "protected" | "sequential";
+  mode: "cs2" | "protected" | "sequential";
   green: number;
   leftGreen: number;
   yellow: number;
@@ -31,7 +31,7 @@ export function makeTrafficSignal(junction: Junction): TrafficSignal {
     id: uid("signal"),
     position: copy(junction.position),
     arms: junction.arms.map(({ road, end }) => ({ road, end })),
-    mode: "protected",
+    mode: "cs2",
     green: 20,
     leftGreen: 8,
     yellow: 3,
@@ -86,7 +86,7 @@ export function validateTrafficSignals(project: Project) {
       ![signal.position.x, signal.position.y, signal.position.z].every(
         (n) => Number.isFinite(n) && Math.abs(n) < 100000,
       ) ||
-      !["protected", "sequential"].includes(signal.mode) ||
+      !["cs2", "protected", "sequential"].includes(signal.mode) ||
       !Array.isArray(signal.arms) ||
       signal.arms.length < 3 ||
       signal.arms.length > 100 ||

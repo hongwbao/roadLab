@@ -24,9 +24,14 @@ export function trafficLightPanel(editor: Editor) {
       heading +
       `<p>已选中 ${junction.arms.length} 岔路口</p><button type="button" data-action="enable-signal" class="primary">${trafficLightIcon}添加红绿灯</button><p class="muted">添加后可调整配时；未添加的路口保持无灯通行。</p>`
     );
+  const automatic = config.mode === "cs2";
+  const modes = `<div class="signal-modes" role="group" aria-label="信号配相方式"><button data-signal-mode="cs2" aria-pressed="${automatic}">自动感应</button><button data-signal-mode="protected" aria-pressed="${config.mode === "protected"}">直行／左转分相</button><button data-signal-mode="sequential" aria-pressed="${config.mode === "sequential"}">逐进口轮放</button></div>`;
+  const timing = automatic
+    ? `<p class="muted signal-mode-note">根据来车选择信号组。对向车辆可以同时通行，左转车辆让行。</p>`
+    : `<p class="muted signal-mode-note">${config.mode === "protected" ? "对向直行与右转同时放行，左转使用独立相位。共用转向车道可选逐进口轮放。" : "每次放行一个进口的所有转向。"}红灯禁止右转。</p>${range("green", "通行绿灯", config.green, 5, 120)}${config.mode === "protected" ? range("leftGreen", "左转绿灯", config.leftGreen, 3, 60) : ""}<details class="signal-advanced"><summary>黄灯、清空与协调</summary>${range("yellow", "黄灯", config.yellow, 1, 8)}${range("allRed", "全红清空", config.allRed, 1, 10)}${range("offset", "启动偏移", config.offset, 0, 600)}</details>`;
   return (
     heading +
-    `<div class="signal-live" role="status" aria-live="off"><span class="signal-status-dot" data-signal-dot></span><strong data-signal-live>准备通行</strong><output data-signal-remaining></output></div><div class="signal-modes" role="group" aria-label="信号配相方式"><button data-signal-mode="protected" aria-pressed="${config.mode === "protected"}">直行／左转分相</button><button data-signal-mode="sequential" aria-pressed="${config.mode === "sequential"}">逐进口轮放</button></div><p class="muted signal-mode-note">${config.mode === "protected" ? "对向直行与右转同时放行，左转使用独立相位。共用转向车道可选逐进口轮放。" : "每次放行一个进口的所有转向。"}红灯禁止右转。</p>${range("green", "通行绿灯", config.green, 5, 120)}${config.mode === "protected" ? range("leftGreen", "左转绿灯", config.leftGreen, 3, 60) : ""}<details class="signal-advanced"><summary>黄灯、清空与协调</summary>${range("yellow", "黄灯", config.yellow, 1, 8)}${range("allRed", "全红清空", config.allRed, 1, 10)}${range("offset", "启动偏移", config.offset, 0, 600)}</details><ol class="signal-phases" aria-label="自动生成的信号相位" data-signal-phases></ol><p class="muted signal-clearance">黄灯结束后先全红；路口车辆尚未驶离时延长清空。修改配时会重置测试。</p><button type="button" data-action="remove-signal" class="danger"><i data-lucide="trash-2" aria-hidden="true"></i>移除红绿灯</button>`
+    `<div class="signal-live" role="status" aria-live="off"><span class="signal-status-dot" data-signal-dot></span><strong data-signal-live>准备通行</strong><output data-signal-remaining></output></div>${modes}${timing}<ol class="signal-phases" aria-label="自动生成的信号相位" data-signal-phases></ol><p class="muted signal-clearance">${automatic ? "没有其他方向来车时保持当前通行组，有需求时经过转换阶段切换。" : "黄灯结束后先全红；路口车辆尚未驶离时延长清空。修改配时会重置测试。"}</p><button type="button" data-action="remove-signal" class="danger"><i data-lucide="trash-2" aria-hidden="true"></i>移除红绿灯</button>`
   );
 }
 export function updateTrafficLightPanel(editor: Editor) {
@@ -41,9 +46,11 @@ export function updateTrafficLightPanel(editor: Editor) {
     "[data-signal-remaining]",
   );
   if (remaining)
-    remaining.textContent = state.clearing
-      ? "清空中"
-      : `${Math.ceil(state.remaining)} s`;
+    remaining.textContent = state.actuated
+      ? "感应控制"
+      : state.clearing
+        ? "清空中"
+        : `${Math.ceil(state.remaining)} s`;
   const dot = document.querySelector<HTMLElement>("[data-signal-dot]");
   if (dot) dot.dataset.color = state.stage === "all-red" ? "red" : state.stage;
   const phases = document.querySelector<HTMLOListElement>(
@@ -56,7 +63,7 @@ export function updateTrafficLightPanel(editor: Editor) {
     phases.innerHTML = state.phases
       .map(
         (p, i) =>
-          `<li${i === state.phase ? ' class="active" aria-current="step"' : ""}><span>${p.name}</span><span>${p.duration} s</span></li>`,
+          `<li${i === state.phase ? ' class="active" aria-current="step"' : ""}><span>${p.name}</span><span>${state.actuated ? "按车流" : `${p.duration} s`}</span></li>`,
       )
       .join("");
   }

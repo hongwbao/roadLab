@@ -802,6 +802,7 @@ export function parseProject(text: string): Project {
       typeof r.twoWay !== "boolean" ||
       !["left", "right", "center"].includes(r.align) ||
       !["road", "ramp"].includes(r.kind) ||
+      (r.highwayRules !== undefined && typeof r.highwayRules !== "boolean") ||
       !finite(r.transitionStart) ||
       !finite(r.transitionEnd) ||
       r.transitionStart < 0 ||

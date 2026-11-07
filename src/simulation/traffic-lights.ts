@@ -5,6 +5,18 @@ import {
   type TrafficSignal,
 } from "../core/traffic-signals";
 import type { Turn, V } from "../core/types";
+import {
+  CS2_SIGNAL_TICK,
+  CS2_SIGNAL_CAN_EXTEND,
+  Cs2LaneSignal,
+  Cs2TrafficLightState,
+  tickCs2TrafficLights,
+  updateCs2LaneSignal,
+  updateCs2SignalHeads,
+  type Cs2SignalClock,
+  type Cs2SignalLane,
+} from "./cs2-junctions";
+import { buildCs2SignalGroups } from "./cs2-signal-groups";
 
 export type LightColor = "red" | "yellow" | "green";
 export type SignalMovement = {
@@ -13,6 +25,8 @@ export type SignalMovement = {
   road: string;
   end: 0 | 1;
   turn: Turn;
+  startDirection?: { x: number; z: number };
+  endDirection?: { x: number; z: number };
 };
 export type SignalPhase = {
   name: string;
@@ -31,6 +45,8 @@ export type SignalState = {
   clearing: boolean;
   phases: readonly SignalPhase[];
   cycle: number;
+  actuated?: boolean;
+  sourceState?: Cs2TrafficLightState;
 };
 type Clock = {
   config: TrafficSignal;
@@ -41,6 +57,13 @@ type Clock = {
   elapsed: number;
   clearing: boolean;
   yellowPasses: Set<number>;
+  source?: {
+    clock: Cs2SignalClock;
+    lanes: Map<string, Cs2SignalLane>;
+    heads: Map<string, number>;
+    elapsed: number;
+    nextTick: number;
+  };
 };
 const sideName = (d: V) =>
   Math.abs(d.x) > Math.abs(d.z)
@@ -78,7 +101,7 @@ export class TrafficLightController {
     movements: readonly SignalMovement[],
   ) {
     this.clear();
-    for (const junction of junctions) {
+    for (const [junctionIndex, junction] of junctions.entries()) {
       const config = signalForJunction(configs, junction);
       if (!config || junction.arms.length < 3) continue;
       const links = movements.filter((m) => m.junction === junction.id);
@@ -107,7 +130,74 @@ export class TrafficLightController {
         if (ids.size)
           phases.push({ name, duration, arms: keys, turns, movements: ids });
       };
-      if (config.mode === "sequential") {
+      let source: Clock["source"];
+      if (config.mode === "cs2") {
+        const groups = buildCs2SignalGroups(
+          links.map((movement) => {
+            const arm = arms.find(
+              (a) => a.road === movement.road && a.end === movement.end,
+            )!;
+            return {
+              id: movement.id,
+              startDirection: movement.startDirection ?? {
+                x: -arm.direction.x,
+                z: -arm.direction.z,
+              },
+              // Simulation supplies exact curve tangents. The fallback serves
+              // older standalone controller clients without curve geometry.
+              endDirection: movement.endDirection ?? arm.direction,
+              straight: movement.turn === "straight",
+              car: true,
+            };
+          }),
+        );
+        source = {
+          clock: {
+            state: Cs2TrafficLightState.None,
+            current: 0,
+            next: 0,
+            groupCount: groups.groupCount,
+            timer: 0,
+            flags: 0,
+          },
+          lanes: new Map(
+            [...groups.laneSignals].map(([id, lane]) => [
+              id,
+              {
+                groupMask: lane.groupMask,
+                signal: Cs2LaneSignal.None,
+                flags: lane.canExtend ? CS2_SIGNAL_CAN_EXTEND : 0,
+                priority: lane.defaultPriority,
+                defaultPriority: lane.defaultPriority,
+                petitioner: null,
+                blocker: null,
+              },
+            ]),
+          ),
+          heads: new Map(),
+          elapsed: 0,
+          nextTick: (junctionIndex & 15) * (4 / 60),
+        };
+        for (let group = 1; group <= groups.groupCount; group++) {
+          const movements = new Set(
+            [...source.lanes]
+              .filter(([, lane]) => lane.groupMask & (1 << (group - 1)))
+              .map(([id]) => id),
+          );
+          const selected = links.filter((m) => movements.has(m.id));
+          const keys = [...new Set(selected.map(signalArmKey))];
+          const names = arms
+            .filter((a) => keys.includes(signalArmKey(a)))
+            .map((a) => sideName(a.direction));
+          phases.push({
+            name: names.length ? `${names.join("／")}通行` : "预留信号组",
+            duration: 6 * CS2_SIGNAL_TICK,
+            arms: keys,
+            turns: [...new Set(selected.map((m) => m.turn))],
+            movements,
+          });
+        }
+      } else if (config.mode === "sequential") {
         for (const arm of arms)
           append(
             `${sideName(arm.direction)}进口`,
@@ -140,10 +230,11 @@ export class TrafficLightController {
         junction: junction.id,
         phases,
         phase: 0,
-        stage: "green",
+        stage: source ? "all-red" : "green",
         elapsed: 0,
         clearing: false,
         yellowPasses: new Set(),
+        source,
       };
       this.clocks.set(junction.id, clock);
       for (const movement of links)
@@ -152,13 +243,17 @@ export class TrafficLightController {
         (n, p) => n + p.duration + config.yellow + config.allRed,
         0,
       );
-      this.advance(clock, config.offset % cycle, false);
+      if (!source) this.advance(clock, config.offset % cycle, false);
     }
   }
   has(junction: string | undefined) {
     return !!junction && this.clocks.has(junction);
   }
   private duration(clock: Clock) {
+    if (clock.source) {
+      const ticks = [1, 1, 6, 2, 1, 2, 4];
+      return ticks[clock.source.clock.state] * CS2_SIGNAL_TICK;
+    }
     return clock.stage === "green"
       ? clock.phases[clock.phase].duration
       : clock.stage === "yellow"
@@ -192,8 +287,69 @@ export class TrafficLightController {
   }
   update(dt: number, occupied: ReadonlySet<string> = new Set()) {
     if (!Number.isFinite(dt) || dt < 0) return;
-    for (const clock of this.clocks.values())
-      this.advance(clock, dt, occupied.has(clock.junction));
+    for (const clock of this.clocks.values()) {
+      if (!clock.source) {
+        this.advance(clock, dt, occupied.has(clock.junction));
+        continue;
+      }
+      const source = clock.source;
+      source.elapsed += dt;
+      while (source.elapsed + 1e-9 >= source.nextTick) {
+        const lanes = [...source.lanes.values()];
+        if (tickCs2TrafficLights(source.clock, lanes)) {
+          for (const [id, lane] of source.lanes) {
+            lane.signal = updateCs2LaneSignal(source.clock, lane);
+            source.heads.set(
+              id,
+              updateCs2SignalHeads(
+                source.clock,
+                lane.groupMask,
+                0,
+                source.heads.get(id) ?? 0,
+              ),
+            );
+          }
+          this.statistics.transitions++;
+        }
+        source.nextTick += CS2_SIGNAL_TICK;
+      }
+      clock.phase = Math.max(
+        0,
+        (source.clock.current || source.clock.next || 1) - 1,
+      );
+      clock.stage =
+        source.clock.state === Cs2TrafficLightState.Ongoing ||
+        source.clock.state === Cs2TrafficLightState.Extending ||
+        source.clock.state === Cs2TrafficLightState.Extended
+          ? "green"
+          : source.clock.state === Cs2TrafficLightState.Ending ||
+              source.clock.state === Cs2TrafficLightState.Beginning
+            ? "yellow"
+            : "all-red";
+      clock.elapsed = source.clock.timer * CS2_SIGNAL_TICK;
+    }
+  }
+  petition(movementId: string, vehicleId: number, priority = 100) {
+    const lane = this.movements
+      .get(movementId)
+      ?.clock.source?.lanes.get(movementId);
+    if (lane && priority > lane.priority) {
+      lane.priority = priority;
+      lane.petitioner = vehicleId;
+    }
+  }
+  laneSignal(movementId: string): Cs2LaneSignal {
+    const entry = this.movements.get(movementId);
+    if (!entry) return Cs2LaneSignal.None;
+    const lane = entry.clock.source?.lanes.get(movementId);
+    if (lane) return lane.signal;
+    if (!entry.clock.phases[entry.clock.phase].movements.has(movementId))
+      return Cs2LaneSignal.Stop;
+    return entry.clock.stage === "green"
+      ? Cs2LaneSignal.Go
+      : entry.clock.stage === "yellow"
+        ? Cs2LaneSignal.SafeStop
+        : Cs2LaneSignal.Stop;
   }
   allows(
     movementId: string,
@@ -205,6 +361,14 @@ export class TrafficLightController {
     const entry = this.movements.get(movementId);
     if (!entry) return true;
     const { clock } = entry;
+    if (clock.source) {
+      const signal = this.laneSignal(movementId);
+      if (signal === Cs2LaneSignal.Stop || signal === Cs2LaneSignal.SafeStop) {
+        const stopping = (speed * speed) / (2 * Math.max(0.001, braking));
+        return stopping > distance + (signal === Cs2LaneSignal.Stop ? 1 : 0);
+      }
+      return true;
+    }
     if (
       !clock.phases[clock.phase].movements.has(movementId) ||
       clock.stage === "all-red"
@@ -228,6 +392,16 @@ export class TrafficLightController {
   }
   armColor(junction: string, arm: string, turn: Turn): LightColor {
     const clock = this.clocks.get(junction);
+    if (clock?.source) {
+      let yellow = false;
+      for (const [id, value] of clock.source.heads) {
+        const movement = this.movements.get(id)?.movement;
+        if (!movement || signalArmKey(movement) !== arm) continue;
+        if (value & 4) return "green";
+        if (value & 2) yellow = true;
+      }
+      return yellow ? "yellow" : "red";
+    }
     if (!clock || clock.stage === "all-red") return "red";
     const phase = clock.phases[clock.phase];
     return phase.arms.includes(arm) && phase.turns.includes(turn)
@@ -246,10 +420,15 @@ export class TrafficLightController {
       remaining: Math.max(0, this.duration(clock) - clock.elapsed),
       clearing: clock.clearing,
       phases: clock.phases,
-      cycle: clock.phases.reduce(
-        (n, p) => n + p.duration + clock.config.yellow + clock.config.allRed,
-        0,
-      ),
+      cycle: clock.source
+        ? 0
+        : clock.phases.reduce(
+            (n, p) =>
+              n + p.duration + clock.config.yellow + clock.config.allRed,
+            0,
+          ),
+      actuated: !!clock.source,
+      sourceState: clock.source?.clock.state,
     };
   }
   get states() {

@@ -9,6 +9,7 @@ import {
 import { buildJunctions } from "../src/core/junctions";
 import type { Road } from "../src/core/types";
 import { bodiesOverlap } from "../src/simulation/collision";
+import { CS2_BASE_CAR } from "../src/simulation/cs2-driving";
 import {
   advanceVehicle,
   DEFAULT_DRIVER,
@@ -51,7 +52,7 @@ function car(
     pitch: 0,
   };
 }
-function roadTest() {
+function roadTest(model: Simulation["trafficModel"] = "cs2-derived") {
   const project = emptyProject();
   const road = makeRoad(v(0, 0), v(2000, 0), {
     lanesStart: 2,
@@ -60,6 +61,7 @@ function roadTest() {
   });
   project.roads = [road];
   const sim = new Simulation();
+  sim.trafficModel = model;
   sim.configure(project);
   sim.running = true;
   return { road, sim };
@@ -187,8 +189,8 @@ it("reserves both lanes during a change and keeps the lane snapshot immutable", 
   expect(lanes.neighbours(road.id, -1, 1, 25, 99).leader).toBeUndefined();
 });
 
-it("overtakes a slower leader and returns to the right after passing", () => {
-  const { road, sim } = roadTest();
+it("legacy MOBIL overtakes a slower leader and returns to the right after passing", () => {
+  const { road, sim } = roadTest("legacy");
   const slow = car(road, 901, 130, 1, 8);
   slow.driver = { ...DEFAULT_DRIVER, speedFactor: 0.32 };
   slow.nextLaneDecision = Infinity;
@@ -242,12 +244,13 @@ it("follows a nearby car without invoking the opposing lane-swap yield rule", ()
   expect(bodiesOverlap(leader, follower, 0)).toBe(false);
 });
 
-it("uses only adjacent changes when crossing two lanes on a short exit approach", () => {
+it("legacy selection uses adjacent changes across a short two-lane exit approach", () => {
   const project = example("transition");
   project.ports = [];
   const approach = project.roads[2],
     ramp = project.roads[4];
   const sim = new Simulation();
+  sim.trafficModel = "legacy";
   sim.configure(project);
   sim.running = true;
   const c = car(approach, 921, 0, 0, 12);
@@ -402,6 +405,7 @@ it("waits outside a real intersection until its downstream exit has room", () =>
   approach.route.push({ road: east.id, direction: 1, inLane: 1, outLane: 1 });
   const blocked = car(east, 112, eastEntry + 4, 1, 0);
   blocked.driver = { ...DEFAULT_DRIVER, speedFactor: 0.001 };
+  blocked.cs2Car = { ...CS2_BASE_CAR, maxSpeed: 0.001 };
   sim.vehicles = [approach, blocked];
   for (let i = 0; i < 80; i++) sim.update(0.05);
   expect(approach.step).toBe(0);
@@ -425,7 +429,7 @@ it("serves the physical queue head even when the following car has an older id",
   expect(sim.statistics.safetyStops).toBe(0);
 });
 
-it("reroutes around a long queue and keeps that decision through the cooldown", () => {
+it("legacy queue-delay routing keeps its decision through the cooldown", () => {
   const p = emptyProject();
   const opts = { lanesStart: 1, lanesEnd: 1, speed: 60 };
   const start = makeRoad(v(-160, 0), v(0, 0), opts);
@@ -456,6 +460,7 @@ it("reroutes around a long queue and keeps that decision through the cooldown", 
     return c;
   });
   const sim = new Simulation();
+  sim.trafficModel = "legacy";
   sim.configure(p);
   sim.running = true;
   sim.vehicles = [waiting, ...queue];

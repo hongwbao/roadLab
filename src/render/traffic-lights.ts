@@ -87,7 +87,8 @@ export class TrafficLightRenderer {
     this.group.clear();
     this.heads = [];
     for (const junction of junctions) {
-      if (!signalForJunction(project.signals, junction)) continue;
+      const config = signalForJunction(project.signals, junction);
+      if (!config) continue;
       for (const arm of junction.arms) {
         const road = project.roads.find((r) => r.id === arm.road)!;
         const direction = arm.end === 1 ? 1 : -1;
@@ -113,8 +114,10 @@ export class TrafficLightRenderer {
         );
         pole.position.set(base.x, base.y + 2.2, base.z);
         this.group.add(pole);
-        for (const [i, turn] of (["left", "straight"] as const).entries()) {
-          const p = add(base, mul(n, (i - 0.5) * 1.5));
+        const turns: ("left" | "straight")[] =
+          config.mode === "cs2" ? ["straight"] : ["left", "straight"];
+        for (const [i, turn] of turns.entries()) {
+          const p = add(base, mul(n, (i - (turns.length - 1) / 2) * 1.5));
           const sprite = new T.Sprite(
             new T.SpriteMaterial({
               map: this.texture("red", turn === "left"),

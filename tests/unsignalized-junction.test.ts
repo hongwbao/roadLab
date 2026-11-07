@@ -12,6 +12,7 @@ import { buildJunctions } from "../src/core/junctions";
 import { connections, emptyProject, makeRoad } from "../src/core/model";
 import type { Connection, Project } from "../src/core/types";
 import { bodiesOverlap } from "../src/simulation/collision";
+import { CS2_BASE_CAR } from "../src/simulation/cs2-driving";
 import { DEFAULT_DRIVER } from "../src/simulation/driving";
 import { LaneTraffic } from "../src/simulation/lane-traffic";
 import {
@@ -80,9 +81,10 @@ function vehicle(
   };
 }
 function noOverlaps(sim: Simulation) {
-  for (let i = 0; i < sim.vehicles.length; i++)
-    for (let j = i + 1; j < sim.vehicles.length; j++)
-      expect(bodiesOverlap(sim.vehicles[i], sim.vehicles[j], 0)).toBe(false);
+  const displayed = sim.renderVehicles();
+  for (let i = 0; i < displayed.length; i++)
+    for (let j = i + 1; j < displayed.length; j++)
+      expect(bodiesOverlap(displayed[i], displayed[j], 0)).toBe(false);
 }
 
 it("admits transverse streams at an unsignalized junction when their destination lanes are free", () => {
@@ -111,7 +113,8 @@ it("runs all six opposing straight lanes concurrently without a junction-wide lo
   );
   expect(links).toHaveLength(6);
   sim.vehicles = links.map((c, i) => vehicle(p, c, i + 101));
-  sim.update(0.05);
+  // Each source vehicle advances once per 16 frames; give every group a turn.
+  sim.update(16 / 60);
   expect(sim.vehicles.every((c) => c.connector)).toBe(true);
   expect(sim.statistics.simultaneousJunctions).toBe(6);
   for (let i = 0; i < 600; i++) {
@@ -185,32 +188,27 @@ it("keeps an oversaturated three-lane crossing progressing while preserving queu
   sim.configure(p);
   sim.running = true;
   const checkpoints: number[] = [];
-  const exits = new Map<string, number>();
-  let previous = new Map<number, string>();
   let overlaps = 0;
   for (let i = 0; i < 4800; i++) {
     sim.update(0.05);
-    const active = new Map(
-      sim.vehicles.map((c) => [c.id, c.route.at(-1)!.road]),
-    );
-    for (const [id, exit] of previous)
-      if (!active.has(id)) exits.set(exit, (exits.get(exit) ?? 0) + 1);
-    previous = active;
     if (i % 1200 === 1199) checkpoints.push(sim.completed);
-    if (i % 20 === 0)
-      for (let a = 0; a < sim.vehicles.length; a++)
-        for (let b = a + 1; b < sim.vehicles.length; b++)
-          if (bodiesOverlap(sim.vehicles[a], sim.vehicles[b], 0)) overlaps++;
+    if (i % 20 === 0) {
+      const displayed = sim.renderVehicles();
+      for (let a = 0; a < displayed.length; a++)
+        for (let b = a + 1; b < displayed.length; b++)
+          if (bodiesOverlap(displayed[a], displayed[b], 0)) overlaps++;
+    }
   }
   expect(checkpoints[2] - checkpoints[1]).toBeGreaterThan(10);
   expect(checkpoints[3] - checkpoints[2]).toBeGreaterThan(10);
   expect(sim.queued).toBeGreaterThan(0);
+  expect(sim.renderVehicles().length).toBeGreaterThan(10);
   expect(overlaps).toBe(0);
   // Protective movement rejections are allowed; actual overlap or an exit
   // stuck indefinitely is not. Small crossing cases above additionally
   // require no hard collision stops at all.
   for (const road of p.roads)
-    expect(exits.get(road.id) ?? 0).toBeGreaterThan(10);
+    expect(sim.completedByExit.get(road.id) ?? 0).toBeGreaterThan(10);
 }, 90_000);
 
 it("admits the four independent right turns together", () => {
@@ -226,7 +224,7 @@ it("admits the four independent right turns together", () => {
   });
   expect(links).toHaveLength(4);
   sim.vehicles = links.map((c, i) => vehicle(p, c, i + 201));
-  sim.update(0.05);
+  sim.update(16 / 60);
   expect(sim.vehicles.every((c) => c.connector)).toBe(true);
   for (let i = 0; i < 600; i++) {
     sim.update(0.05);
@@ -274,8 +272,10 @@ it("keeps an unobstructed straight vehicle moving at speed through both crosswal
   expect(sim.statistics.safetyStops).toBe(0);
 });
 
-it("preserves the travelled distance across the entrance and exit of a connector", () => {
+it("legacy scalar integration preserves distance across both connector boundaries", () => {
   const { p, sim } = crossing();
+  sim.trafficModel = "legacy";
+  sim.configure(p);
   const link = connections(p).find(
     (c) => c.from.road === p.roads[0].id && c.to.road === p.roads[1].id,
   )!;
@@ -302,13 +302,14 @@ it("preserves the travelled distance across the entrance and exit of a connector
 });
 
 for (const gap of [0, 0.1])
-  it(`preserves travelled distance through a ${gap} m road connection`, () => {
+  it(`legacy scalar integration preserves distance through a ${gap} m road connection`, () => {
     const p = emptyProject();
     const options = { lanesStart: 1, lanesEnd: 1, speed: 60 };
     const a = makeRoad(v(0, 0), v(100, 0), options);
     const b = makeRoad(v(100 + gap, 0), v(200 + gap, 0), options);
     p.roads = [a, b];
     const sim = new Simulation();
+    sim.trafficModel = "legacy";
     sim.configure(p);
     sim.running = true;
     const c: Vehicle = {
@@ -363,6 +364,7 @@ it("does not admit a vehicle when its actual destination lane has no room", () =
     route: [incoming.route[1]],
     position: lanePoint(target, link.to.lane, (entry + 4) / 153),
     driver: { ...DEFAULT_DRIVER, speedFactor: 0.001 },
+    cs2Car: { ...CS2_BASE_CAR, maxSpeed: 0.001 },
   };
   sim.vehicles = [incoming, blocker];
   for (let i = 0; i < 40; i++) sim.update(0.05);

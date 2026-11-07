@@ -17,14 +17,14 @@ import {
   setHeight,
 } from "../src/core/model";
 import { isSink, isSource, type Connection } from "../src/core/types";
-import { bodiesOverlap } from "../src/simulation/collision";
+import { bodiesOverlap, TrafficIndex } from "../src/simulation/collision";
 import {
   findRoute,
   Simulation,
   type Vehicle,
 } from "../src/simulation/simulation";
 
-it("spawns cars at a rolling speed and waits for a safe entry gap", () => {
+it("legacy rolling entry policy waits for a safe entry gap", () => {
   const p = emptyProject(),
     road = makeRoad(v(0, 0), v(140, 0), {
       lanesStart: 1,
@@ -37,6 +37,7 @@ it("spawns cars at a rolling speed and waits for a safe entry gap", () => {
     { road: road.id, end: "end", type: "sink", rate: 1 },
   ];
   const free = new Simulation();
+  free.trafficModel = "legacy";
   free.configure(p);
   free.running = true;
   for (let i = 0; i < 20; i++) free.update(0.05);
@@ -44,6 +45,7 @@ it("spawns cars at a rolling speed and waits for a safe entry gap", () => {
   expect(free.vehicles[0].speed).toBeGreaterThan(4);
 
   const busy = new Simulation();
+  busy.trafficModel = "legacy";
   busy.configure(p);
   busy.running = true;
   busy.vehicles = [
@@ -115,6 +117,13 @@ it("chooses a drivable lane before a short node and avoids a congested route", (
       cs,
       undefined,
       new Map([[`${fast.id}:1:0`, 50]]),
+      0,
+      undefined,
+      {
+        changes: new Map(),
+        links: new Map(),
+        flowOffsets: new Map([[`${fast.id}:1:0`, 240]]),
+      },
     )![1].road,
   ).toBe(slow.id);
 
@@ -205,7 +214,7 @@ for (const initialS of [100, 132, 136])
     }
     expect(sim.completed).toBe(2);
   });
-it("changes lanes before the junction with a gradual heading and yields to faster traffic", () => {
+it("legacy lane selection changes early with a gradual heading and yields to faster traffic", () => {
   const p = emptyProject(),
     first = makeRoad(v(0, 0), v(140, 0), {
       lanesStart: 2,
@@ -217,6 +226,7 @@ it("changes lanes before the junction with a gradual heading and yields to faste
     });
   p.roads = [first, second];
   const sim = new Simulation();
+  sim.trafficModel = "legacy";
   sim.configure(p);
   sim.running = true;
   sim.vehicles = [
@@ -386,10 +396,15 @@ for (const kind of ["transition", "junction", "merge"])
     for (let i = 0; i < 7200; i++) {
       s.update(0.05);
       if (i % 2400 === 2399) checkpoints.push(s.completed);
-      for (let a = 0; a < s.vehicles.length; a++) {
-        const c = s.vehicles[a];
-        for (let b = a + 1; b < s.vehicles.length; b++)
-          if (bodiesOverlap(c, s.vehicles[b], 0)) overlaps++;
+      // Native groups hold transforms at different future update times. The
+      // actual displayed bodies use a common interpolation clock and exclude
+      // the source's not-yet-spawned entities.
+      const displayed = s.renderVehicles(),
+        index = new TrafficIndex<Vehicle>(0);
+      for (const c of displayed) {
+        for (const other of index.near(c.position))
+          if (bodiesOverlap(c, other, 0)) overlaps++;
+        index.add(c);
         const old = previous.get(c.id);
         if (old) {
           maxMove = Math.max(maxMove, dist(c.position, old.p));
@@ -406,7 +421,7 @@ for (const kind of ["transition", "junction", "merge"])
         if (c.connector?.junction) turns++;
       }
       previous = new Map(
-        s.vehicles.map((c) => [c.id, { p: { ...c.position }, h: c.heading }]),
+        displayed.map((c) => [c.id, { p: { ...c.position }, h: c.heading }]),
       );
     }
     mkdirSync("artifacts", { recursive: true });

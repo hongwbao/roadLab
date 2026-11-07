@@ -29,6 +29,43 @@ import {
 } from "../core/types";
 import { bodiesOverlap, TrafficIndex } from "./collision";
 import {
+  CS2_BASE_CAR,
+  cs2CurveCurviness,
+  cs2MaxDriveSpeed,
+  cs2NavigateSpeed,
+  cs2SpeedRange,
+  cs2MaxBrakingSpeed,
+  CS2_NAVIGATION_TIMESTEP,
+  type CS2CarData,
+} from "./cs2-driving";
+import {
+  buildCs2RoadNavigation,
+  Cs2PathHeap,
+  Cs2RoadFlow,
+  chooseCs2RoadLane,
+  cs2RoadCurveAngle,
+  cs2RoadPathCost,
+  deriveCs2ConnectionRules,
+  type Cs2RoadConnectionGeometry,
+  roadLaneCs2Curviness,
+} from "./cs2-road-adapter";
+import {
+  CS2OverlapController,
+  type CS2OverlapDirective,
+  type CS2OverlapMovement,
+} from "./cs2-overlap-controller";
+import { Cs2LaneSignal } from "./cs2-junctions";
+import { Cs2TrafficSimulation } from "./cs2-simulation";
+import {
+  Cs2PathFlags,
+  applyCs2PathResult,
+  cs2PathfindFailed,
+  cs2RequireNewPath,
+  prepareCs2PersonalCarPathRequest,
+  resetCs2UpdatedPath,
+  type Cs2PathOwner,
+} from "./cs2-path-policy";
+import {
   chooseRetreat,
   waitCycles,
   type WaitingVehicle,
@@ -75,6 +112,12 @@ export type Vehicle = {
   signalEntry?: string;
   waitingAtSignal?: string;
   driver?: DriverProfile;
+  /** Recovered CarData parameters; absent values use source prefab defaults. */
+  cs2Car?: CS2CarData;
+  sourcePath?: Cs2PathOwner;
+  sourceLaneFlags?: number;
+  /** Source owner AI visibility state; unspawned entities still participate in AI. */
+  sourceUnspawned?: boolean;
   preferredLane?: number;
   nextLaneDecision?: number;
   lastLaneChangeAt?: number;
@@ -114,6 +157,8 @@ type RoutingCache = {
   changes: Map<string, number>;
   links: Map<Connection, number>;
   trims?: ReadonlyMap<string, { start: number; end: number }>;
+  model?: "cs2-derived" | "legacy";
+  flowOffsets?: ReadonlyMap<string, number>;
 };
 export function findRoute(
   p: Project,
@@ -126,6 +171,7 @@ export function findRoute(
   cachedLengths?: ReadonlyMap<string, number>,
   cache?: RoutingCache,
 ): Step[] | undefined {
+  const derived = cache?.model !== "legacy";
   const roads = new Map(p.roads.map((r) => [r.id, r]));
   const sourceRoad = roads.get(source.road),
     sinkRoad = roads.get(sink.road);
@@ -202,7 +248,13 @@ export function findRoute(
           (_, i) => Math.min(from, to) + i + 1,
         ).every((lane) => widthAt(lane, s + minimum / 2) >= r.width * 0.8);
       if (usable) {
-        const cost = Math.abs(to - from) * 2.5 + (s / length) * 2;
+        const cost = derived
+          ? cs2RoadPathCost({
+              length: 0,
+              speedLimit: r.speed / 3.6,
+              laneCrossCount: Math.abs(to - from),
+            })
+          : Math.abs(to - from) * 2.5 + (s / length) * 2;
         if (offset === 0) cache?.changes.set(cacheKey, cost);
         return cost;
       }
@@ -213,7 +265,7 @@ export function findRoute(
   const states = new Map<string, LaneState>(),
     costs = new Map<string, number>(),
     previous = new Map<string, { key: string; outLane: number }>(),
-    open = new Set<string>(),
+    open = new Cs2PathHeap<string>(),
     closed = new Set<string>();
   for (let lane = 0; lane < laneCount(sourceRoad); lane++) {
     if (
@@ -235,14 +287,34 @@ export function findRoute(
       // actual lane whenever startDistance > 0.
       preferredLane === undefined ? 0 : Math.abs(lane - preferredLane) * 0.25,
     );
-    open.add(k);
+    open.push(k, costs.get(k)!);
   }
   let goal: { key: string; lane: number; cost: number } | undefined;
+  const curveAngles = new Map<string, number>();
+  const travelCost = (
+    road: Road,
+    direction: 1 | -1,
+    lane: number,
+    distance: number,
+  ) => {
+    if (!derived) return distance / Math.max(3, road.speed / 3.6);
+    let angle = curveAngles.get(road.id);
+    if (angle === undefined) {
+      angle = cs2RoadCurveAngle(road);
+      curveAngles.set(road.id, angle);
+    }
+    return cs2RoadPathCost({
+      length: distance,
+      speedLimit: road.speed / 3.6,
+      curveAngle: angle * (distance / Math.max(1, lengths.get(road.id)!)),
+      flowOffset:
+        cache?.flowOffsets?.get(laneKey(road.id, direction, lane)) ?? 0,
+    });
+  };
   while (open.size) {
-    let current = "";
-    for (const k of open)
-      if (!current || costs.get(k)! < costs.get(current)!) current = k;
-    open.delete(current);
+    const row = open.pop()!,
+      current = row.value;
+    if (row.cost !== costs.get(current)) continue;
     if (goal && costs.get(current)! >= goal.cost) break;
     if (closed.has(current)) continue;
     closed.add(current);
@@ -253,7 +325,7 @@ export function findRoute(
         (r.id === sourceRoad.id && state.direction === startDir
           ? startDistance
           : 0),
-      travel = remaining / Math.max(3, r.speed / 3.6),
+      travel = travelCost(r, state.direction, state.lane, remaining),
       density =
         congestion?.get(laneKey(r.id, state.direction, state.lane)) ?? 0;
     if (r.id === sinkRoad.id && state.direction === endDir)
@@ -273,13 +345,14 @@ export function findRoute(
         if (!Number.isFinite(change)) continue;
         const cost =
           costs.get(current)! +
-          travel +
+          Math.max(travel, travelCost(r, state.direction, lane, remaining)) +
           change +
-          Math.max(
-            density,
-            congestion?.get(laneKey(r.id, state.direction, lane)) ?? 0,
-          ) *
-            0.4;
+          (derived
+            ? 0
+            : Math.max(
+                density,
+                congestion?.get(laneKey(r.id, state.direction, lane)) ?? 0,
+              ) * 0.4);
         if (!goal || cost < goal.cost) goal = { key: current, lane, cost };
       }
     for (const c of links.get(key(r.id, state.direction)) ?? []) {
@@ -312,18 +385,32 @@ export function findRoute(
                   r.width) *
                 5
               : 0;
-        linkCost = turnCost + lateral;
+        linkCost = derived
+          ? cs2RoadPathCost({
+              length: dist(
+                lanePoint(r, c.from.lane, state.direction === 1 ? 1 : 0),
+                lanePoint(nextRoad, c.to.lane, nextDir === 1 ? 0 : 1),
+              ),
+              speedLimit: Math.min(r.speed, nextRoad.speed) / 3.6,
+              curveAngle: Math.acos(Math.max(-1, Math.min(1, dot))),
+              turning: dot <= 0.9,
+            })
+          : turnCost + lateral;
         cache?.links.set(c, linkCost);
       }
       const cost =
         costs.get(current)! +
-        travel +
-        change +
         Math.max(
-          density,
-          congestion?.get(laneKey(r.id, state.direction, c.from.lane)) ?? 0,
-        ) *
-          0.4 +
+          travel,
+          travelCost(r, state.direction, c.from.lane, remaining),
+        ) +
+        change +
+        (derived
+          ? 0
+          : Math.max(
+              density,
+              congestion?.get(laneKey(r.id, state.direction, c.from.lane)) ?? 0,
+            ) * 0.4) +
         linkCost;
       if (cost >= (costs.get(next) ?? Infinity)) continue;
       states.set(next, {
@@ -333,7 +420,7 @@ export function findRoute(
       });
       costs.set(next, cost);
       previous.set(next, { key: current, outLane: c.from.lane });
-      open.add(next);
+      open.push(next, cost);
     }
   }
   if (!goal) return;
@@ -356,10 +443,17 @@ export function findRoute(
   return route;
 }
 export class Simulation {
+  /** Source runtime is the default; legacy remains available for comparison. */
+  trafficModel: "cs2-derived" | "legacy" = "cs2-derived";
+  private sourceEngine?: Cs2TrafficSimulation;
+  private sourceVehicles?: Vehicle[];
   vehicles: Vehicle[] = [];
   running = false;
   speed = 1;
   completed = 0;
+  readonly completedByExit = new Map<string, number>();
+  /** Boundary test cars correspond to the source's DummyTraffic vehicle role. */
+  failed = 0;
   elapsed = 0;
   totalTime = 0;
   unreachable = 0;
@@ -368,6 +462,12 @@ export class Simulation {
   predictiveYielding = true;
   trafficLights = new TrafficLightController();
   private prediction = new PredictiveJunctionController();
+  private sourceConflicts = new CS2OverlapController();
+  private sourceDirectives = new Map<
+    number,
+    CS2OverlapDirective & { movement: string }
+  >();
+  private sourceFailedTrips = new Set<number>();
   private predictionPaths = new Map<string, PredictionPath>();
   private yieldDirectives: ReadonlyMap<number, YieldDirective> = new Map();
   private nextPredictionAt = 0;
@@ -386,6 +486,13 @@ export class Simulation {
   private id = 0;
   private randomState = 123456;
   private timer = 0;
+  private sourceAccumulator = 0;
+  private sourceFrame = 0;
+  private sourcePathResults: {
+    id: number;
+    readyFrame: number;
+    route: Step[];
+  }[] = [];
   private roads = new Map<string, Road>();
   private lengths = new Map<string, number>();
   private arcs = new Map<string, ReturnType<typeof arcTable>>();
@@ -397,7 +504,15 @@ export class Simulation {
   private connectorCache = new Map<string, NonNullable<Vehicle["connector"]>>();
   private mergeTargets = new Set<string>();
   private laneEnds = new Map<string, number>();
+  private curviness = new Map<string, number>();
+  private sourceLaneRules = new Map<
+    string,
+    ReturnType<typeof deriveCs2ConnectionRules> extends Map<string, infer T>
+      ? T
+      : never
+  >();
   private trafficDelays = new Map<string, number>();
+  private sourceFlow = new Cs2RoadFlow();
   private sampledAt = 0;
   private routingCache: RoutingCache = { changes: new Map(), links: new Map() };
   statistics = {
@@ -409,9 +524,16 @@ export class Simulation {
     simultaneousJunctions: 0,
   };
   configure(p: Project) {
+    this.sourceEngine?.dispose();
+    this.sourceEngine = undefined;
+    this.sourceVehicles = undefined;
     this.reset();
+    this.curviness.clear();
     updateAutomaticTransitions(p);
     normalizePorts(p);
+    this.sourceFlow.configure(p.roads);
+    this.routingCache.model = this.trafficModel;
+    this.routingCache.flowOffsets = this.sourceFlow.offsets;
     this.project = p;
     this.roads = new Map(p.roads.map((r) => [r.id, r]));
     this.arcs = new Map(p.roads.map((r) => [r.id, arcTable(r)]));
@@ -463,33 +585,112 @@ export class Simulation {
     for (const [k, set] of inputs) if (set.size > 1) this.mergeTargets.add(k);
     this.routes = [];
     const signalMovements: SignalMovement[] = [];
-    if (p.signals?.length)
-      for (const link of this.cs) {
-        const fromRoad = this.roads.get(link.from.road)!,
-          toRoad = this.roads.get(link.to.road)!;
-        const from: Step = {
-          road: fromRoad.id,
-          direction: laneDirection(fromRoad, link.from.lane),
-          inLane: link.from.lane,
-          outLane: link.from.lane,
-        };
-        const to: Step = {
-          road: toRoad.id,
-          direction: laneDirection(toRoad, link.to.lane),
-          inLane: link.to.lane,
-          outLane: link.to.lane,
-        };
-        const connector = this.connector(from, to);
-        if (connector.movement)
-          signalMovements.push({
-            id: connector.movement.id,
-            junction: connector.movement.junction,
-            road: from.road,
-            end: from.direction === 1 ? 1 : 0,
-            turn: connector.movement.turn,
-          });
+    const overlapMovements: CS2OverlapMovement[] = [];
+    const ruleConnections: Cs2RoadConnectionGeometry[] = [];
+    for (const link of this.cs) {
+      if (!link.enabled) continue;
+      const fromRoad = this.roads.get(link.from.road)!,
+        toRoad = this.roads.get(link.to.road)!;
+      const from: Step = {
+        road: fromRoad.id,
+        direction: laneDirection(fromRoad, link.from.lane),
+        inLane: link.from.lane,
+        outLane: link.from.lane,
+      };
+      const to: Step = {
+        road: toRoad.id,
+        direction: laneDirection(toRoad, link.to.lane),
+        inLane: link.to.lane,
+        outLane: link.to.lane,
+      };
+      const connector = this.connector(from, to);
+      if (connector.movement) {
+        ruleConnections.push({
+          id: connector.movement.id,
+          junction: connector.movement.junction,
+          fromKey: connector.movement.from,
+          toKey: connector.movement.to,
+          source: fromRoad,
+          target: toRoad,
+          from: connector.from,
+          c1: connector.c1,
+          c2: connector.c2,
+          to: connector.to,
+        });
+        overlapMovements.push({
+          ...connector.movement,
+          points: connector.movement.points.slice(1, -1),
+          laneWidth: fromRoad.width,
+          speedLimit: connector.speedLimit,
+        });
+        signalMovements.push({
+          id: connector.movement.id,
+          junction: connector.movement.junction,
+          road: from.road,
+          end: from.direction === 1 ? 1 : 0,
+          turn: connector.movement.turn,
+          startDirection: {
+            x: connector.c1.x - connector.from.x,
+            z: connector.c1.z - connector.from.z,
+          },
+          endDirection: {
+            x: connector.c2.x - connector.to.x,
+            z: connector.c2.z - connector.to.z,
+          },
+        });
       }
+    }
+    const sourceRules = deriveCs2ConnectionRules(
+      ruleConnections,
+      new Set(
+        this.junctions
+          .filter((j) =>
+            p.signals?.some(
+              (s) =>
+                s.arms.filter((a) =>
+                  j.arms.some((b) => a.road === b.road && a.end === b.end),
+                ).length >= 2,
+            ),
+          )
+          .map((j) => j.id),
+      ),
+    );
+    this.sourceLaneRules = sourceRules;
+    for (const movement of overlapMovements) {
+      const rules = sourceRules.get(movement.id);
+      movement.laneFlags = rules?.flags ?? 0;
+      if (this.trafficModel === "cs2-derived" && rules) {
+        movement.turn = rules.turn.isTurn
+          ? rules.turn.right
+            ? "right"
+            : "left"
+          : "straight";
+        const cached = this.connectorCache.get(movement.id);
+        if (cached?.movement) cached.movement.turn = movement.turn;
+      }
+    }
+    if (this.trafficModel === "cs2-derived")
+      for (const movement of signalMovements) {
+        const rules = sourceRules.get(movement.id);
+        if (rules)
+          movement.turn = rules.turn.isTurn
+            ? rules.turn.right
+              ? "right"
+              : "left"
+            : "straight";
+      }
+    this.sourceConflicts.configure(overlapMovements);
     this.trafficLights.configure(this.junctions, p.signals, signalMovements);
+    if (this.trafficModel === "cs2-derived") {
+      this.sourceEngine = new Cs2TrafficSimulation({
+        synchronousPathsOnlyForTests: typeof window === "undefined",
+      });
+      this.sourceEngine.configure(p);
+      this.sourceEngine.running = this.running;
+      this.sourceEngine.speed = this.speed;
+      this.syncSourceEngine();
+      return;
+    }
     for (const source of p.ports.filter(isSource))
       for (const sink of p.ports.filter(isSink)) {
         if (source.road === sink.road && source.end === sink.end) continue;
@@ -509,11 +710,25 @@ export class Simulation {
       }
   }
   reset() {
+    if (this.sourceEngine) {
+      this.sourceEngine.reset();
+      this.syncSourceEngine();
+      return;
+    }
+    this.sourceConflicts.clear();
+    this.sourceDirectives.clear();
+    this.sourceFailedTrips.clear();
+    this.sourceFlow.configure(this.project?.roads ?? []);
     this.vehicles = [];
     this.completed = 0;
+    this.completedByExit.clear();
+    this.failed = 0;
     this.elapsed = 0;
     this.totalTime = 0;
     this.timer = 0;
+    this.sourceAccumulator = 0;
+    this.sourceFrame = 0;
+    this.sourcePathResults = [];
     this.id = 0;
     this.randomState = 123456;
     this.unreachable = 0;
@@ -838,11 +1053,18 @@ export class Simulation {
         area = Math.abs((b.x - a.x) * (c.z - a.z) - (b.z - a.z) * (c.x - a.x));
       if (area > 1e-7) radius = Math.min(radius, (ab * bc * ac) / (2 * area));
     }
-    const speedLimit = Math.min(
-      r.speed / 3.6,
-      nr.speed / 3.6,
-      Math.max(3.2, Math.sqrt(radius * 2.3)),
-    );
+    const speedLimit =
+      this.trafficModel === "legacy"
+        ? Math.min(
+            r.speed / 3.6,
+            nr.speed / 3.6,
+            Math.max(3.2, Math.sqrt(radius * 2.3)),
+          )
+        : cs2MaxDriveSpeed(
+            CS2_BASE_CAR,
+            (r.speed + nr.speed) / 7.2,
+            cs2CurveCurviness([from, c1, c2, to], s, r.width),
+          );
     const result = {
       id,
       from,
@@ -860,6 +1082,10 @@ export class Simulation {
     return { ...result };
   }
   private reroute(car: Vehicle) {
+    if (this.trafficModel === "cs2-derived") {
+      this.requestSourcePath(car);
+      return;
+    }
     if (
       !this.project ||
       car.connector ||
@@ -937,7 +1163,177 @@ export class Simulation {
     car.lastRerouteAt = this.elapsed;
     this.statistics.reroutes++;
   }
+  /** Event-driven source policy; browser graph search currently completes on the next frame. */
+  private requestSourcePath(car: Vehicle) {
+    const owner = (car.sourcePath ??= { flags: 0, elementIndex: car.step });
+    if (!this.project || car.laneChange || !cs2RequireNewPath(owner.flags))
+      return;
+    const current = car.route[car.step],
+      destination = car.route.at(-1)!;
+    if (!current || !destination) return;
+    car.sourceLaneFlags = prepareCs2PersonalCarPathRequest(
+      owner,
+      car.sourceLaneFlags ?? 0,
+    );
+    const route = findRoute(
+      this.project,
+      {
+        road: current.road,
+        end: current.direction === 1 ? "start" : "end",
+        type: "source",
+        rate: 0,
+      },
+      {
+        road: destination.road,
+        end: destination.direction === 1 ? "end" : "start",
+        type: "sink",
+        rate: 0,
+      },
+      this.cs,
+      Math.round(car.lane),
+      undefined,
+      car.s,
+      this.lengths,
+      this.routingCache,
+    );
+    this.sourcePathResults.push({
+      id: car.id,
+      readyFrame: this.sourceFrame + 1,
+      route: route ?? [],
+    });
+  }
+  private applySourcePaths() {
+    const pending: typeof this.sourcePathResults = [];
+    const cars = new Map(this.vehicles.map((car) => [car.id, car]));
+    for (const result of this.sourcePathResults) {
+      if (result.readyFrame > this.sourceFrame) {
+        pending.push(result);
+        continue;
+      }
+      const car = cars.get(result.id);
+      if (!car?.sourcePath) continue;
+      const previous = car.connector ? car.route[car.step - 1] : undefined;
+      const update = applyCs2PathResult(
+        car.sourcePath,
+        car.route,
+        result.route,
+      );
+      if (update.publishInformation && update.path.length) {
+        car.route = previous ? [previous, ...update.path] : update.path;
+        car.step = previous ? 1 : 0;
+        car.preferredLane = undefined;
+        car.lastRerouteAt = this.elapsed;
+        this.statistics.reroutes++;
+      }
+    }
+    this.sourcePathResults = pending;
+  }
+  private speedFactor(car: Pick<Vehicle, "driver">) {
+    return this.trafficModel === "legacy" ? (car.driver?.speedFactor ?? 1) : 1;
+  }
+  sourceRoadRule(movementId: string) {
+    return this.sourceLaneRules.get(movementId);
+  }
+  private braking(car: Pick<Vehicle, "driver" | "cs2Car">) {
+    return this.trafficModel === "legacy"
+      ? (car.driver?.emergencyBrake ?? 8)
+      : (car.cs2Car?.braking ?? CS2_BASE_CAR.braking);
+  }
+  private longitudinalAcceleration(
+    car: Pick<Vehicle, "id" | "speed" | "driver" | "cs2Car" | "sourcePath">,
+    limit: number,
+    leader: Leader | undefined,
+    dt: number,
+    curviness = 0,
+  ) {
+    if (this.trafficModel === "legacy")
+      return followingAcceleration(car.speed, limit, car.driver, leader);
+    const pathFlags = car.sourcePath?.flags ?? 0;
+    const waiting =
+      !(pathFlags & Cs2PathFlags.Append) &&
+      !!(
+        pathFlags &
+        (Cs2PathFlags.Pending |
+          Cs2PathFlags.Failed |
+          Cs2PathFlags.Obsolete |
+          Cs2PathFlags.Updated)
+      );
+    return cs2NavigateSpeed({
+      car: waiting
+        ? { ...(car.cs2Car ?? CS2_BASE_CAR), acceleration: 0 }
+        : car.cs2Car,
+      speed: car.speed,
+      speedLimit: limit,
+      curviness,
+      leader: leader ? { ...leader, braking: CS2_BASE_CAR.braking } : undefined,
+      timeStep: dt,
+      simulationFrame:
+        this.trafficModel === "cs2-derived"
+          ? this.sourceFrame
+          : Math.floor(this.elapsed * 60),
+      seed: car.id,
+    }).acceleration;
+  }
+  private laneCurviness(r: Road, lane: number) {
+    const key = `${r.id}:${Math.round(lane)}`;
+    let value = this.curviness.get(key);
+    if (value === undefined) {
+      value = roadLaneCs2Curviness(r, Math.round(lane));
+      this.curviness.set(key, value);
+    }
+    return value;
+  }
   private chooseLane(car: Vehicle, r: Road, end: number, lanes: LaneTraffic) {
+    if (this.trafficModel === "legacy")
+      return this.legacyChooseLane(car, r, end, lanes);
+    const step = car.route[car.step],
+      current = Math.round(car.lane);
+    if (this.entry(step) > 0 && car.s - this.entry(step) < 8) return current;
+    const groups = buildCs2RoadNavigation({
+      route: car.route,
+      step: car.step,
+      s: car.s,
+      id: car.id,
+      roads: this.roads,
+      lengths: this.lengths,
+      connections: this.cs,
+      traffic: lanes,
+    });
+    const next = car.route[car.step + 1];
+    const turnAhead =
+      !!next && this.connector(step, next).movement?.turn !== "straight";
+    const target = chooseCs2RoadLane(groups, current, turnAhead);
+    const candidate = current + Math.sign(target - current);
+    if (candidate === current) return current;
+    const t = arcParameter(
+      this.arcs.get(r.id)!,
+      step.direction === 1 ? car.s : this.lengths.get(r.id)! - car.s,
+    );
+    if (laneWidth(r, candidate, t) < r.width * 0.85) return current;
+    const candidateEnd =
+      this.laneEnds.get(laneKey(r.id, step.direction, candidate)) ?? end;
+    if (
+      candidateEnd < end - 1 &&
+      candidateEnd - car.s < laneChangeLength(car.speed) * 2 + 12
+    )
+      return current;
+    const { leader, follower } = lanes.neighbours(
+      r.id,
+      step.direction,
+      candidate,
+      car.s,
+      car.id,
+    );
+    if (leader && leader.s - car.s < VEHICLE_LENGTH + 0.5) return current;
+    if (follower && car.s - follower.s < VEHICLE_LENGTH + 0.5) return current;
+    return candidate;
+  }
+  private legacyChooseLane(
+    car: Vehicle,
+    r: Road,
+    end: number,
+    lanes: LaneTraffic,
+  ) {
     const step = car.route[car.step],
       current = Math.round(car.lane),
       driver = car.driver ?? DEFAULT_DRIVER,
@@ -1107,6 +1503,28 @@ export class Simulation {
       if (Math.abs(car.lane - step.outLane) > 0.15) continue;
       const connector = signalConnector ?? this.connector(step, next);
       if (!connector.movement) continue;
+      const first = lanes.neighbours(
+        next.road,
+        next.direction,
+        next.inLane,
+        this.entry(next) - 0.001,
+        car.id,
+      ).leader;
+      const space =
+        !first ||
+        first.s - this.entry(next) >
+          VEHICLE_LENGTH + (car.driver?.minimumGap ?? 1.7) + 1;
+      if (
+        space &&
+        !lanes.neighbours(
+          step.road,
+          step.direction,
+          step.outLane,
+          car.s,
+          car.id,
+        ).leader
+      )
+        this.trafficLights.petition(connector.movement.id, car.id);
       const signalAllows = this.signalAllows(car, connector, distance);
       if (!signalAllows) {
         car.waitingAtSignal = connector.junction;
@@ -1127,17 +1545,6 @@ export class Simulation {
         )
           continue;
       }
-      const first = lanes.neighbours(
-        next.road,
-        next.direction,
-        next.inLane,
-        this.entry(next) - 0.001,
-        car.id,
-      ).leader;
-      const space =
-        !first ||
-        first.s - this.entry(next) >
-          VEHICLE_LENGTH + (car.driver?.minimumGap ?? 1.7) + 1;
       // Capacity applies to both signalized and unsignalized intersections.
       if (!this.controlsMerge(connector.movement)) {
         if (space) permitted.add(car.id);
@@ -1186,7 +1593,9 @@ export class Simulation {
       car.id,
       distance - SIGNAL_STOP_OFFSET - VEHICLE_LENGTH / 2,
       car.speed,
-      car.driver?.comfortableBrake,
+      this.trafficModel === "legacy"
+        ? car.driver?.comfortableBrake
+        : this.braking(car),
     );
   }
   private occupiedSignals() {
@@ -1209,7 +1618,9 @@ export class Simulation {
     return occupied;
   }
   private controlsMerge(movement: Movement) {
-    return movement.junction.startsWith("merge:");
+    return (
+      this.trafficModel === "legacy" && movement.junction.startsWith("merge:")
+    );
   }
   private predictionPath(
     from: Step,
@@ -1382,12 +1793,19 @@ export class Simulation {
         s,
         speed: car.speed,
         driver,
+        drivingModel: this.trafficModel,
+        cs2Car: car.cs2Car,
+        simulationFrame:
+          this.trafficModel === "cs2-derived"
+            ? this.sourceFrame
+            : Math.floor(this.elapsed * 60),
         leader,
         leaderId,
         freeSpeed:
-          (this.roads.get(from.road)!.speed / 3.6) * driver.speedFactor,
+          (this.roads.get(from.road)!.speed / 3.6) * this.speedFactor(car),
         turnSpeed: connector.speedLimit ?? 8,
-        exitSpeed: (this.roads.get(to.road)!.speed / 3.6) * driver.speedFactor,
+        exitSpeed:
+          (this.roads.get(to.road)!.speed / 3.6) * this.speedFactor(car),
         canExit:
           s >= connector.length ||
           !first ||
@@ -1425,11 +1843,32 @@ export class Simulation {
       );
     return undefined;
   }
-  private yielding(car: Vehicle): {
+  private yielding(
+    car: Vehicle,
+    dt = 0.025,
+  ): {
     leader?: Leader;
     acceleration: number;
     distance: number;
   } {
+    if (this.trafficModel === "cs2-derived") {
+      const directive = this.sourceDirectives.get(car.id);
+      car.yieldingFor = directive?.blocker;
+      if (!directive) return { acceleration: Infinity, distance: Infinity };
+      const data = car.cs2Car ?? CS2_BASE_CAR,
+        range = cs2SpeedRange(data, car.speed, dt),
+        speed = Math.max(range.min, Math.min(range.max, directive.maxSpeed)),
+        progress = this.predictionProgress(car, directive.movement);
+      return {
+        acceleration: dt > 0 ? (speed - car.speed) / dt : 0,
+        distance:
+          directive.stopS !== undefined &&
+          progress !== undefined &&
+          directive.stopS >= progress
+            ? directive.stopS - progress
+            : Infinity,
+      };
+    }
     const directives = this.predictiveYielding
       ? this.prediction.constraintsFor(car.id)
       : [];
@@ -1564,7 +2003,34 @@ export class Simulation {
     );
   }
   update(delta: number) {
+    if (this.sourceEngine) {
+      const source = this.sourceEngine;
+      if (this.vehicles !== this.sourceVehicles)
+        source.adoptVehicles(this.vehicles);
+      source.running = this.running;
+      source.speed = this.speed;
+      if (this.project)
+        source.syncDemand(
+          this.project.ports,
+          this.project.trafficMultiplier ?? 1,
+        );
+      source.update(delta);
+      this.syncSourceEngine();
+      return;
+    }
     if (!this.running) return;
+    if (this.trafficModel === "cs2-derived") {
+      if (!Number.isFinite(delta) || delta < 0) return;
+      this.sourceAccumulator += delta * this.speed;
+      let frames = 0;
+      while (this.sourceAccumulator + 1e-10 >= 1 / 60 && frames < 240) {
+        this.integrate(1 / 60);
+        this.sourceFrame++;
+        this.sourceAccumulator = Math.max(0, this.sourceAccumulator - 1 / 60);
+        frames++;
+      }
+      return;
+    }
     const total = Math.min(Math.max(delta, 0), 0.05) * this.speed,
       n = Math.max(1, Math.ceil(total / 0.025)),
       dt = total / n;
@@ -1572,9 +2038,14 @@ export class Simulation {
   }
   private integrate(dt: number) {
     this.elapsed += dt;
+    if (this.trafficModel === "cs2-derived") this.applySourcePaths();
+    if (this.trafficModel === "cs2-derived")
+      this.sourceFlow.update(this.sourceFrame / 60);
     if (this.trafficLights.enabled)
       this.trafficLights.update(dt, this.occupiedSignals());
-    const index = new TrafficIndex<Vehicle>();
+    const index = new TrafficIndex<Vehicle>(
+      this.trafficModel === "cs2-derived" ? 0 : 0.12,
+    );
     this.vehicles.forEach((c) => index.add(c));
     this.timer += dt;
     while (this.timer >= 0.2 - 1e-9) {
@@ -1584,7 +2055,71 @@ export class Simulation {
     this.sampleTraffic();
     const lanes = new LaneTraffic(this.vehicles);
     const permissions = this.junctionPermissions(lanes);
-    if (
+    if (this.trafficModel === "cs2-derived") {
+      const sourceAgents = this.predictiveYielding
+        ? this.predictionAgents(lanes)
+        : [];
+      const cars = new Map(this.vehicles.map((car) => [car.id, car]));
+      const currentMovements = new Map(
+        sourceAgents.map((agent) => [agent.id, agent.path.id]),
+      );
+      for (const [id, directive] of this.sourceDirectives)
+        if (currentMovements.get(id) !== directive.movement)
+          this.sourceDirectives.delete(id);
+      const navigationIds = new Set(
+        sourceAgents
+          .filter((a) => (a.id & 15) === (this.sourceFrame & 15))
+          .map((a) => a.id),
+      );
+      const stuckIds = new Set(
+        sourceAgents
+          .filter(
+            (a) =>
+              (this.sourceFrame & 3) === 0 &&
+              (a.id & 15) === ((this.sourceFrame >>> 2) & 15),
+          )
+          .map((a) => a.id),
+      );
+      const directives = this.sourceConflicts.plan(
+        sourceAgents.map((agent) => {
+          const car = cars.get(agent.id)!;
+          return {
+            id: agent.id,
+            movement: agent.path.id,
+            s: agent.s,
+            speed: agent.speed,
+            length: VEHICLE_LENGTH,
+            car: car.cs2Car ?? CS2_BASE_CAR,
+            freeSpeed: agent.s < 0 ? agent.freeSpeed : agent.turnSpeed,
+            navigationSpeed: this.sourceDirectives.get(agent.id)?.maxSpeed,
+            signal:
+              car.signalEntry === agent.path.junction || agent.s >= 0
+                ? Cs2LaneSignal.Go
+                : this.trafficLights.laneSignal(agent.path.id),
+            canExit: agent.canExit,
+            exitSpace: agent.canExit ? Infinity : 0,
+          };
+        }),
+        this.sourceFrame / 60,
+        navigationIds,
+        stuckIds,
+      );
+      for (const agent of sourceAgents) {
+        const directive = directives.get(agent.id);
+        if (!directive) continue;
+        this.sourceDirectives.set(agent.id, {
+          ...directive,
+          movement: agent.path.id,
+        });
+        if (directive.stuck) {
+          // PersonalCarAI.ParkCar deletes failed DummyTraffic, whereas real
+          // resident cars enter disembarking/parking. Boundary cars use DummyTraffic.
+          const car = cars.get(agent.id)!;
+          (car.sourcePath ??= { flags: 0, elementIndex: car.step }).flags |=
+            Cs2PathFlags.Stuck;
+        }
+      }
+    } else if (
       this.predictiveYielding &&
       !this.retreat &&
       this.elapsed >= this.nextPredictionAt
@@ -1598,9 +2133,26 @@ export class Simulation {
       this.prediction.clear();
       this.yieldDirectives = new Map();
     }
-    if (this.predictiveYielding) this.tryRecovery(lanes, index);
+    if (this.trafficModel === "legacy" && this.predictiveYielding)
+      this.tryRecovery(lanes, index);
     const finished = new Set<number>();
     for (const car of this.vehicles) {
+      if (
+        this.trafficModel === "cs2-derived" &&
+        (car.id & 15) === (this.sourceFrame & 15)
+      ) {
+        const owner = (car.sourcePath ??= { flags: 0, elementIndex: car.step });
+        owner.elementIndex = car.step;
+        resetCs2UpdatedPath(owner);
+        if (cs2PathfindFailed(owner.flags)) this.sourceFailedTrips.add(car.id);
+        else if (cs2RequireNewPath(owner.flags)) this.requestSourcePath(car);
+      }
+      if (this.sourceFailedTrips.delete(car.id)) {
+        finished.add(car.id);
+        index.remove(car);
+        this.failed++;
+        continue;
+      }
       car.driver ??= driverProfile(car.id);
       car.lastMovementAt ??= this.elapsed;
       const original = {
@@ -1649,7 +2201,7 @@ export class Simulation {
         continue;
       }
       let acquired: Movement | undefined;
-      const yielding = this.yielding(car);
+      const yielding = this.yielding(car, dt);
       if (car.connector) {
         const c = car.connector;
         const downstream = lanes.neighbours(
@@ -1659,7 +2211,6 @@ export class Simulation {
           car.s - 0.001,
           car.id,
         ).leader;
-        const driver = car.driver;
         let leader: Leader | undefined = downstream
           ? {
               gap:
@@ -1680,14 +2231,17 @@ export class Simulation {
         if (yielding.leader && (!leader || yielding.leader.gap < leader.gap))
           leader = yielding.leader;
         const acceleration = Math.max(
-          -driver.emergencyBrake,
+          -this.braking(car),
           Math.min(
             yielding.acceleration,
-            followingAcceleration(
-              car.speed,
-              Math.min(c.speedLimit ?? 8, (r.speed / 3.6) * driver.speedFactor),
-              driver,
+            this.longitudinalAcceleration(
+              car,
+              Math.min(
+                c.speedLimit ?? 8,
+                (r.speed / 3.6) * this.speedFactor(car),
+              ),
               leader,
+              dt,
             ),
           ),
         );
@@ -1820,11 +2374,11 @@ export class Simulation {
         const unsafeRear =
           targetBack &&
           Math.abs(desired - car.lane) > 0.1 &&
-          followingAcceleration(
-            targetBack.speed,
+          this.longitudinalAcceleration(
+            targetBack,
             r.speed / 3.6,
-            targetBack.driver ?? driverProfile(targetBack.id),
             { gap: car.s - targetBack.s - VEHICLE_LENGTH, speed: car.speed },
+            dt,
           ) < -car.driver.safeBrake;
         const blockedChange =
           startingChange &&
@@ -1891,7 +2445,7 @@ export class Simulation {
           swap &&
           (car.s < swap.s - 0.5 ||
             (Math.abs(car.s - swap.s) <= 0.5 && car.id > swap.id));
-        let limit = (r.speed / 3.6) * car.driver.speedFactor;
+        let limit = (r.speed / 3.6) * this.speedFactor(car);
         if (yieldSwap) limit = 0;
         const fronts = [
           Math.floor(car.lane),
@@ -1977,10 +2531,20 @@ export class Simulation {
           const turnSpeed = connector.speedLimit ?? limit;
           limit = Math.min(
             limit,
-            Math.sqrt(
-              turnSpeed * turnSpeed +
-                2 * car.driver.comfortableBrake * Math.max(0, end - car.s),
-            ),
+            this.trafficModel === "cs2-derived"
+              ? Math.max(
+                  turnSpeed,
+                  cs2MaxBrakingSpeed(
+                    car.cs2Car ?? CS2_BASE_CAR,
+                    Math.max(0, end - car.s),
+                    CS2_NAVIGATION_TIMESTEP,
+                    turnSpeed,
+                  ),
+                )
+              : Math.sqrt(
+                  turnSpeed * turnSpeed +
+                    2 * car.driver.comfortableBrake * Math.max(0, end - car.s),
+                ),
           );
           if (!permitted) {
             const stop = {
@@ -1993,14 +2557,17 @@ export class Simulation {
         if (yielding.leader && (!leader || yielding.leader.gap < leader.gap))
           leader = yielding.leader;
         const acceleration = Math.max(
-          -car.driver.emergencyBrake,
+          -this.braking(car),
           Math.min(
             yielding.acceleration,
-            followingAcceleration(
-              car.speed,
+            this.longitudinalAcceleration(
+              car,
               Math.max(0.1, limit),
-              car.driver,
               leader,
+              dt,
+              this.trafficModel === "cs2-derived"
+                ? this.laneCurviness(r, car.lane)
+                : 0,
             ),
           ),
         );
@@ -2044,6 +2611,10 @@ export class Simulation {
           if (!next) {
             finished.add(car.id);
             this.completed++;
+            this.completedByExit.set(
+              r.id,
+              (this.completedByExit.get(r.id) ?? 0) + 1,
+            );
             this.totalTime += car.age;
             index.remove(car);
             this.mergeController.leave(car.id);
@@ -2094,6 +2665,23 @@ export class Simulation {
           );
         }
       }
+      if (this.trafficModel === "cs2-derived" && !original.connector) {
+        const sourceStep = original.route[original.step];
+        this.sourceFlow.record(
+          laneKey(
+            sourceStep.road,
+            sourceStep.direction,
+            Math.round(original.lane),
+          ),
+          dt,
+          dist(car.position, original.position),
+          this.lengths.get(sourceStep.road) ?? 1,
+          Math.min(
+            car.cs2Car?.maxSpeed ?? CS2_BASE_CAR.maxSpeed,
+            (this.roads.get(sourceStep.road)?.speed ?? 50) / 3.6,
+          ),
+        );
+      }
       if (
         !car.connector &&
         !car.laneChange &&
@@ -2128,13 +2716,48 @@ export class Simulation {
     }
     this.vehicles = this.vehicles.filter((c) => !finished.has(c.id));
   }
+  /** Render poses use the source four-frame buffer; physics stays separate. */
+  renderVehicles() {
+    return this.sourceEngine?.renderVehicles() ?? this.vehicles;
+  }
+  get pendingPathCount() {
+    return this.sourceEngine?.pendingPathCount ?? 0;
+  }
+  dispose() {
+    this.sourceEngine?.dispose();
+    this.sourceEngine = undefined;
+  }
+  private syncSourceEngine() {
+    const source = this.sourceEngine;
+    if (!source) return;
+    this.vehicles = source.vehicles;
+    this.sourceVehicles = this.vehicles;
+    this.completed = source.completed;
+    this.failed = source.failed;
+    this.generated = source.generated;
+    this.unreachable = source.unreachable;
+    this.elapsed = source.elapsed;
+    this.totalTime = source.totalTime;
+    this.junctions = source.junctions;
+    this.trafficLights = source.trafficLights;
+    this.statistics = source.statistics;
+    this.completedByExit.clear();
+    for (const [port, count] of source.completedByExit) {
+      const road = port.slice(0, port.lastIndexOf(":"));
+      this.completedByExit.set(
+        road,
+        (this.completedByExit.get(road) ?? 0) + count,
+      );
+    }
+  }
   get queued() {
     return this.vehicles.filter((c) => c.speed < 1).length;
   }
   get entered() {
-    return this.id;
+    return this.sourceEngine?.entered ?? this.id;
   }
   get waiting() {
+    if (this.sourceEngine) return this.sourceEngine.waiting;
     return [...this.demand].reduce(
       (sum, [s, d]) =>
         sum +
@@ -2146,6 +2769,6 @@ export class Simulation {
     return this.completed ? this.totalTime / this.completed : 0;
   }
   get routeCount() {
-    return this.routes.length;
+    return this.sourceEngine?.routeCount ?? this.routes.length;
   }
 }

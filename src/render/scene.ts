@@ -1122,7 +1122,29 @@ export class Scene {
       this.cars.add(mesh);
     }
   }
+  private ensureCarCapacity(required: number) {
+    const capacity = this.bodyInstances.instanceMatrix.count;
+    if (required <= capacity) return;
+    const nextCapacity = Math.max(required, capacity * 2);
+    const grow = (previous: T.InstancedMesh, count: number) => {
+      const mesh = new T.InstancedMesh(
+        previous.geometry,
+        previous.material,
+        count,
+      );
+      mesh.frustumCulled = false;
+      mesh.instanceMatrix.setUsage(T.DynamicDrawUsage);
+      this.cars.remove(previous);
+      previous.dispose();
+      this.cars.add(mesh);
+      return mesh;
+    };
+    this.bodyInstances = grow(this.bodyInstances, nextCapacity);
+    this.cabinInstances = grow(this.cabinInstances, nextCapacity);
+    this.wheelInstances = grow(this.wheelInstances, nextCapacity * 4);
+  }
   updateCars(vehicles: Vehicle[]) {
+    this.ensureCarCapacity(vehicles.length);
     const object = new T.Object3D(),
       matrix = new T.Matrix4(),
       local = new T.Matrix4(),

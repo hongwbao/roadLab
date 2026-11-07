@@ -29,6 +29,7 @@ test("traffic lights can be placed, timed, cycled, saved and removed on the map"
   page.on("pageerror", (e) => errors.push(e.message));
   await junction(page);
   expect((await state(page)).project.signals).toHaveLength(1);
+  await page.locator('[data-signal-mode="protected"]').click();
   await expect(page.locator("[data-signal-live]")).toContainText("直行");
   const visuals = await page.evaluate(
     () => (window as any).lab.editor.scene.trafficLights.group.children.length,
@@ -88,6 +89,7 @@ test("compact signal tools keep close, mode, timing and removal controls accessi
   page,
 }) => {
   await junction(page);
+  await page.locator('[data-signal-mode="protected"]').click();
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(page.locator("#signal-panel")).toBeVisible();
   expect(
@@ -141,6 +143,7 @@ test("signal countdown follows simulation time and pauses with the traffic", asy
   page,
 }) => {
   await junction(page);
+  await page.locator('[data-signal-mode="protected"]').click();
   const remaining = await page.evaluate(
     () =>
       (window as any).lab.editor.simulation.trafficLights.states[0].remaining,
@@ -164,4 +167,33 @@ test("signal countdown follows simulation time and pauses with the traffic", asy
       (window as any).lab.editor.simulation.trafficLights.states[0].remaining,
   );
   expect(remaining - after).toBeCloseTo(0.2, 5);
+});
+
+test("new signals use automatic demand groups and retain the mode after saving", async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await junction(page);
+  expect((await state(page)).project.signals[0].mode).toBe("cs2");
+  await expect(page.locator('[data-signal-mode="cs2"]')).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await expect(page.locator("[data-signal-time]")).toHaveCount(0);
+  await expect(page.locator("[data-signal-remaining]")).toHaveText("感应控制");
+  expect(await page.locator("[data-signal-phases] li").count()).toBe(2);
+  await page.locator("#viewport").focus();
+  await page.keyboard.press("Control+s");
+  await page.reload();
+  await page.waitForFunction(() => !!(window as any).lab);
+  expect((await state(page)).project.signals[0].mode).toBe("cs2");
+  await page.locator('[data-tool="signal"]').click();
+  const p = await page.evaluate(() =>
+    (window as any).lab.worldToScreen({ x: 0, y: 0, z: 0 }),
+  );
+  await page.mouse.click(p.x, p.y);
+  await expect(page.locator("[data-signal-remaining]")).toHaveText("感应控制");
+  await expect(page.locator("[data-signal-time]")).toHaveCount(0);
+  expect(errors).toEqual([]);
 });

@@ -415,7 +415,7 @@ document.addEventListener("click", (e) => {
   if (target.dataset.signalMode) {
     editor.signalTool.change(
       "mode",
-      target.dataset.signalMode as "protected" | "sequential",
+      target.dataset.signalMode as "cs2" | "protected" | "sequential",
     );
     return;
   }
@@ -747,7 +747,7 @@ let last = performance.now(),
 function frame(now: number) {
   editor.simulation.update((now - last) / 1000);
   last = now;
-  editor.scene.updateCars(editor.simulation.vehicles);
+  editor.scene.updateCars(editor.simulation.renderVehicles());
   editor.scene.trafficLights.update(editor.simulation.trafficLights);
   editor.scene.render();
   if (now - lastStats > 250) {
@@ -764,7 +764,7 @@ function frame(now: number) {
       ? `${sim.average.toFixed(1)} s`
       : "—";
     document.querySelector("#sim-note")!.textContent =
-      `${sim.routeCount} 条可达路径`;
+      `${sim.routeCount} 条可达路径${sim.failed ? ` · ${sim.failed} 次失效行程` : ""}`;
     syncTraffic(false);
     updateTrafficLightPanel(editor);
   }

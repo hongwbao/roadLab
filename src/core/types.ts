@@ -26,6 +26,8 @@ export type Road = {
   speed: number;
   align: "left" | "center" | "right";
   kind: "road" | "ramp";
+  /** Explicit traffic rule carried by highway assets; absent in older saves. */
+  highwayRules?: boolean;
   transitionStart: number;
   transitionEnd: number;
   profile?: {

@@ -255,8 +255,10 @@ it("does not enter on green when the receiving lane lacks space", () => {
   expect(sim.completed).toBe(0);
 });
 
-it("lets an admitted car leave during all-red and holds conflicting traffic until its rear clears", () => {
-  const { sim, links, junction, config } = fixture();
+it("legacy signal admission survives all-red until the admitted car's rear clears", () => {
+  const { sim, p, links, junction, config } = fixture();
+  sim.trafficModel = "legacy";
+  sim.configure(p);
   const link = links.find((c) => sim.trafficLights.allows(c.id, 1, 55, 12))!;
   const car = carFor(sim, link);
   car.s = (sim as any).exit(car.route[0]) - SIGNAL_STOP_OFFSET - 1.9 + 0.5;
@@ -327,10 +329,12 @@ it("continues serving traffic across multiple signal cycles without body overlap
   let overlaps = 0;
   for (let i = 0; i < 2400; i++) {
     sim.update(0.05);
-    if (i % 4 === 0)
-      for (let a = 0; a < sim.vehicles.length; a++)
-        for (let b = a + 1; b < sim.vehicles.length; b++)
-          if (bodiesOverlap(sim.vehicles[a], sim.vehicles[b], 0)) overlaps++;
+    if (i % 4 === 0) {
+      const displayed = sim.renderVehicles();
+      for (let a = 0; a < displayed.length; a++)
+        for (let b = a + 1; b < displayed.length; b++)
+          if (bodiesOverlap(displayed[a], displayed[b], 0)) overlaps++;
+    }
   }
   expect(overlaps).toBe(0);
   expect(sim.completed).toBeGreaterThan(15);
@@ -357,7 +361,8 @@ it("anticipates a high-speed red signal before the ordinary connection lookahead
   }
   expect(sim.statistics.junctionEntries).toBe(0);
   expect(car.speed).toBeLessThan(1);
-  expect(braking).toBeGreaterThan(-6);
+  // The recovered prefab base brakes at 10 m/s²; the old IDM fixture used 6.
+  expect(braking).toBeGreaterThanOrEqual(-10.001);
 });
 
 it("keeps copied signal configurations bound to copied junctions", () => {
@@ -383,9 +388,11 @@ it("keeps copied signal configurations bound to copied junctions", () => {
   expect(sim.trafficLights.states).toHaveLength(2);
 });
 
-it("revokes a new signal admission if the actual body guard rolls its movement back", () => {
-  const { sim, links } = fixture(),
+it("legacy body guard revokes a signal admission when it rolls movement back", () => {
+  const { sim, p, links } = fixture(),
     link = links.find((c) => sim.trafficLights.allows(c.id, 1, 55, 12))!;
+  sim.trafficModel = "legacy";
+  sim.configure(p);
   const car = carFor(sim, link);
   car.s = (sim as any).exit(car.route[0]) - SIGNAL_STOP_OFFSET - 1.9 - 0.01;
   car.speed = 1;

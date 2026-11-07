@@ -1,5 +1,6 @@
 import { getAsset } from "../core/assets";
 import { automaticTransitionPreview } from "../core/auto-transitions";
+import { buildCS2RoadLabCourse } from "../core/cs2-road-building";
 import {
   add,
   center,
@@ -8,7 +9,6 @@ import {
   laneDirection,
   lanePoint,
   laneWidth,
-  lerp,
   maxGrade,
   mul,
   nearest,
@@ -682,16 +682,14 @@ export class Editor {
           a = center(reference, this.drawStartSnap.t || 0);
       }
     }
-    const r =
-      this.tool === "curve" && control
-        ? makeRoad(
-            a,
-            q,
-            { ...this.draw },
-            lerp(a, control, 2 / 3),
-            lerp(q, control, 2 / 3),
-          )
-        : makeRoad(a, q, { ...this.draw });
+    const r = buildCS2RoadLabCourse({
+      project: this.project,
+      asset: this.assetId,
+      options: { ...this.draw },
+      points: this.tool === "curve" && control ? [a, control, q] : [a, q],
+      start: this.drawStartSnap,
+      end: endSnap,
+    }).road;
     if (this.drawStartSnap?.road) {
       const reference = this.project.roads.find(
         (old) => old.id === this.drawStartSnap!.road,
@@ -1499,7 +1497,11 @@ export class Editor {
       return;
     }
     if (name === "play") {
-      if (!this.simulation.running && !this.simulation.routeCount) {
+      if (
+        !this.simulation.running &&
+        !this.simulation.routeCount &&
+        !this.simulation.pendingPathCount
+      ) {
         this.onToast("先设置路网通行口，或使用自动识别。");
         return;
       }

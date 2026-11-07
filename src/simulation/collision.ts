@@ -27,6 +27,7 @@ export function bodiesOverlap(a: Body, b: Body, padding = 0.12) {
   return true;
 }
 export class TrafficIndex<T extends Body> {
+  constructor(private padding = 0.12) {}
   private cells = new Map<string, Set<T>>();
   private keys = new Map<number, string>();
   private key(p: V) {
@@ -65,7 +66,8 @@ export class TrafficIndex<T extends Body> {
   }
   blocked(body: T) {
     return this.near(body.position).some(
-      (other) => other.id !== body.id && bodiesOverlap(body, other),
+      (other) =>
+        other.id !== body.id && bodiesOverlap(body, other, this.padding),
     );
   }
 }

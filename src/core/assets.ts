@@ -236,6 +236,11 @@ export const ROAD_ASSETS: RoadAsset[] = [
     },
   },
 ];
+// Highway behavior is asset metadata, independent of a player's speed setting.
+for (const asset of ROAD_ASSETS)
+  if (asset.category !== "transition")
+    asset.options.highwayRules = asset.category === "highway";
+
 export const getAsset = (id: string) =>
   ROAD_ASSETS.find((a) => a.id === id) || ROAD_ASSETS[0];
 export const assetForRoad = (r: Road) =>
