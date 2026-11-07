@@ -71,7 +71,9 @@ test("junction dots add a previously unavailable destination, remove it, save a 
   expect(
     await page.evaluate(
       (id) =>
-        (window as any).lab.editor.simulation.network.connectionLaneIds.has(id),
+        (
+          window as any
+        ).lab.editor.simulation.sourceEngine.network.connectionLaneIds.has(id),
       link.id,
     ),
   ).toBe(true);
@@ -90,7 +92,7 @@ test("junction dots add a previously unavailable destination, remove it, save a 
         [
           ...(
             window as any
-          ).lab.editor.simulation.network.connectionLaneIds.keys(),
+          ).lab.editor.simulation.sourceEngine.network.connectionLaneIds.keys(),
         ].some((id: any) => id.startsWith(prefix)),
       prefix,
     ),
@@ -125,7 +127,7 @@ test("junction dots add a previously unavailable destination, remove it, save a 
         [
           ...(
             window as any
-          ).lab.editor.simulation.network.connectionLaneIds.keys(),
+          ).lab.editor.simulation.sourceEngine.network.connectionLaneIds.keys(),
         ].some((id: any) => id.startsWith(prefix)),
       prefix,
     ),

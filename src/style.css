@@ -1272,9 +1272,9 @@ dialog dd {
   accent-color: var(--blue);
 }
 .turn-panel {
-  left: 18px;
+  right: 18px;
   top: 148px;
-  width: min(290px, calc(100vw - 36px));
+  width: min(330px, calc(100vw - 36px));
 }
 .turn-panel p {
   font-size: 12px;
@@ -1304,7 +1304,8 @@ dialog dd {
   }
   .turn-panel {
     top: 154px;
-    left: 9px;
+    right: 9px;
+    width: min(330px, calc(100vw - 73px));
   }
 }
 
