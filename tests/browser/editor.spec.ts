@@ -396,32 +396,34 @@ test("two-way roads have yellow centerlines and elevated supports clear lower ro
   page,
 }) => {
   await open(page);
+  await load(page, "example-junction");
+  const yellow = await page.evaluate(() => {
+    let count = 0;
+    (window as any).lab.editor.scene.details.traverse((child: any) => {
+      if (child.material?.color?.getHex() === 0xf3c454) count++;
+    });
+    return count;
+  });
+  expect(yellow).toBeGreaterThan(0);
   await load(page, "example-elevated");
   const geometry = await page.evaluate(() => {
     const { scene, project } = (window as any).lab.editor;
-    const upper = project.roads.find((road: any) => road.name === "第二层高架");
+    const upper = project.roads.find(
+      (road: any) => road.id === "cloverleaf-north-main",
+    );
     const group = scene.roads.children.find((candidate: any) =>
       candidate.children.some((child: any) => child.userData.road === upper.id),
     );
     return {
-      yellow: (() => {
-        let count = 0;
-        scene.details.traverse((child: any) => {
-          if (child.material?.color?.getHex() === 0xf3c454) count++;
-        });
-        return count;
-      })(),
       pillars: group.children
         .filter((child: any) => child.geometry?.type === "CylinderGeometry")
         .map((child: any) => ({ x: child.position.x, z: child.position.z })),
     };
   });
-  expect(geometry.yellow).toBeGreaterThan(0);
   expect(geometry.pillars.length).toBeGreaterThan(0);
   expect(
-    geometry.pillars.some(
-      (pillar: { x: number; z: number }) =>
-        Math.abs(pillar.x - 102) < 4 && Math.abs(pillar.z + 60) < 4,
+    geometry.pillars.some((pillar: { x: number; z: number }) =>
+      [8, -8, 24, -24].some((z) => Math.abs(pillar.z - z) < 4.35),
     ),
   ).toBe(false);
   await page.screenshot({ path: "artifacts/game-elevated-fixed.png" });

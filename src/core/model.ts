@@ -47,6 +47,7 @@ import {
 } from "./traffic-signals";
 import { updateAutomaticTransitions } from "./auto-transitions";
 import { LANE_WIDTH } from "./road-standards";
+import { cloverleafExample } from "./cloverleaf";
 import {
   applyJunctionLaneRules,
   normalizeJunctionLaneRules,
@@ -102,6 +103,7 @@ export const emptyProject = (): Project => ({
   trafficMultiplier: 1,
 });
 export function example(kind = "transition"): Project {
+  if (kind === "elevated") return cloverleafExample(makeRoad);
   const p = emptyProject();
   if (kind === "junction") {
     p.name = "城市路口实验";
@@ -120,7 +122,7 @@ export function example(kind = "transition"): Project {
     autoBoundaries(p);
     return p;
   }
-  p.name = kind === "elevated" ? "三层立交实验" : "车道过渡实验";
+  p.name = "车道过渡实验";
   const a = makeRoad(v(-145, 0), v(-85, 0), { name: "入口主线 · 2 车道" });
   const b = makeRoad(v(-85, 0), v(-25, 0), {
     name: "渐变拓宽 · 2 → 3",
@@ -136,7 +138,7 @@ export function example(kind = "transition"): Project {
   const d = makeRoad(v(25, 0), v(145, 0), { name: "连续主线 · 2 车道" });
   const e = makeRoad(
     v(25, (3 * LANE_WIDTH) / 2),
-    v(145, 65, kind === "elevated" ? 12 : 0),
+    v(145, 65),
     {
       name: "平滑驶出匝道",
       lanesStart: 1,
@@ -145,7 +147,7 @@ export function example(kind = "transition"): Project {
       speed: 40,
     },
     v(85, (3 * LANE_WIDTH) / 2),
-    v(70, 65, kind === "elevated" ? 12 : 0),
+    v(70, 65),
   );
   p.roads = [a, b, c, d, e];
   p.ports = [
@@ -153,24 +155,6 @@ export function example(kind = "transition"): Project {
     { road: d.id, end: "end", type: "sink", rate: 1 },
     { road: e.id, end: "end", type: "sink", rate: 1 },
   ];
-  if (kind === "elevated") {
-    const cross = makeRoad(v(102, -85), v(102, 100), {
-      name: "地面纵向道路",
-      twoWay: true,
-      lanesStart: 1,
-      lanesEnd: 1,
-    });
-    const upper = makeRoad(v(-50, -60, 20), v(135, -60, 20), {
-      name: "第二层高架",
-      lanesStart: 2,
-      lanesEnd: 2,
-    });
-    p.roads.push(cross, upper);
-    p.ports.push(
-      { road: cross.id, end: "start", type: "source", rate: 12 },
-      { road: cross.id, end: "end", type: "sink", rate: 1 },
-    );
-  }
   return p;
 }
 export class History {

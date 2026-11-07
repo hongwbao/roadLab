@@ -344,7 +344,13 @@ it("makes both ends of a two-way road bidirectional and removable without duplic
   expect(parseProject(JSON.stringify(p)).ports).toHaveLength(1);
 });
 it("migrates old two-way ports and derives one-way port roles from direction", () => {
-  const p = example("elevated");
+  const p = example();
+  const twoWay = makeRoad(v(200, 100), v(280, 100), { twoWay: true });
+  p.roads.push(twoWay);
+  p.ports.push(
+    { road: twoWay.id, end: "start", type: "source", rate: 12 },
+    { road: twoWay.id, end: "end", type: "sink", rate: 1 },
+  );
   normalizePorts(p);
   expect(p.ports.filter((x) => x.type === "both")).toHaveLength(2);
   const r = p.roads[0];
