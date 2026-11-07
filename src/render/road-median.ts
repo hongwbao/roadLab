@@ -6,6 +6,7 @@ import {
   backwardLaneCount,
   boundaryPoint,
   medianWidth,
+  medianExtent,
   mul,
   normal,
   smooth,
@@ -22,7 +23,7 @@ export function renderRoadMedian(
   group: T.Group,
   material: T.Material,
 ) {
-  const width = medianWidth(road),
+  const width = medianExtent(road),
     range = width && roadMedianRange(project, road, junctions);
   if (!range) return;
   const table = arcTable(road),
@@ -40,9 +41,10 @@ export function renderRoadMedian(
         range.noseStart ? smooth((distance - range.startDistance) / tip) : 1,
         range.noseEnd ? smooth((range.endDistance - distance) / tip) : 1,
       ),
-      half = (width * weight) / 2,
+      actualWidth = medianWidth(road, t),
+      half = (actualWidth * weight) / 2,
       topHalf = Math.max(0, half - 0.12 * weight),
-      height = 0.28 * weight;
+      height = 0.28 * weight * Math.min(1, actualWidth / 0.5);
     for (const [offset, y] of [
       [-half, 0.03],
       [half, 0.03],

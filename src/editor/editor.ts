@@ -3,6 +3,7 @@ import { setRoadMedian, withRoadMedian } from "../core/road-median";
 import { getAsset } from "../core/assets";
 import { LANE_WIDTH, standardizeLaneWidths } from "../core/road-standards";
 import { replaceRoadSection, revertRoadUpgrade } from "../core/road-upgrades";
+import { updateAutomaticTransitions } from "../core/auto-transitions";
 import {
   addRoadsideLanes,
   expandedRoad,
@@ -23,10 +24,12 @@ import {
   laneCount,
   laneDirection,
   pavementWidth,
+  medianExtent,
   backwardStart,
   maxGrade,
   mul,
   nearest,
+  nodePoint,
   point,
   roadLength,
   sub,
@@ -1404,13 +1407,29 @@ export class Editor {
       this.medianTarget = { road: candidate.id, next };
       const preview = {
         ...this.project,
-        roads: this.project.roads.map((r) =>
-          r.id === candidate.id ? next : r,
+        roads: structuredClone(
+          this.project.roads.map((r) => (r.id === candidate.id ? next : r)),
         ),
       };
-      this.scene.showPreviews([next], false, {
+      updateAutomaticTransitions(preview);
+      const old = new Map(this.project.roads.map((r) => [r.id, r]));
+      const changed = preview.roads.filter(
+        (r) =>
+          r.id === next.id ||
+          JSON.stringify(r.autoTaper) !==
+            JSON.stringify(old.get(r.id)?.autoTaper) ||
+          (medianExtent(r) > 0 &&
+            [0, 1].some((at) =>
+              [0, 1].some(
+                (end) =>
+                  dist(nodePoint(r, at), nodePoint(candidate, end)) < 0.65,
+              ),
+            )),
+      );
+      this.scene.showPreviews(changed, false, {
         replaceExisting: true,
         junctions: buildJunctions(preview),
+        project: preview,
       });
       this.onStatus(
         this.medianAction === "remove"

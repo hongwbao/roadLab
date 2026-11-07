@@ -1,5 +1,11 @@
 /** Ordinary-car source runtime assembly. Browser/world adapters are explicit. */
 import { updateAutomaticTransitions } from "../core/auto-transitions";
+import {
+  buildEarlyLanePlan,
+  chooseEarlyLane,
+  laneChangeGapClear,
+  type EarlyLanePlan,
+} from "./early-lane-planning";
 import { buildJunctions, type Junction } from "../core/junctions";
 import {
   add,
@@ -348,6 +354,10 @@ export class Cs2TrafficSimulation {
     priority: number;
   }[] = [];
   private navigationActionsFrame = -1;
+  private earlyLanePlans = new Map<
+    number,
+    { groups: Trip["groups"]; index: number; plan: EarlyLanePlan | null }
+  >();
   private reservedNavigation = new Map<
     number,
     { current: CS2NavigationCurrentState; nextLanes: CS2NavigationQueuedLane[] }
@@ -661,6 +671,7 @@ export class Cs2TrafficSimulation {
     this.readyPaths = [];
     this.knownRoutes.clear();
     this.trips.clear();
+    this.earlyLanePlans.clear();
     this.boundaries = [];
     this.runtime = undefined;
     this.network = undefined;
@@ -915,6 +926,7 @@ export class Cs2TrafficSimulation {
     this.ownerComponents.clear();
     this.parkedOwners.clear();
     this.trips.clear();
+    this.earlyLanePlans.clear();
     this.positionCache.clear();
     this.blockers.clear();
     for (const car of vehicles) {
@@ -1689,6 +1701,7 @@ export class Cs2TrafficSimulation {
     this.failed++;
     this.removeLaneMembership(trip.id);
     this.trips.delete(trip.id);
+    this.earlyLanePlans.delete(trip.id);
     this.positionCache.delete(trip.id);
     this.blockers.delete(trip.id);
     this.requestSpace.delete(trip.id);
@@ -1989,6 +2002,7 @@ export class Cs2TrafficSimulation {
       this.runtime!.removeVehicle(id);
       this.removeLaneMembership(id);
       this.trips.delete(id);
+      this.earlyLanePlans.delete(id);
       this.positionCache.delete(id);
       this.blockers.delete(id);
       this.requestSpace.delete(id);
@@ -2120,6 +2134,94 @@ export class Cs2TrafficSimulation {
         }
       }
   }
+  /** RoadLab route preparation policy; the recovered selection/motion helpers
+   * remain unchanged. Physical changes stay adjacent and use real lane gaps. */
+  private prepareEarlyLaneChange(
+    trip: Trip,
+    view: CS2RuntimeVehicleView,
+    selected: CS2NavigationCurrentState,
+  ) {
+    const network = this.network!,
+      lane = network.lanes.get(view.current.laneId!)!,
+      group = network.groups.get(lane.group)!;
+    if (
+      lane.kind !== "road" ||
+      !group.allowChange ||
+      selected.laneId !== view.current.laneId ||
+      selected.flags & 0x100
+    )
+      return selected;
+    const cached = this.earlyLanePlans.get(trip.id);
+    const plan =
+      cached?.groups === trip.groups && cached.index === trip.groupIndex
+        ? cached.plan
+        : buildEarlyLanePlan(network, trip.groups, trip.groupIndex);
+    if (
+      !cached ||
+      cached.groups !== trip.groups ||
+      cached.index !== trip.groupIndex
+    )
+      this.earlyLanePlans.set(trip.id, {
+        groups: trip.groups,
+        index: trip.groupIndex,
+        plan,
+      });
+    const row = this.physical.get(trip.id),
+      speed = speedOf(view),
+      remaining =
+        this.curveS(lane.id, trip.groups[trip.groupIndex].interval[1]) -
+        (row?.s ?? 0),
+      planned = chooseEarlyLane(plan, group.members, lane.id, remaining, speed);
+    let target = planned ?? selected.changeLaneId ?? null;
+    if (view.current.changeLaneId && view.current.changeProgress > 0)
+      target = view.current.changeLaneId;
+    const origin = group.members.indexOf(lane.id),
+      index = target ? group.members.indexOf(target) : origin;
+    if (index < 0 || origin < 0) return selected;
+    if (Math.abs(index - origin) > 1)
+      target = group.members[origin + Math.sign(index - origin)];
+    if (target === lane.id) target = null;
+    if (
+      target &&
+      target !== view.current.changeLaneId &&
+      !laneChangeGapClear(
+        trip.id,
+        this.curveS(target, selected.curvePosition.x),
+        speed,
+        this.occupancy.get(target) ?? [],
+      )
+    )
+      target = null;
+    if (
+      target === (selected.changeLaneId ?? null) &&
+      (!target ||
+        target !== view.current.changeLaneId ||
+        selected.changeProgress === view.current.changeProgress)
+    )
+      return selected;
+    const current = {
+      ...selected,
+      changeLaneId: target,
+      changeProgress:
+        target && target === view.current.changeLaneId
+          ? view.current.changeProgress
+          : 0,
+    };
+    const turnMask =
+      CS2_NAV_TARGET_FLAGS.TurnLeft | CS2_NAV_TARGET_FLAGS.TurnRight;
+    current.flags &= ~turnMask;
+    if (target) {
+      const destination = group.members.indexOf(target),
+        inverted = !!(
+          (this.selectionWorld!.lanes.get(lane.id)?.carLane?.flags ?? 0) & 4
+        );
+      current.flags |=
+        destination < origin !== inverted
+          ? CS2_NAV_TARGET_FLAGS.TurnLeft
+          : CS2_NAV_TARGET_FLAGS.TurnRight;
+    }
+    return current;
+  }
   private decision(view: CS2RuntimeVehicleView): CS2RuntimeDecision {
     const id = Number(view.id),
       trip = this.trips.get(id)!,
@@ -2195,7 +2297,7 @@ export class Cs2TrafficSimulation {
       priority: 100,
       pathMethods: 2,
     });
-    current = selected.current;
+    current = this.prepareEarlyLaneChange(trip, view, selected.current);
     queue = this.constrainArtificialSeams(current, selected.nextLanes);
     trip.owner.elementIndex = Math.min(
       trip.path.length,

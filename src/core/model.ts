@@ -965,7 +965,15 @@ export function parseProject(text: string): Project {
           !Number.isInteger(taper.lanes) ||
           taper.lanes < 1 ||
           (taper.lanes >= r.lanesStart &&
-            (taper.backwardLanes ?? taper.lanes) >= backwardStart(r)) ||
+            (taper.backwardLanes ?? taper.lanes) >= backwardStart(r) &&
+            Math.abs(taper.offset ?? 0) < 0.01 &&
+            (taper.medianWidth === undefined ||
+              Math.abs(taper.medianWidth - (r.median?.width ?? 0)) < 0.01)) ||
+          (taper.medianWidth !== undefined &&
+            (!r.twoWay ||
+              !finite(taper.medianWidth) ||
+              taper.medianWidth < 0 ||
+              taper.medianWidth > 6)) ||
           (taper.backwardLanes !== undefined &&
             (!r.twoWay ||
               !Number.isInteger(taper.backwardLanes) ||

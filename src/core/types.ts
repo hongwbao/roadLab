@@ -15,6 +15,8 @@ export type AutomaticTaper = {
   backwardLanes?: number;
   firstLane: number;
   offset: number;
+  /** Physical central-divider width at the attached endpoint, including zero. */
+  medianWidth?: number;
   span: number;
 };
 export type Road = {

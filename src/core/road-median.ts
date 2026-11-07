@@ -58,11 +58,11 @@ export function roadMedianRange(
     const continuous = project.roads.some(
       (other) =>
         other.id !== road.id &&
-        medianWidth(other) === medianWidth(road) &&
         ([0, 1] as const).some((at) => {
           const d = mul(tangent(other, at), at === 0 ? 1 : -1);
           return (
             dist(nodePoint(other, at), position) < 0.65 &&
+            Math.abs(medianWidth(other, at) - medianWidth(road, end)) < 0.01 &&
             out.x * d.x + out.z * d.z < -0.94 &&
             dist(
               boundaryPoint(road, backwardLaneCount(road), end),

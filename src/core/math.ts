@@ -122,9 +122,25 @@ export function totalAt(r: Road, t: number) {
     total += laneWidth(r, lane, t) / r.width;
   return total;
 }
-export const medianWidth = (r: Road) => (r.twoWay ? (r.median?.width ?? 0) : 0);
+export function medianWidth(r: Road, t?: number) {
+  const nominal = r.twoWay ? (r.median?.width ?? 0) : 0;
+  if (t === undefined || !r.twoWay || !r.autoTaper) return nominal;
+  let width = nominal;
+  for (const end of ["start", "end"] as const) {
+    const target = r.autoTaper?.[end]?.medianWidth;
+    if (target !== undefined)
+      width += (target - nominal) * taperWeight(r, t, end);
+  }
+  return Math.max(0, width);
+}
+export const medianExtent = (r: Road) =>
+  Math.max(
+    medianWidth(r),
+    r.autoTaper?.start?.medianWidth ?? 0,
+    r.autoTaper?.end?.medianWidth ?? 0,
+  );
 export const pavementWidth = (r: Road, t: number) =>
-  totalAt(r, t) * r.width + medianWidth(r);
+  totalAt(r, t) * r.width + medianWidth(r, t);
 /** Editable node reference stays stable when a carriageway grows on one side. */
 export function nodePoint(r: Road, t: number): V {
   const nominal = baseCountAt(r, t) + baseBackwardCountAt(r, t);
@@ -201,7 +217,7 @@ export function lanePoint(r: Road, lane: number, t: number): V {
       -pavementWidth(r, t) / 2 +
         preceding +
         laneWidth(r, lane, t) / 2 +
-        (lane >= backwardLaneCount(r) ? medianWidth(r) : 0),
+        (lane >= backwardLaneCount(r) ? medianWidth(r, t) : 0),
     ),
   );
 }
@@ -215,9 +231,9 @@ export function boundaryPoint(r: Road, index: number, t: number): V {
       -pavementWidth(r, t) / 2 +
         preceding +
         (index === backwardLaneCount(r)
-          ? medianWidth(r) / 2
+          ? medianWidth(r, t) / 2
           : index > backwardLaneCount(r)
-            ? medianWidth(r)
+            ? medianWidth(r, t)
             : 0),
     ),
   );

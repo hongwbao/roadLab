@@ -21,6 +21,7 @@ import {
   tangent,
   pavementWidth,
   medianWidth,
+  medianExtent,
 } from "../core/math";
 import { connections } from "../core/model";
 import { allowedTurns } from "../core/lane-rules";
@@ -327,6 +328,9 @@ export class Scene {
     material: T.Material = this.mats.asphalt,
     range = { start: 0, end: 1 },
     medianJunctions: readonly Junction[] = this.junctionList,
+    medianProject: Pick<Project, "roads"> = this.currentProject ?? {
+      roads: [r],
+    },
   ) {
     const n = Math.max(60, r.knots.length * 35),
       positions: number[] = [],
@@ -352,9 +356,9 @@ export class Scene {
     const mesh = new T.Mesh(g, material);
     mesh.userData = { road: r.id };
     group.add(mesh);
-    if (medianWidth(r))
+    if (medianExtent(r))
       renderRoadMedian(
-        this.currentProject ?? { roads: [r] },
+        medianProject,
         r,
         medianJunctions,
         group,
@@ -491,7 +495,7 @@ export class Scene {
       const roadSignature = JSON.stringify([
         r,
         range,
-        r.median ? roadMedianRange(p, r, this.junctionList) : undefined,
+        medianExtent(r) ? roadMedianRange(p, r, this.junctionList) : undefined,
         hidden,
         selected.has(r.id),
         settings.paths,
@@ -556,7 +560,7 @@ export class Scene {
             const t = range.start + ((range.end - range.start) * i) / 100;
             pts.push(boundaryPoint(r, l, t));
           }
-          if (medianWidth(r))
+          if (medianExtent(r))
             for (const side of [-1, 1]) {
               const edge = pts.map((p, i) =>
                 add(
@@ -566,7 +570,21 @@ export class Scene {
                       r,
                       range.start + ((range.end - range.start) * i) / 100,
                     ),
-                    side * (medianWidth(r) / 2 + 0.12),
+                    side *
+                      (medianWidth(
+                        r,
+                        range.start + ((range.end - range.start) * i) / 100,
+                      ) /
+                        2 +
+                        0.12 *
+                          Math.min(
+                            1,
+                            medianWidth(
+                              r,
+                              range.start +
+                                ((range.end - range.start) * i) / 100,
+                            ),
+                          )),
                   ),
                 ),
               );
@@ -914,7 +932,11 @@ export class Scene {
   showPreviews(
     roads: Road[],
     invalid = false,
-    options?: { replaceExisting?: boolean; junctions?: readonly Junction[] },
+    options?: {
+      replaceExisting?: boolean;
+      junctions?: readonly Junction[];
+      project?: Pick<Project, "roads">;
+    },
   ) {
     for (const id of this.previewHiddenRoads)
       this.roadRenderCache
@@ -953,6 +975,7 @@ export class Scene {
         invalid ? this.mats.invalid : this.mats.ghost,
         { start: 0, end: 1 },
         options?.junctions,
+        options?.project,
       );
       const color = new T.LineBasicMaterial({
         color: invalid ? 0xff7765 : 0x9de2ff,

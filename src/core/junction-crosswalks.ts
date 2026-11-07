@@ -60,7 +60,7 @@ export function roadCrosswalkQuads(road: Road, t: number) {
     half = pavementWidth(road, t) / 2 - 0.2;
   const divider = boundaryPoint(road, backwardLaneCount(road), t),
     medianOffset = (divider.x - c.x) * n.x + (divider.z - c.z) * n.z,
-    m = medianWidth(road);
+    m = medianWidth(road, t);
   const quads: V[][] = [];
   for (let x = -half + 0.35; x < half - 0.2; x += 1) {
     if (m && x + 0.24 > medianOffset - m / 2 && x - 0.24 < medianOffset + m / 2)

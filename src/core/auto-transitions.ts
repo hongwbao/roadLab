@@ -5,6 +5,9 @@ import {
   baseBackwardCountAt,
   backwardStart,
   backwardEnd,
+  backwardLaneCount,
+  boundaryPoint,
+  medianWidth,
   pavementWidth,
   nodePoint,
   center,
@@ -126,71 +129,114 @@ export function updateAutomaticTransitions(project: Project) {
       b.neighbours.push(a);
     }
   }
-  for (const wide of ends) {
-    if (wide.road.transitionMode !== "smooth" || wide.neighbours.length !== 1)
-      continue;
-    const narrow = wide.neighbours[0];
-    if (
-      narrow.neighbours.length !== 1 ||
-      wide.road.kind === "ramp" ||
-      narrow.road.kind === "ramp"
-    )
-      continue;
-    const count = baseCountAt(narrow.road, narrow.end),
-      maximum = baseCountAt(wide.road, wide.end);
-    const back = baseBackwardCountAt(narrow.road, narrow.end),
-      wideBack = baseBackwardCountAt(wide.road, wide.end);
-    if (
-      count > maximum ||
-      back > wideBack ||
-      (count === maximum && back === wideBack) ||
-      Math.abs(wide.road.width - narrow.road.width) > 0.2
-    )
-      continue;
-    // An endpoint sharing a real junction must keep its full approach width.
-    if (
-      [...nearby(wide.position, 0.7), ...nearby(narrow.position, 0.7)].some(
-        (other) =>
-          other.road.id !== wide.road.id &&
-          other.road.id !== narrow.road.id &&
-          (dist(other.position, wide.position) < 0.7 ||
-            dist(other.position, narrow.position) < 0.7),
-      )
-    )
-      continue;
-    const n = normal(wide.road, wide.end),
-      delta = sub(
-        wide.road.twoWay ? narrow.position : center(narrow.road, narrow.end),
-        wide.road.twoWay ? wide.position : center(wide.road, wide.end),
-      ),
+  const reference = (end: End) =>
+    end.road.twoWay
+      ? boundaryPoint(end.road, backwardLaneCount(end.road), end.end)
+      : center(end.road, end.end);
+  const apply = (
+    wide: End,
+    count: number,
+    back: number,
+    divider: number,
+    target: V,
+  ) => {
+    const maximum = baseCountAt(wide.road, wide.end),
+      wideBack = baseBackwardCountAt(wide.road, wide.end),
+      n = normal(wide.road, wide.end),
+      own = reference(wide),
+      delta = sub(target, own),
       offset = delta.x * n.x + delta.z * n.z;
+    if (
+      count === maximum &&
+      back === wideBack &&
+      Math.abs(divider - medianWidth(wide.road)) < 0.01 &&
+      Math.abs(offset) < 0.01
+    )
+      return;
     let firstLane = 0,
       best = Infinity;
-    if (!wide.road.twoWay) {
+    if (!wide.road.twoWay)
       for (let first = 0; first + count <= maximum; first++) {
         const a = lanePoint(wide.road, first, wide.end),
-          b = lanePoint(wide.road, first + count - 1, wide.end);
-        const distance = dist(
-          mul({ x: a.x + b.x, y: a.y + b.y, z: a.z + b.z }, 0.5),
-          narrow.position,
-        );
+          b = lanePoint(wide.road, first + count - 1, wide.end),
+          distance = dist(
+            mul({ x: a.x + b.x, y: a.y + b.y, z: a.z + b.z }, 0.5),
+            target,
+          );
         if (distance < best - 1e-6) {
           best = distance;
           firstLane = first;
         }
       }
-    }
-    if (Math.abs(offset) > ((maximum - count) * wide.road.width) / 2 + 0.5)
-      continue;
     const taper: AutomaticTaper = {
       lanes: count,
       ...(wide.road.twoWay ? { backwardLanes: back } : {}),
+      ...(wide.road.twoWay && Math.abs(divider - medianWidth(wide.road)) > 0.01
+        ? { medianWidth: divider }
+        : {}),
       firstLane,
       offset,
       span: 0.5,
     };
     wide.road.autoTaper ??= {};
     wide.road.autoTaper[wide.end === 0 ? "start" : "end"] = taper;
+  };
+  for (const a of ends) {
+    if (a.neighbours.length !== 1) continue;
+    const b = a.neighbours[0];
+    if (
+      b.index <= a.index ||
+      b.neighbours.length !== 1 ||
+      (a.road.transitionMode !== "smooth" &&
+        b.road.transitionMode !== "smooth") ||
+      Math.abs(a.road.width - b.road.width) > 0.2
+    )
+      continue;
+    // A real multi-arm junction keeps its full approach sections.
+    if (
+      [...nearby(a.position, 0.7), ...nearby(b.position, 0.7)].some(
+        (other) =>
+          other.road.id !== a.road.id &&
+          other.road.id !== b.road.id &&
+          (dist(other.position, a.position) < 0.7 ||
+            dist(other.position, b.position) < 0.7),
+      )
+    )
+      continue;
+    const af = baseCountAt(a.road, a.end),
+      ab = baseBackwardCountAt(a.road, a.end),
+      bf0 = baseCountAt(b.road, b.end),
+      bb0 = baseBackwardCountAt(b.road, b.end),
+      reversed = a.road.twoWay && a.end === b.end,
+      bf = reversed ? bb0 : bf0,
+      bb = reversed ? bf0 : bb0,
+      am = medianWidth(a.road),
+      bm = medianWidth(b.road),
+      aContains = af >= bf && ab >= bb,
+      bContains = bf >= af && bb >= ab;
+    if (!aContains && !bContains) {
+      // E.g.2+3 ->3+2: both collars meet at the common2+2 section.
+      const ar = reference(a),
+        br = reference(b),
+        target = mul({ x: ar.x + br.x, y: ar.y + br.y, z: ar.z + br.z }, 0.5),
+        f = Math.min(af, bf),
+        back = Math.min(ab, bb),
+        m = Math.min(am, bm);
+      apply(a, f, back, m, target);
+      apply(b, reversed ? back : f, reversed ? f : back, m, target);
+    } else {
+      let chooseA = aContains && !bContains;
+      if (aContains && bContains) {
+        chooseA =
+          Math.abs(am - bm) > 0.01
+            ? am > bm
+            : a.road.transitionMode !== b.road.transitionMode
+              ? a.road.transitionMode === "smooth"
+              : a.road.id < b.road.id;
+      }
+      if (chooseA) apply(a, bf, bb, bm, reference(b));
+      else apply(b, reversed ? ab : af, reversed ? af : ab, am, reference(a));
+    }
   }
   for (const road of project.roads) {
     if (!road.autoTaper) continue;
@@ -202,7 +248,19 @@ export function updateAutomaticTransitions(project: Project) {
       if (!taper) continue;
       const desired = Math.max(
         24,
-        (road.lanesStart - taper.lanes) * 12 + (road.speed / 3.6) * 1.2,
+        Math.max(
+          road.lanesStart - taper.lanes,
+          backwardStart(road) - (taper.backwardLanes ?? 0),
+        ) *
+          12 +
+          (road.speed / 3.6) * 1.2,
+        (Math.abs(taper.offset) +
+          Math.abs(
+            (taper.medianWidth ?? medianWidth(road)) - medianWidth(road),
+          ) /
+            2) *
+          12 +
+          (road.speed / 3.6) * 1.2,
       );
       const available = Math.min(desired, length * (both ? 0.42 : 0.8));
       taper.span = Math.max(

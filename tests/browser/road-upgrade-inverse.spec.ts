@@ -159,3 +159,69 @@ test("right click restores the last replaced section after a save and reload", a
   expect(restored.width).toBe(4);
   expect(restored.replacedSection).toBeUndefined();
 });
+
+test("equal-count median transitions change actual curb, pavement and source-lane curves; hovering keeps the saved map unchanged", async ({
+  page,
+}) => {
+  await seed(page);
+  await page.locator('[data-tool="upgrade"]').click();
+  await page.locator('[data-upgrade-mode="smooth"]').click();
+  await clickRoad(page, -40);
+  const geometry = await page.evaluate(() => {
+    const editor = (window as any).lab.editor;
+    let curb: any, pavement: any;
+    editor.scene.roads.traverse((item: any) => {
+      if (item.userData.median === "seam-b") curb = item;
+      else if (item.userData.road === "seam-b" && item.isMesh) pavement = item;
+    });
+    const a = Array.from(curb.geometry.attributes.position.array) as number[];
+    const widths: number[] = [];
+    for (let index = 0; index < a.length; index += 12)
+      widths.push(Math.abs(a[index + 5] - a[index + 2]));
+    const road = Array.from(
+      pavement.geometry.attributes.position.array,
+    ) as number[];
+    editor.simulation.prepareForRun();
+    const lane = [
+      ...editor.simulation.sourceEngine.network.lanes.values(),
+    ].find(
+      (lane: any) =>
+        lane.road === "seam-b" && lane.lane === 2 && lane.roadInterval[0] === 0,
+    ) as any;
+    return {
+      widths,
+      pavementStart: Math.abs(road[5] - road[2]),
+      laneStartZ: lane.curve.points[0].z,
+      taper: editor.project.roads[1].autoTaper.start,
+    };
+  });
+  expect(geometry.taper.medianWidth).toBe(0);
+  expect(geometry.widths[0]).toBeCloseTo(0);
+  expect(geometry.widths.some((width) => width > 0.1 && width < 1.9)).toBe(
+    true,
+  );
+  expect(Math.max(...geometry.widths)).toBeCloseTo(2);
+  expect(geometry.pavementStart).toBeCloseTo(16.7);
+  expect(geometry.laneStartZ).toBeCloseTo(2);
+  await page.locator('[data-upgrade-mode="median"]').click();
+  const before = await page.evaluate(() =>
+    JSON.stringify((window as any).lab.editor.project),
+  );
+  const point = await page.evaluate(() =>
+    (window as any).lab.worldToScreen({ x: -40, y: 0, z: 0 }),
+  );
+  await page.mouse.move(point.x, point.y);
+  expect(
+    await page.evaluate(() =>
+      JSON.stringify((window as any).lab.editor.project),
+    ),
+  ).toBe(before);
+  expect(
+    await page.evaluate(
+      () =>
+        (window as any).lab.editor.scene.preview.children.filter(
+          (item: any) => item.userData.median,
+        ).length,
+    ),
+  ).toBe(2);
+});

@@ -8,6 +8,8 @@ import {
   laneCount,
   lanePoint,
   laneWidth,
+  medianWidth,
+  pavementWidth,
   mul,
   normal,
   v,
@@ -32,6 +34,120 @@ const options = (lanes: number, twoWay = false) => ({
   speed: 60,
   twoWay,
   transitionMode: "smooth" as const,
+});
+
+it.each([
+  [0, 2],
+  [2, 0],
+  [2, 4],
+  [4, 2],
+  [0, 4],
+  [4, 0],
+])(
+  "smooths an equal-lane median change from%im to%im with continuous lane centres and real pavement",
+  (from, to) => {
+    const project = emptyProject();
+    project.roads = [
+      makeRoad(v(-100, 0), v(), {
+        twoWay: true,
+        transitionMode: "smooth",
+        ...(from ? { median: { kind: "concrete", width: from } } : {}),
+      }),
+      makeRoad(v(), v(100, 0), {
+        twoWay: true,
+        ...(to ? { median: { kind: "concrete", width: to } } : {}),
+      }),
+    ];
+    updateAutomaticTransitions(project);
+    const [a, b] = project.roads;
+    expect(medianWidth(a, 1)).toBe(medianWidth(b, 0));
+    expect(pavementWidth(a, 1)).toBe(pavementWidth(b, 0));
+    for (let lane = 0; lane < 4; lane++)
+      expect(dist(lanePoint(a, lane, 1), lanePoint(b, lane, 0))).toBeLessThan(
+        1e-8,
+      );
+    expect(medianWidth(a, 0)).toBe(from);
+    expect(medianWidth(b, 1)).toBe(to);
+    expect(parseProject(JSON.stringify(project))).toEqual(project);
+    const before = JSON.stringify(project);
+    updateAutomaticTransitions(project);
+    expect(JSON.stringify(project)).toBe(before);
+  },
+);
+
+it("smooths a lateral offset between equal-lane roads rather than requiring a lane-count change", () => {
+  const project = emptyProject();
+  project.roads = [
+    makeRoad(v(-100, 0), v(), { transitionMode: "smooth" }),
+    makeRoad(v(0, 3), v(100, 3)),
+  ];
+  updateAutomaticTransitions(project);
+  for (let lane = 0; lane < 2; lane++)
+    expect(
+      dist(
+        lanePoint(project.roads[0], lane, 1),
+        lanePoint(project.roads[1], lane, 0),
+      ),
+    ).toBeLessThan(1e-8);
+  expect(project.roads[0].autoTaper?.end?.offset).toBeCloseTo(3);
+  expect(center(project.roads[0], 0).z).toBe(0);
+  expect(center(project.roads[0], 0.9).z).toBeGreaterThan(0);
+  expect(center(project.roads[0], 0.9).z).toBeLessThan(3);
+  expect(parseProject(JSON.stringify(project))).toEqual(project);
+});
+
+it("carries an existing divider into a wider road with no nominal median and shrinks it smoothly", () => {
+  const project = emptyProject();
+  project.roads = [
+    makeRoad(v(-100, 0), v(), {
+      twoWay: true,
+      lanesStart: 1,
+      lanesEnd: 1,
+      median: { kind: "concrete", width: 2 },
+      transitionMode: "smooth",
+    }),
+    makeRoad(v(), v(100, 0), { twoWay: true }),
+  ];
+  updateAutomaticTransitions(project);
+  expect(medianWidth(project.roads[1], 0)).toBe(2);
+  expect(medianWidth(project.roads[1], 1)).toBe(0);
+  const active = (r: (typeof project.roads)[number], t: number) =>
+    Array.from({ length: laneCount(r) }, (_, lane) => lane)
+      .filter((lane) => laneWidth(r, lane, t) > 0.1)
+      .map((lane) => lanePoint(r, lane, t).z)
+      .sort((a, b) => a - b);
+  expect(active(project.roads[0], 1)).toEqual(active(project.roads[1], 0));
+});
+
+it("meets asymmetric3+2 and2+3 sections at a common2+2 collar instead of leaving a lateral step", () => {
+  const project = emptyProject();
+  project.roads = [
+    makeRoad(v(-100, 0), v(), {
+      twoWay: true,
+      lanesStart: 3,
+      lanesEnd: 3,
+      backwardLanesStart: 2,
+      backwardLanesEnd: 2,
+      transitionMode: "smooth",
+    }),
+    makeRoad(v(), v(100, 0), {
+      twoWay: true,
+      lanesStart: 2,
+      lanesEnd: 2,
+      backwardLanesStart: 3,
+      backwardLanesEnd: 3,
+    }),
+  ];
+  updateAutomaticTransitions(project);
+  for (const road of project.roads) expect(road.autoTaper).toBeDefined();
+  const active = (r: (typeof project.roads)[number], t: number) =>
+    Array.from({ length: laneCount(r) }, (_, lane) => lane)
+      .filter((lane) => laneWidth(r, lane, t) > 0.1)
+      .map((lane) => lanePoint(r, lane, t).z)
+      .sort((a, b) => a - b);
+  expect(active(project.roads[0], 1)).toEqual([-6, -2, 2, 6]);
+  expect(active(project.roads[1], 0)).toEqual([-6, -2, 2, 6]);
+  expect(parseProject(JSON.stringify(project))).toEqual(project);
 });
 function pair(from = 2, to = 3, twoWay = false) {
   const p = emptyProject();
