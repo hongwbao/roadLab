@@ -4,6 +4,7 @@ import {
   buildEarlyLanePlan,
   chooseEarlyLane,
   laneChangeGapClear,
+  earlyLaneSpeedLimit,
   type EarlyLanePlan,
 } from "./early-lane-planning";
 import { buildJunctions, type Junction } from "../core/junctions";
@@ -358,6 +359,7 @@ export class Cs2TrafficSimulation {
     number,
     { groups: Trip["groups"]; index: number; plan: EarlyLanePlan | null }
   >();
+  private authoredLaneRoads = new Set<string>();
   private reservedNavigation = new Map<
     number,
     { current: CS2NavigationCurrentState; nextLanes: CS2NavigationQueuedLane[] }
@@ -485,6 +487,9 @@ export class Cs2TrafficSimulation {
     updateAutomaticTransitions(project);
     normalizePorts(project);
     this.project = project;
+    this.authoredLaneRoads = new Set(
+      (project.junctionLaneConnections ?? []).map((rule) => rule.from.road),
+    );
     this.roads = new Map(project.roads.map((road) => [road.id, road]));
     this.arcs = new Map(project.roads.map((road) => [road.id, arcTable(road)]));
     this.junctions = buildJunctions(project);
@@ -2145,6 +2150,7 @@ export class Cs2TrafficSimulation {
       lane = network.lanes.get(view.current.laneId!)!,
       group = network.groups.get(lane.group)!;
     if (
+      !this.authoredLaneRoads.size ||
       lane.kind !== "road" ||
       !group.allowChange ||
       selected.laneId !== view.current.laneId ||
@@ -2155,7 +2161,12 @@ export class Cs2TrafficSimulation {
     const plan =
       cached?.groups === trip.groups && cached.index === trip.groupIndex
         ? cached.plan
-        : buildEarlyLanePlan(network, trip.groups, trip.groupIndex);
+        : buildEarlyLanePlan(
+            network,
+            trip.groups,
+            trip.groupIndex,
+            this.authoredLaneRoads,
+          );
     if (
       !cached ||
       cached.groups !== trip.groups ||
@@ -2166,6 +2177,7 @@ export class Cs2TrafficSimulation {
         index: trip.groupIndex,
         plan,
       });
+    if (!plan) return selected;
     const row = this.physical.get(trip.id),
       speed = speedOf(view),
       remaining =
@@ -2426,7 +2438,27 @@ export class Cs2TrafficSimulation {
         }
       }
     if (!stop) iterator.iterateTarget(iterator.state.currentPosition);
-    const maxSpeed = iterator.state.maxSpeed;
+    let maxSpeed = iterator.state.maxSpeed;
+    const lanePlan = this.earlyLanePlans.get(id)?.plan;
+    if (
+      lane.kind === "road" &&
+      lanePlan &&
+      this.earlyLanePlans.get(id)?.index === trip.groupIndex
+    ) {
+      const remaining =
+        this.curveS(lane.id, trip.groups[trip.groupIndex].interval[1]) -
+        (this.physical.get(id)?.s ?? 0);
+      maxSpeed = Math.min(
+        maxSpeed,
+        earlyLaneSpeedLimit(
+          lanePlan,
+          network.groups.get(lane.group)!.members,
+          lane.id,
+          remaining,
+          !!current.changeLaneId,
+        ),
+      );
+    }
     const checked = cs2CheckLaneSelectionBlocker({
       world: this.selectionWorld!,
       current,

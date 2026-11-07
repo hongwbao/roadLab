@@ -11,6 +11,7 @@ export function buildEarlyLanePlan(
   network: Cs2CompiledNetwork,
   groups: readonly Cs2NetworkPathGroup[],
   index: number,
+  authoredRoads?: ReadonlySet<string>,
 ): EarlyLanePlan | null {
   let distance = 0;
   for (let end = index + 1; end < groups.length && distance <= 600; end++) {
@@ -23,7 +24,12 @@ export function buildEarlyLanePlan(
       const usable = previous.laneIds.filter((id) =>
         (network.successors.get(id) ?? []).some((to) => next.has(to)),
       );
-      if (usable.length && usable.length < previous.laneIds.length) {
+      const fromRoad = network.lanes.get(previous.laneIds[0])?.road;
+      if (
+        usable.length &&
+        usable.length < previous.laneIds.length &&
+        (!authoredRoads || (fromRoad && authoredRoads.has(fromRoad)))
+      ) {
         let allowed = new Set(group.laneIds);
         for (let step = end - 1; step >= index; step--) {
           allowed = new Set(
@@ -81,4 +87,30 @@ export function laneChangeGapClear(
       ? gap >= Math.max(6, speed * 1.1)
       : -gap >= Math.max(6, other.speed * 1.3);
   });
+}
+
+/** Leave time for the remaining adjacent moves and wait before a restricted
+ * connector when the required lane is still occupied. A started move may creep. */
+export function earlyLaneSpeedLimit(
+  plan: EarlyLanePlan | null,
+  members: readonly string[],
+  current: string,
+  remaining: number,
+  changing: boolean,
+) {
+  if (!plan || (plan.allowed.includes(current) && !changing)) return Infinity;
+  const origin = members.indexOf(current),
+    targets = plan.allowed
+      .map((id) => members.indexOf(id))
+      .filter((i) => i >= 0);
+  if (origin < 0 || !targets.length) return Infinity;
+  const steps = Math.max(
+      1,
+      Math.min(...targets.map((i) => Math.abs(i - origin))),
+    ),
+    distance = Math.max(0, remaining + plan.distanceAfterCurrent);
+  return Math.min(
+    Math.sqrt(6 * Math.max(0, distance - (changing ? 2 : 8))),
+    distance / (steps * 5 + 3),
+  );
 }

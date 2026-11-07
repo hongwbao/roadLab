@@ -1,5 +1,6 @@
 import { expect, it } from "vitest";
 import { mkdirSync, writeFileSync } from "node:fs";
+import { bodiesOverlap } from "../src/simulation/collision";
 import { lanePoint, v } from "../src/core/math";
 import { emptyProject, makeRoad } from "../src/core/model";
 import { Cs2TrafficSimulation } from "../src/simulation/cs2-simulation";
@@ -45,7 +46,7 @@ it("honours upstream distance and waits for a safe gap ahead and behind", () => 
   ).toBe(true);
 });
 
-it("moves an actual car toward a right-only exit early, one lane at a time, and completes the turn", () => {
+function restrictedTurn() {
   const project = emptyProject();
   const approach = makeRoad(v(), v(600, 0), {
     id: "approach",
@@ -60,6 +61,15 @@ it("moves an actual car toward a right-only exit early, one lane at a time, and 
     speed: 40,
   });
   project.roads = [approach, exit];
+  project.junctionLaneConnections = [0, 1, 2, 3].map((lane) => ({
+    from: { road: approach.id, end: 1 as const, lane },
+    to: lane === 3 ? [{ road: exit.id, end: 0 as const, lane: 0 }] : [],
+  }));
+  return { project, approach, exit };
+}
+
+it("moves an actual car toward a right-only exit early, one lane at a time, and completes the turn", () => {
+  const { project, approach, exit } = restrictedTurn();
   const sim = new Cs2TrafficSimulation({ synchronousPathsOnlyForTests: true });
   sim.configure(project);
   const car = {
@@ -118,5 +128,77 @@ it("moves an actual car toward a right-only exit early, one lane at a time, and 
       2,
     ),
   );
+  sim.dispose();
+});
+
+it("waits for an occupied adjacent lane and keeps two actual displayed car bodies separate", () => {
+  const { project, approach, exit } = restrictedTurn();
+  const sim = new Cs2TrafficSimulation({ synchronousPathsOnlyForTests: true });
+  sim.configure(project);
+  const make = (id: number, lane: number) => ({
+    id,
+    route: [
+      { road: approach.id, direction: 1 as const, inLane: lane, outLane: 3 },
+      { road: exit.id, direction: 1 as const, inLane: 0, outLane: 0 },
+    ],
+    step: 0,
+    s: 300,
+    lane,
+    speed: 15,
+    age: 0,
+    color: 0,
+    position: lanePoint(approach, lane, 0.5),
+    heading: Math.PI / 2,
+    pitch: 0,
+  });
+  const first = make(9, 0),
+    second = make(10, 1);
+  sim.adoptVehicles([first, second]);
+  sim.running = true;
+  sim.update(0.5);
+  expect(sim.vehicles.find((car) => car.id === 9)!.laneChange).toBeUndefined();
+  for (let i = 0; i < 360; i++) {
+    sim.update(0.05);
+    const cars = sim.renderVehicles();
+    if (cars.length === 2 && bodiesOverlap(cars[0], cars[1], 0)) {
+      mkdirSync("artifacts", { recursive: true });
+      writeFileSync(
+        "artifacts/early-gap-collision.json",
+        JSON.stringify(
+          {
+            i,
+            cars: cars.map((c) => ({
+              id: c.id,
+              position: c.position,
+              s: c.s,
+              lane: c.lane,
+              laneChange: c.laneChange,
+              speed: c.speed,
+              step: c.step,
+              heading: c.heading,
+            })),
+            runtime: sim.runtime!.readVehicles().map((v) => ({
+              id: v.id,
+              current: v.current,
+              next: v.nextLanes.slice(0, 3),
+              position: v.state.position,
+            })),
+          },
+          null,
+          2,
+        ),
+      );
+    }
+    if (cars.length === 2)
+      expect(bodiesOverlap(cars[0], cars[1], 0)).toBe(false);
+  }
+  expect(sim.failed).toBe(0);
+  for (let i = 0; i < 1200 && sim.completed < 2; i++) {
+    sim.update(0.05);
+    const cars = sim.renderVehicles();
+    if (cars.length === 2)
+      expect(bodiesOverlap(cars[0], cars[1], 0)).toBe(false);
+  }
+  expect(sim.completed).toBe(2);
   sim.dispose();
 });
