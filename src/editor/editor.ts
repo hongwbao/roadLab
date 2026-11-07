@@ -1171,6 +1171,23 @@ export class Editor {
       for (const t of [0, 1]) {
         const q = center(r, t);
         for (const old of [...this.project.roads]) {
+          const points = old.knots.flatMap((k) => [
+            k.p,
+            k.incoming,
+            k.outgoing,
+          ]);
+          const padding =
+            laneCount(old) * old.width +
+            Math.abs(old.sectionOffset ?? 0) +
+            (old.widthOrigin ?? 0) * old.width +
+            1;
+          if (
+            q.x < Math.min(...points.map((p) => p.x)) - padding ||
+            q.x > Math.max(...points.map((p) => p.x)) + padding ||
+            q.z < Math.min(...points.map((p) => p.z)) - padding ||
+            q.z > Math.max(...points.map((p) => p.z)) + padding
+          )
+            continue;
           const n = nearest(old, q);
           if (
             n.distance < 0.45 &&

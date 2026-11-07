@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { addRoadsideLanes } from "../src/core/road-sections";
 import {
+  arcTable,
   backwardStart,
   backwardEnd,
   boundaryPoint,
@@ -178,6 +179,16 @@ describe("roadside expansion and asymmetric sections", () => {
     expect(sim.generated).toBeGreaterThan(0);
     expect(sim.completed).toBeGreaterThan(0);
     sim.dispose();
+  });
+  it("recomputes driving distance after dragging an existing curve handle", () => {
+    const r = makeRoad(v(-50, 0), v(50, 0));
+    const straight = arcTable(r).at(-1)!.s;
+    r.knots[0].outgoing.z = 45;
+    r.knots[1].incoming.z = 45;
+    expect(arcTable(r).at(-1)!.s).toBeGreaterThan(straight + 10);
+    r.knots[0].outgoing.z = 0;
+    r.knots[1].incoming.z = 0;
+    expect(arcTable(r).at(-1)!.s).toBeCloseTo(straight, 8);
   });
   it.each([NaN, 0, 7, 2.5])("rejects an invalid reverse lane count %s", (n) => {
     const p = emptyProject();

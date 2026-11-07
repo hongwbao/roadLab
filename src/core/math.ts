@@ -304,7 +304,15 @@ export function splitCurve(r: Road, t: number): [Road, Road] {
   right.knots.unshift({ p: mid, incoming: s0, outgoing: s1, at: 0 });
   return [left, right];
 }
+const arcCache = new WeakMap<
+  Road,
+  { signature: string; samples: { t: number; s: number }[] }
+>();
+/** Read-only by contract; invalidate even when an existing knot is dragged in place. */
 export function arcTable(r: Road) {
+  const signature = JSON.stringify(r.knots),
+    cached = arcCache.get(r);
+  if (cached?.signature === signature) return cached.samples;
   const samples = [{ t: 0, s: 0 }];
   let s = 0,
     p = point(r, 0);
@@ -314,6 +322,7 @@ export function arcTable(r: Road) {
     samples.push({ t: i / 200, s });
     p = q;
   }
+  arcCache.set(r, { signature, samples });
   return samples;
 }
 export function arcParameter(

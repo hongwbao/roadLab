@@ -61,6 +61,10 @@ export class Scene {
   private currentProject?: Project;
   private rebuildSignature = "";
   private topologySignature = "";
+  private junctionRenderCache = new Map<
+    string,
+    { signature: string; objects: T.Object3D[] }
+  >();
   private roadRenderCache = new Map<
     string,
     { signature: string; groups: [T.Group, T.Group, T.Group, T.Group] }
@@ -410,7 +414,15 @@ export class Scene {
     this.ranges = new Map(
       p.roads.map((r) => [r.id, roadRange(r, this.junctionList)]),
     );
-    this.clear(this.junctionMesh);
+    this.junctionMesh.clear();
+    const junctionIds = new Set(this.junctionList.map((j) => j.id));
+    for (const [id, cached] of this.junctionRenderCache)
+      if (!junctionIds.has(id)) {
+        const group = new T.Group();
+        group.add(...cached.objects);
+        this.clear(group);
+        this.junctionRenderCache.delete(id);
+      }
     this.clear(this.portGroup);
     this.clear(this.hover);
     this.hoverId = undefined;
@@ -736,6 +748,21 @@ export class Scene {
       }
     }
     for (const j of this.junctionList) {
+      const signature = JSON.stringify([
+        j,
+        j.arms.map((a) => p.roads.find((r) => r.id === a.road)),
+      ]);
+      const cached = this.junctionRenderCache.get(j.id);
+      if (cached?.signature === signature) {
+        this.junctionMesh.add(...cached.objects);
+        continue;
+      }
+      if (cached) {
+        const group = new T.Group();
+        group.add(...cached.objects);
+        this.clear(group);
+      }
+      const junctionGroup = new T.Group();
       const vertices = j.polygon.map((p) => new T.Vector2(p.x, p.z)),
         triangles = T.ShapeUtils.triangulateShape(vertices, []).flat(),
         positions = j.polygon.flatMap((p) => [p.x, j.position.y + 0.018, p.z]);
@@ -748,7 +775,7 @@ export class Scene {
       geometry.computeVertexNormals();
       const mesh = new T.Mesh(geometry, this.mats.asphalt);
       mesh.userData = { junction: j.id };
-      this.junctionMesh.add(mesh);
+      junctionGroup.add(mesh);
       if (j.crosswalks)
         for (const arm of j.arms) {
           const r = p.roads.find((r) => r.id === arm.road)!,
@@ -783,9 +810,12 @@ export class Scene {
               new T.MeshBasicMaterial({ color: 0xf5f5e9, side: T.DoubleSide }),
             );
             m.userData = { crosswalk: j.id };
-            this.junctionMesh.add(m);
+            junctionGroup.add(m);
           }
         }
+      const objects = [...junctionGroup.children];
+      this.junctionRenderCache.set(j.id, { signature, objects });
+      this.junctionMesh.add(...objects);
     }
     for (const port of p.ports) {
       const r = p.roads.find((r) => r.id === port.road);
