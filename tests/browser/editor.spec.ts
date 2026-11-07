@@ -109,7 +109,7 @@ test("game HUD shows road asset thumbnails at bottom center and no retired tools
   await open(page);
   await expect.poll(async () => (await state(page)).routes).toBe(2);
   await expect(page.locator("#road-dock")).toBeVisible();
-  expect(await page.locator(".road-asset svg").count()).toBe(3);
+  expect(await page.locator(".road-asset svg").count()).toBe(5);
   expect(
     await page
       .locator(
@@ -141,9 +141,12 @@ test("camera supports keyboard and requested mouse gestures", async ({
   const distance = (a: number[], b: number[]) =>
     Math.hypot(...a.map((value, index) => value - b[index]));
 
+  await page.locator("#viewport").focus();
   const start = await pose();
   await page.keyboard.down("w");
-  await page.waitForTimeout(250);
+  await expect
+    .poll(async () => distance(start.target, (await pose()).target))
+    .toBeGreaterThan(3);
   await page.keyboard.up("w");
   const moved = await pose();
   expect(distance(start.target, moved.target)).toBeGreaterThan(3);
@@ -401,9 +404,13 @@ test("two-way roads have yellow centerlines and elevated supports clear lower ro
       candidate.children.some((child: any) => child.userData.road === upper.id),
     );
     return {
-      yellow: scene.details.children.filter(
-        (child: any) => child.material?.color?.getHex() === 0xf3c454,
-      ).length,
+      yellow: (() => {
+        let count = 0;
+        scene.details.traverse((child: any) => {
+          if (child.material?.color?.getHex() === 0xf3c454) count++;
+        });
+        return count;
+      })(),
       pillars: group.children
         .filter((child: any) => child.geometry?.type === "CylinderGeometry")
         .map((child: any) => ({ x: child.position.x, z: child.position.z })),

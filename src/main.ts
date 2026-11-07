@@ -246,6 +246,12 @@ function render() {
   document
     .querySelector<HTMLElement>("#toast")!
     .classList.toggle("signal-toast", editor.tool === "signal");
+  document
+    .querySelector("#toast")!
+    .classList.toggle(
+      "edit-toast",
+      editor.building || editor.tool === "upgrade" || editor.tool === "widen",
+    );
   const name = document.querySelector<HTMLInputElement>("#project-name")!;
   if (document.activeElement !== name) name.value = editor.project.name;
   document.querySelector("#scene-name")!.textContent = editor.project.name;
@@ -502,6 +508,7 @@ document.addEventListener("click", (e) => {
     editor.setTool(
       tool === "delete" && editor.tool === "delete" ? "select" : tool,
     );
+    if (tool === "widen") category = getAsset(editor.assetId).category;
     if (tool === "boundary") dockOpen = false;
     if (
       tool === "line" ||

@@ -202,18 +202,47 @@ export function junctionLaneLayout(
     links: candidates.filter((link) => enabled.has(link.id)),
   };
 }
-function candidateIndex(project: JunctionLaneProject) {
-  const sources = new Map<
-    string,
-    { ref: JunctionLaneEndpoint; links: Map<string, JunctionLaneLink> }
-  >();
-  for (const junction of buildJunctions(project as Project)) {
-    for (const port of junctionLanePorts(project, junction))
-      if (port.kind === "in")
-        sources.set(port.key, { ref: port, links: new Map() });
-    for (const link of junctionLaneCandidates(project, junction))
-      sources.get(link.from.key)?.links.set(link.to.key, link);
+type LaneCandidate = Pick<JunctionLaneLink, "id" | "from" | "to">;
+const candidateCache = new WeakMap<
+  JunctionLaneProject,
+  {
+    signature: string;
+    index: Map<
+      string,
+      { ref: JunctionLaneEndpoint; links: Map<string, LaneCandidate> }
+    >;
   }
+>();
+function candidateIndex(project: JunctionLaneProject) {
+  // Routing validation needs endpoint pairs, not thousands of sampled curves.
+  // Rules and phase timings cannot change their geometry; keep them out of the key.
+  const signature = JSON.stringify([
+    project.roads,
+    project.signals?.map((s) => [s.id, s.arms]),
+  ]);
+  const cached = candidateCache.get(project);
+  if (cached?.signature === signature) return cached.index;
+  const sources = new Map<
+      string,
+      { ref: JunctionLaneEndpoint; links: Map<string, LaneCandidate> }
+    >(),
+    roads = roadMap(project);
+  for (const junction of buildJunctions(project as Project)) {
+    const ports = junctionLanePorts(project, junction),
+      out = ports.filter((p) => p.kind === "out");
+    for (const from of ports.filter((p) => p.kind === "in")) {
+      const source = { ref: from, links: new Map<string, LaneCandidate>() };
+      sources.set(from.key, source);
+      for (const to of out)
+        if (pairAllowed(roads, from, to))
+          source.links.set(to.key, {
+            id: junctionLaneConnectionId(from, to),
+            from,
+            to,
+          });
+    }
+  }
+  candidateCache.set(project, { signature, index: sources });
   return sources;
 }
 export function junctionLaneRule(

@@ -1780,3 +1780,13 @@ dialog dd {
   background: var(--panel-raised);
   border-color: var(--blue);
 }
+
+#toast.edit-toast {
+  top: 80px;
+  bottom: auto;
+}
+@media (max-width: 600px) {
+  #toast.edit-toast {
+    top: 110px;
+  }
+}
