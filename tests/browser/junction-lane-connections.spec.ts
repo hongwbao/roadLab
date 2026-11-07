@@ -33,6 +33,8 @@ async function junction(page: Page, twoLanes = false) {
   await page.mouse.click(p.x, p.y);
   await expect(page.locator("#turn-panel h2")).toHaveText("路口车道连线");
 }
+const prepare = (page: Page) =>
+  page.evaluate(() => (window as any).lab.editor.simulation.prepareForRun());
 const project = (page: Page) =>
   page.evaluate(() => (window as any).lab.getState().project);
 const point = (page: Page, p: { x: number; y: number; z: number }) =>
@@ -68,6 +70,7 @@ test("junction dots add a previously unavailable destination, remove it, save a 
     lane: link.to.lane,
     end: link.to.end,
   });
+  await prepare(page);
   expect(
     await page.evaluate(
       (id) =>
@@ -86,6 +89,7 @@ test("junction dots add a previously unavailable destination, remove it, save a 
   await page.locator('[data-junction-lane-action="ban-lane"]').click();
   expect((await rule()).to).toEqual([]);
   const prefix = `${link.from.road}:${link.from.lane}>`;
+  await prepare(page);
   expect(
     await page.evaluate(
       (prefix) =>
@@ -121,6 +125,7 @@ test("junction dots add a previously unavailable destination, remove it, save a 
   await expect(page.locator(".junction-lane-closed")).toBeVisible();
   await page.locator('[data-junction-lane-action="restore-lane"]').click();
   expect(await rule()).toBeUndefined();
+  await prepare(page);
   expect(
     await page.evaluate(
       (prefix) =>
@@ -166,6 +171,7 @@ test("keyboard lane names preserve focus and the open helper across graph edits 
     "open",
     "",
   );
+  await prepare(page);
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= innerWidth,
@@ -173,6 +179,7 @@ test("keyboard lane names preserve focus and the open helper across graph edits 
   ).toBe(true);
   await page.locator('[data-junction-lane-action="leave"]').click();
   await expect(page.locator("#turn-panel")).toBeHidden();
+  await prepare(page);
   expect(
     await page.evaluate(
       () => (window as any).lab.editor.junctionLaneTool.overlay.group.visible,

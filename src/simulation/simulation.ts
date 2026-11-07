@@ -9,6 +9,8 @@ import {
   dist,
   laneCount,
   laneDirection,
+  laneEntryT,
+  laneExitT,
   lanePoint,
   laneWidth,
   lerp,
@@ -16,6 +18,7 @@ import {
   smooth,
   tangent,
 } from "../core/math";
+import { turnOf } from "../core/lane-rules";
 import { connections, normalizePorts } from "../core/model";
 import { SIGNAL_STOP_OFFSET } from "../core/traffic-signals";
 import {
@@ -446,6 +449,13 @@ export class Simulation {
   /** Source runtime is the default; legacy remains available for comparison. */
   trafficModel: "cs2-derived" | "legacy" = "cs2-derived";
   private sourceEngine?: Cs2TrafficSimulation;
+  private deferredProject?: Project;
+  get needsPreparation() {
+    return !!this.deferredProject;
+  }
+  private get usesSourceRuntime() {
+    return this.trafficModel === "cs2-derived";
+  }
   private sourceVehicles?: Vehicle[];
   vehicles: Vehicle[] = [];
   running = false;
@@ -523,14 +533,109 @@ export class Simulation {
     junctionEntries: 0,
     simultaneousJunctions: 0,
   };
-  configure(p: Project) {
+  /** Editing needs topology and signal previews, not a compiled vehicle runtime.
+   * Build that runtime once when testing starts, using the latest edit only. */
+  prepareForEditing(p: Project) {
     this.sourceEngine?.dispose();
     this.sourceEngine = undefined;
     this.sourceVehicles = undefined;
     this.reset();
+    this.project = p;
+    this.deferredProject = p;
+    this.roads = new Map(p.roads.map((r) => [r.id, r]));
+    this.junctions = buildJunctions(p);
+    this.cs = connections(p);
+    const arms = new Map(
+      this.junctions.flatMap((j) =>
+        j.arms.map((a) => [`${a.road}:${a.end}`, j] as const),
+      ),
+    );
+    const movements: SignalMovement[] = [];
+    for (const link of this.cs) {
+      const a = this.roads.get(link.from.road)!,
+        b = this.roads.get(link.to.road)!;
+      const end = laneExitT(a, link.from.lane) as 0 | 1,
+        entry = laneEntryT(b, link.to.lane),
+        j = arms.get(`${a.id}:${end}`);
+      if (!j || arms.get(`${b.id}:${entry}`)?.id !== j.id) continue;
+      const ad = mul(tangent(a, end), laneDirection(a, link.from.lane)),
+        bd = mul(tangent(b, entry), laneDirection(b, link.to.lane));
+      movements.push({
+        id: link.id,
+        junction: j.id,
+        road: a.id,
+        end,
+        turn: turnOf(ad, bd),
+        startDirection: ad,
+        endDirection: mul(bd, -1),
+      });
+    }
+    this.trafficLights = new TrafficLightController();
+    this.trafficLights.configure(this.junctions, p.signals, movements);
+    this.routes = [];
+    const cache: RoutingCache = { changes: new Map(), links: new Map() };
+    for (const source of p.ports.filter(isSource))
+      for (const sink of p.ports.filter(isSink)) {
+        if (source.road === sink.road && source.end === sink.end) continue;
+        const route = findRoute(
+          p,
+          source,
+          sink,
+          this.cs,
+          undefined,
+          undefined,
+          0,
+          undefined,
+          cache,
+        );
+        if (route) this.routes.push({ source, sink, route });
+        else this.unreachable++;
+      }
+  }
+  prepareForRun() {
+    if (this.deferredProject) this.configure(this.deferredProject);
+  }
+  configure(p: Project) {
+    this.sourceEngine?.dispose();
+    this.sourceEngine = undefined;
+    this.sourceVehicles = undefined;
+    this.deferredProject = undefined;
+    this.reset();
     this.curviness.clear();
     updateAutomaticTransitions(p);
     normalizePorts(p);
+    if (this.usesSourceRuntime) {
+      this.project = p;
+      this.roads = new Map(p.roads.map((r) => [r.id, r]));
+      this.sourceEngine = new Cs2TrafficSimulation({
+        synchronousPathsOnlyForTests: typeof window === "undefined",
+      });
+      this.sourceEngine.configure(p);
+      this.sourceEngine.running = this.running;
+      this.sourceEngine.speed = this.speed;
+      this.syncSourceEngine();
+      // Compatibility poses/debug consumers use these cheap road metrics too;
+      // the retired connector/conflict network is intentionally not built.
+      this.arcs = new Map(p.roads.map((r) => [r.id, arcTable(r)]));
+      this.lengths = new Map(
+        p.roads.map((r) => [r.id, this.arcs.get(r.id)!.at(-1)!.s]),
+      );
+      this.trims = new Map(
+        p.roads.map((r) => {
+          const arms = this.junctions
+            .flatMap((j) => j.arms)
+            .filter((a) => a.road === r.id);
+          return [
+            r.id,
+            {
+              start: arms.find((a) => a.end === 0)?.trim ?? 0,
+              end: arms.find((a) => a.end === 1)?.trim ?? 0,
+            },
+          ];
+        }),
+      );
+      return;
+    }
     this.sourceFlow.configure(p.roads);
     this.routingCache.model = this.trafficModel;
     this.routingCache.flowOffsets = this.sourceFlow.offsets;
@@ -681,16 +786,6 @@ export class Simulation {
       }
     this.sourceConflicts.configure(overlapMovements);
     this.trafficLights.configure(this.junctions, p.signals, signalMovements);
-    if (this.trafficModel === "cs2-derived") {
-      this.sourceEngine = new Cs2TrafficSimulation({
-        synchronousPathsOnlyForTests: typeof window === "undefined",
-      });
-      this.sourceEngine.configure(p);
-      this.sourceEngine.running = this.running;
-      this.sourceEngine.speed = this.speed;
-      this.syncSourceEngine();
-      return;
-    }
     for (const source of p.ports.filter(isSource))
       for (const sink of p.ports.filter(isSink)) {
         if (source.road === sink.road && source.end === sink.end) continue;
@@ -2003,6 +2098,7 @@ export class Simulation {
     );
   }
   update(delta: number) {
+    if (this.running && this.deferredProject) this.prepareForRun();
     if (this.sourceEngine) {
       const source = this.sourceEngine;
       if (this.vehicles !== this.sourceVehicles)

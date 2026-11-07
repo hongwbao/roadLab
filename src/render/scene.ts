@@ -6,6 +6,7 @@ import {
   arcParameter,
   arcTable,
   boundaryPoint,
+  backwardLaneCount,
   center,
   dist,
   laneCount,
@@ -58,6 +59,12 @@ export class Scene {
   private junctionList: Junction[] = [];
   private ranges = new Map<string, { start: number; end: number }>();
   private currentProject?: Project;
+  private rebuildSignature = "";
+  private topologySignature = "";
+  private roadRenderCache = new Map<
+    string,
+    { signature: string; groups: [T.Group, T.Group, T.Group, T.Group] }
+  >();
   private hoverId?: string;
   private hoverMode?: string;
   private cameraKeys = new Set<string>();
@@ -383,7 +390,22 @@ export class Scene {
     showHandles = true,
   ) {
     this.currentProject = p;
-    this.junctionList = buildJunctions(p);
+    const topologySignature = JSON.stringify(p.roads);
+    const signature = JSON.stringify([
+      topologySignature,
+      p.ports,
+      p.signals,
+      [...selected],
+      settings,
+      showHandles,
+      settings.paths ? p.junctionLaneConnections : undefined,
+    ]);
+    if (signature === this.rebuildSignature) return;
+    this.rebuildSignature = signature;
+    if (topologySignature !== this.topologySignature) {
+      this.junctionList = buildJunctions(p);
+      this.topologySignature = topologySignature;
+    }
     this.trafficLights.rebuild(p, this.junctionList);
     this.ranges = new Map(
       p.roads.map((r) => [r.id, roadRange(r, this.junctionList)]),
@@ -392,10 +414,23 @@ export class Scene {
     this.clear(this.portGroup);
     this.clear(this.hover);
     this.hoverId = undefined;
-    this.clear(this.roads);
-    this.clear(this.overlays);
-    this.clear(this.details);
-    this.clear(this.handles);
+    // Detach cached road groups; dispose only removed/changed geometry.
+    for (const group of [
+      this.roads,
+      this.overlays,
+      this.details,
+      this.handles,
+    ]) {
+      for (const child of group.children)
+        if (child instanceof T.Line) child.geometry.dispose();
+      group.clear();
+    }
+    const ids = new Set(p.roads.map((r) => r.id));
+    for (const [id, entry] of this.roadRenderCache)
+      if (!ids.has(id)) {
+        entry.groups.forEach((g) => this.clear(g));
+        this.roadRenderCache.delete(id);
+      }
     this.clear(this.routePreview);
     this.clear(this.roadNodes);
     if (showHandles) {
@@ -422,12 +457,41 @@ export class Scene {
     }
     this.ground.children[1].visible = settings.grid;
     for (const r of p.roads) {
-      const group = new T.Group();
       const height = (point(r, 0).y + point(r, 1).y) / 2;
       const hidden =
         settings.layer !== -1 && Math.abs(height - settings.layer * 8) > 5;
       if (hidden && !settings.ghost) continue;
       const range = this.ranges.get(r.id)!;
+      const roadSignature = JSON.stringify([
+        r,
+        range,
+        hidden,
+        selected.has(r.id),
+        settings.paths,
+        settings.arrows,
+        showHandles,
+      ]);
+      const cached = this.roadRenderCache.get(r.id);
+      if (cached?.signature === roadSignature) {
+        const [road, overlays, details, handles] = cached.groups;
+        this.roads.add(road);
+        this.overlays.add(overlays);
+        this.details.add(details);
+        this.handles.add(handles);
+        continue;
+      }
+      if (cached) cached.groups.forEach((g) => this.clear(g));
+      const group = new T.Group(),
+        overlays = new T.Group(),
+        details = new T.Group(),
+        handles = new T.Group();
+      this.roadRenderCache.set(r.id, {
+        signature: roadSignature,
+        groups: [group, overlays, details, handles],
+      });
+      this.overlays.add(overlays);
+      this.details.add(details);
+      this.handles.add(handles);
       this.roadMesh(
         r,
         group,
@@ -454,18 +518,18 @@ export class Scene {
         this.line(
           pts,
           selected.has(r.id) ? this.mats.selected : this.mats.mark,
-          this.overlays,
+          overlays,
         );
       }
       const max = laneCount(r);
       for (let l = 1; l < max; l++) {
-        if (r.twoWay && l === max / 2) {
+        if (r.twoWay && l === backwardLaneCount(r)) {
           const pts: V[] = [];
           for (let i = 0; i <= 100; i++) {
             const t = range.start + ((range.end - range.start) * i) / 100;
             pts.push(boundaryPoint(r, l, t));
           }
-          this.line(pts, this.mats.centerline, this.details);
+          this.line(pts, this.mats.centerline, details);
           continue;
         }
         for (let j = 0; j < 100; j += 5) {
@@ -476,7 +540,7 @@ export class Scene {
               continue;
             pts.push(boundaryPoint(r, l, t));
           }
-          if (pts.length > 1) this.line(pts, this.mats.mark, this.details);
+          if (pts.length > 1) this.line(pts, this.mats.mark, details);
         }
       }
       for (let l = 0; l < max; l++) {
@@ -498,7 +562,7 @@ export class Scene {
                   range.start + ((range.end - range.start) * i) / 100,
                 ),
               );
-          if (pts.length > 1) this.line(pts, this.mats.lane, this.overlays);
+          if (pts.length > 1) this.line(pts, this.mats.lane, overlays);
         }
         if (settings.arrows)
           for (const t of [0.22, 0.55, 0.83]) {
@@ -516,7 +580,7 @@ export class Scene {
                 this.line(
                   [add(c, mul(n, -1)), add(c, mul(n, 1))],
                   this.mats.centerline,
-                  this.details,
+                  details,
                 );
               }
               for (const turn of turns) {
@@ -536,7 +600,7 @@ export class Scene {
                     add(add(tip, mul(direction, -0.75)), mul(cross, -0.5)),
                   ],
                   this.mats.mark,
-                  this.details,
+                  details,
                 );
               }
               continue;
@@ -554,7 +618,7 @@ export class Scene {
                 add(add(p, mul(d, 0.2)), mul(n, -0.75)),
               ],
               this.mats.mark,
-              this.details,
+              details,
             );
           }
       }
@@ -575,7 +639,7 @@ export class Scene {
                   transparent: true,
                   opacity: 0.7,
                 }),
-                this.handles,
+                handles,
               );
             const m = new T.Mesh(
               new T.SphereGeometry(part === "p" ? 1.4 : 1, 12, 8),
@@ -594,9 +658,11 @@ export class Scene {
               handle: true,
               radius: part === "p" ? 1.4 : 1,
             };
-            this.handles.add(m);
+            handles.add(m);
           }
         }
+      this.batchLines(overlays);
+      this.batchLines(details);
     }
     const cs = connections(p).filter((x) => x.enabled);
     if (settings.paths) {
@@ -1199,8 +1265,8 @@ export class Scene {
       height = this.el.clientHeight;
     const distance = this.camera.position.distanceTo(this.controls.target);
     this.details.visible = (3.6 * height) / (2 * distance * tan) > 4;
-    for (const object of this.handles.children) {
-      if (!(object instanceof T.Mesh)) continue;
+    this.handles.traverse((object) => {
+      if (!(object instanceof T.Mesh)) return;
       const d = this.camera.position.distanceTo(object.position),
         pixelWorld = (2 * d * tan) / height,
         radius = object.userData.radius || 1;
@@ -1210,7 +1276,7 @@ export class Scene {
           (pixelWorld * (object.userData.part === "p" ? 6 : 5)) / radius,
         ),
       );
-    }
+    });
     for (const marker of this.buildMarker.children) {
       if (!marker.userData.marker) continue;
       const d = this.camera.position.distanceTo(marker.position);

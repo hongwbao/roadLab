@@ -1,5 +1,10 @@
 import { getAsset } from "../core/assets";
-import { automaticTransitionPreview } from "../core/auto-transitions";
+import {
+  addRoadsideLanes,
+  expandedRoad,
+  roadSideAt,
+  type RoadSide,
+} from "../core/road-sections";
 import { buildCS2RoadLabCourse } from "../core/cs2-road-building";
 import {
   placeCS2RoadLabPoint,
@@ -13,6 +18,8 @@ import {
   dist,
   laneCount,
   laneDirection,
+  totalAt,
+  backwardStart,
   maxGrade,
   mul,
   nearest,
@@ -104,6 +111,8 @@ export class Editor {
   signalTool = new TrafficLightTool(this);
   junctionLaneTool: JunctionLaneTool;
   tool: Tool = "select";
+  upgradeMode: "replace" | "smooth" | "direct" = "replace";
+  widening?: { road: string; side: RoadSide };
   assetId = "city-2";
   alignment: Alignment = "auto";
   laneSnapping = true;
@@ -128,6 +137,10 @@ export class Editor {
   draw = {
     lanesStart: 1,
     lanesEnd: 1,
+    backwardLanesStart: undefined as number | undefined,
+    backwardLanesEnd: undefined as number | undefined,
+    sectionOffset: undefined as number | undefined,
+    transitionMode: "direct" as "direct" | "smooth",
     twoWay: true,
     width: 3.5,
     speed: 50,
@@ -222,7 +235,7 @@ export class Editor {
   stopForEdit() {
     this.simulation.running = false;
     normalizePorts(this.project);
-    this.simulation.configure(this.project);
+    this.simulation.prepareForEditing(this.project);
     this.scene.updateCars([]);
   }
   edit(fn: () => void, message?: string) {
@@ -270,6 +283,7 @@ export class Editor {
   }
   cancel() {
     this.pointerPress = undefined;
+    this.widening = undefined;
     if (this.drag?.moved && !this.drag.box) {
       this.project = this.drag.snapshot;
       this.stopForEdit();
@@ -292,6 +306,14 @@ export class Editor {
   setTool(tool: Tool) {
     this.cancel();
     this.tool = tool;
+    if (tool === "widen" && this.draw.twoWay) {
+      this.assetId = "one-1";
+      Object.assign(this.draw, {
+        backwardLanesStart: undefined,
+        backwardLanesEnd: undefined,
+        ...getAsset("one-1").options,
+      });
+    }
     if (this.building) this.selected.clear();
     this.refresh();
     this.onStatus(this.instructions());
@@ -301,14 +323,22 @@ export class Editor {
   chooseAsset(id: string) {
     this.assetId = id;
     const asset = getAsset(id);
-    Object.assign(this.draw, asset.options);
+    Object.assign(this.draw, {
+      backwardLanesStart: undefined,
+      backwardLanesEnd: undefined,
+      sectionOffset: undefined,
+      transitionMode: "direct",
+      ...asset.options,
+    });
     this.branch.side = this.draw.align === "right" ? "left" : "right";
     this.setTool(
       this.tool === "curve"
         ? "curve"
-        : this.tool === "upgrade"
-          ? "upgrade"
-          : "line",
+        : this.tool === "widen" && !asset.options.twoWay
+          ? "widen"
+          : this.tool === "upgrade"
+            ? "upgrade"
+            : "line",
     );
   }
   instructions() {
@@ -318,7 +348,13 @@ export class Editor {
       curve: "依次点击起点、弯曲位置、终点 · 右键返回",
       boundary: "点击端点设置通行口 · 双向道路同时进出 · 右键取消通行口",
       delete: "拆除模式 · 悬停道路预览 · 左键拆除 · B / Esc 退出",
-      upgrade: "先选择道路资产，再点击已有道路替换",
+      upgrade:
+        this.upgradeMode === "replace"
+          ? "先选择道路资产，再点击已有道路替换"
+          : this.upgradeMode === "smooth"
+            ? "点击较宽路段，在与窄路相连的端点添加平滑过渡"
+            : "点击道路恢复直接连接，保留完整车道用于接入分支",
+      widen: "选择单向道路资产 · 悬停道路左侧或右侧预览加车道 · 点击添加",
       turn: "点击路口，连接进出车道 · 右键取消选择 · J / Esc 退出",
       signal: "点击路口中心设置红绿灯 · 右键移除 · K / Esc 退出",
     }[this.tool];
@@ -1048,8 +1084,7 @@ export class Editor {
     } catch {
       invalid = true;
     }
-    const transitionPreview = automaticTransitionPreview(this.project, bundle);
-    bundle = transitionPreview.roads;
+
     const warning =
       maxGrade(road) > 15
         ? "坡度过大，请延长道路"
@@ -1077,7 +1112,7 @@ export class Editor {
     );
     this.updateSnapFeedback();
     this.onStatus(
-      `${warning ? warning + " · " : ""}${transitionPreview.hasTransitions ? "自动生成车道过渡 · " : ""}${this.snapInfo?.text || this.instructions()} · ${roadLength(road).toFixed(0)} m · 最大坡度 ${maxGrade(road).toFixed(1)}%`,
+      `${warning ? warning + " · " : ""}${this.snapInfo?.text || this.instructions()} · ${roadLength(road).toFixed(0)} m · 最大坡度 ${maxGrade(road).toFixed(1)}%`,
     );
   }
   private finishDraw() {
@@ -1218,6 +1253,69 @@ export class Editor {
     this.scene.showLaneTarget();
     this.onStatus(this.instructions());
   }
+  setDirectionCount(direction: "forward" | "backward", delta: number) {
+    if (direction === "backward") {
+      const n = Math.max(
+        1,
+        Math.min(
+          6,
+          (this.draw.backwardLanesStart ?? this.draw.lanesStart) + delta,
+        ),
+      );
+      this.draw.backwardLanesStart = this.draw.backwardLanesEnd = n;
+    } else {
+      if (this.draw.twoWay) {
+        this.draw.backwardLanesStart ??= this.draw.lanesStart;
+        this.draw.backwardLanesEnd ??= this.draw.lanesEnd;
+      }
+      this.draw.lanesStart = this.draw.lanesEnd = Math.max(
+        1,
+        Math.min(6, this.draw.lanesStart + delta),
+      );
+    }
+    this.onChange();
+    if (this.pointer && this.building) this.updatePlacement(this.pointer);
+  }
+  updateWidening(raw: V) {
+    this.pointer = raw;
+    this.widening = undefined;
+    const candidates = this.project.roads
+      .map((r) => ({ r, near: nearest(r, raw) }))
+      .filter(
+        ({ r, near }) =>
+          Math.abs(near.point.y - raw.y) < 1 &&
+          near.distance < (totalAt(r, near.t) * r.width) / 2 + 5,
+      )
+      .sort((a, b) => a.near.distance - b.near.distance);
+    const road = candidates[0]?.r;
+    if (!road) {
+      this.scene.showPreviews([]);
+      this.scene.showLaneTarget();
+      this.onStatus(this.instructions());
+      return;
+    }
+    const side = roadSideAt(road, raw);
+    try {
+      const next = expandedRoad(road, side, this.draw.lanesStart),
+        count = this.draw.lanesStart;
+      this.widening = { road: road.id, side };
+      this.scene.showPreviews([next]);
+      this.scene.showLaneTarget(
+        next,
+        Array.from({ length: count }, (_, i) =>
+          side === "left" ? i : laneCount(next) - count + i,
+        ),
+        candidates[0].near.t,
+      );
+      this.onStatus(
+        `${side === "left" ? "左侧" : "右侧"}增加 ${count} 条车道 · ${next.twoWay ? `${backwardStart(next)}＋${next.lanesStart}` : `${next.lanesStart}`} 车道 · 点击确认`,
+      );
+    } catch (error) {
+      this.scene.showPreviews([]);
+      this.scene.showLaneTarget();
+      this.onStatus((error as Error).message);
+    }
+  }
   private boundaryHit(x: number, y: number) {
     const marked = this.scene.portHit(x, y);
     if (marked) return marked;
@@ -1249,6 +1347,24 @@ export class Editor {
     }
     if (this.tool === "turn") {
       this.junctionLaneTool.select(e.clientX, e.clientY);
+      return;
+    }
+    if (this.tool === "widen") {
+      this.updateWidening(raw);
+      const target = this.widening;
+      if (!target) return;
+      this.edit(
+        () =>
+          addRoadsideLanes(
+            this.project,
+            target.road,
+            target.side,
+            this.draw.lanesStart,
+          ),
+        "已添加车道；默认直接连接，可在升级中添加过渡",
+      );
+      this.scene.showPreviews([]);
+      this.scene.showLaneTarget();
       return;
     }
     if (this.building) {
@@ -1301,14 +1417,34 @@ export class Editor {
     }
     if (this.tool === "upgrade") {
       if (!hit?.road) return;
-      this.edit(() => {
-        const r = this.project.roads.find((r) => r.id === hit.road)!;
-        Object.assign(r, getAsset(this.assetId).options);
-        r.name = getAsset(this.assetId).name;
-        delete r.profile;
-        delete r.widthOrigin;
-        reconnectIntersections(this.project);
-      }, "道路已替换");
+      this.edit(
+        () => {
+          const r = this.project.roads.find((r) => r.id === hit.road)!;
+          if (this.upgradeMode === "smooth") {
+            r.transitionMode = "smooth";
+          } else if (this.upgradeMode === "direct") {
+            r.transitionMode = "direct";
+            delete r.autoTaper;
+          } else {
+            Object.assign(r, {
+              backwardLanesStart: undefined,
+              backwardLanesEnd: undefined,
+              sectionOffset: undefined,
+              transitionMode: "direct",
+              ...getAsset(this.assetId).options,
+            });
+            r.name = getAsset(this.assetId).name;
+            delete r.profile;
+            delete r.widthOrigin;
+            reconnectIntersections(this.project);
+          }
+        },
+        this.upgradeMode === "replace"
+          ? "道路已替换"
+          : this.upgradeMode === "smooth"
+            ? "已启用端点平滑过渡"
+            : "已恢复直接连接",
+      );
       return;
     }
     if (hit?.road) this.select(hit.road, e.shiftKey);
@@ -1490,6 +1626,12 @@ export class Editor {
           }
         } else transformRoads(this.chosen, (p) => add(p, delta));
         this.scene.rebuild(this.project, this.selected, this.settings);
+        return;
+      }
+      if (this.tool === "widen") {
+        this.scene.setHover();
+        this.updateWidening(raw);
+        canvas.style.cursor = "crosshair";
         return;
       }
       if (this.building) {
@@ -1803,6 +1945,7 @@ export class Editor {
       return;
     }
     if (name === "play") {
+      if (!this.simulation.running) this.simulation.prepareForRun();
       if (
         !this.simulation.running &&
         !this.simulation.routeCount &&

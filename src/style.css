@@ -1765,3 +1765,18 @@ dialog dd {
     max-height: calc(100dvh - 285px);
   }
 }
+
+.road-edit-tools {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+  margin-top: 10px;
+  font-size: 11px;
+}
+.road-edit-tools button[aria-pressed="true"] {
+  background: var(--panel-raised);
+  border-color: var(--blue);
+}

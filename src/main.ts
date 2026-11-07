@@ -115,18 +115,22 @@ const button = (action: string, label: string, glyph: string, classes = "") =>
   `<button type="button" data-action="${action}" title="${label}" aria-label="${label}" class="${classes}">${icon(glyph)}<span>${label}</span></button>`;
 function thumbnail(asset: RoadAsset) {
   const o = asset.options,
-    total = (o.lanesEnd ?? 1) * (o.twoWay ? 2 : 1),
+    total =
+      (o.lanesEnd ?? 1) +
+      (o.twoWay ? (o.backwardLanesEnd ?? o.lanesEnd ?? 1) : 0),
     height = Math.min(38, total * 6 + 6),
     y = (52 - height) / 2;
   if (asset.action)
     return `<svg viewBox="0 0 120 52" aria-hidden="true"><path d="M0 22H63L120 13M63 22C85 22 85 43 120 43" stroke="#222e35" stroke-width="17" fill="none"/><path d="M0 22H63L120 13M63 22C85 22 85 43 120 43" stroke="#c5d3d8" stroke-width="1" stroke-dasharray="5 4" fill="none"/></svg>`;
-  const start = (o.lanesStart ?? 1) * (o.twoWay ? 2 : 1),
+  const start =
+      (o.lanesStart ?? 1) +
+      (o.twoWay ? (o.backwardLanesStart ?? o.lanesStart ?? 1) : 0),
     hy = Math.min(38, start * 6 + 6),
     shape = `M0 ${(52 - hy) / 2} C45 ${(52 - hy) / 2} 75 ${y} 120 ${y}V${y + height}C75 ${y + height} 45 ${(52 + hy) / 2} 0 ${(52 + hy) / 2}Z`;
   let lines = "";
   for (let i = 1; i < total; i++) {
     const cy = y + 3 + (i * (height - 6)) / total;
-    lines += `<path d="M0 ${cy}H120" stroke="${o.twoWay && i === total / 2 ? "#dfc17b" : "#d0dbdd"}" stroke-width="${o.twoWay && i === total / 2 ? 1.4 : 0.8}" ${o.twoWay && i === total / 2 ? "" : 'stroke-dasharray="5 5"'}/>`;
+    lines += `<path d="M0 ${cy}H120" stroke="${o.twoWay && i === (o.backwardLanesEnd ?? o.lanesEnd ?? 1) ? "#dfc17b" : "#d0dbdd"}" stroke-width="${o.twoWay && i === (o.backwardLanesEnd ?? o.lanesEnd ?? 1) ? 1.4 : 0.8}" ${o.twoWay && i === (o.backwardLanesEnd ?? o.lanesEnd ?? 1) ? "" : 'stroke-dasharray="5 5"'}/>`;
   }
   return `<svg viewBox="0 0 120 52" aria-hidden="true"><path d="${shape}" fill="#253139" stroke="#72868e" stroke-width="1"/>${lines}</svg>`;
 }
@@ -143,7 +147,7 @@ document.querySelector("#app")!.innerHTML = `
  <aside id="boundary-panel" class="floating-panel boundary-panel" hidden><h2>路网通行口</h2><p>点击道路端点设置通行口。双向道路在同一端点同时进出，单向道路按方向自动判断。</p>${button("auto-ports", "自动识别外部通行口", "log-in")}<p class="muted">右键点击通行口，即可取消。</p></aside>
  <aside id="templates-panel" class="floating-panel templates-panel" hidden><div class="panel-heading"><h2>路网模板</h2>${button("close-templates", "关闭", "x", "icon-only")}</div><div id="template-list"></div></aside>
  <div class="tool-rail" role="toolbar" aria-label="地图工具"><button data-tool="select" title="选择道路 V" aria-label="选择道路 V">${icon("mouse-pointer-2")}</button><button data-action="roads" title="道路资产" aria-label="道路资产">${icon("route")}</button><button data-tool="boundary" title="路网通行口 I" aria-label="路网通行口 I">${icon("log-in")}</button><button data-tool="signal" title="路口红绿灯 K" aria-label="路口红绿灯 K">${trafficLightIcon}</button><button data-tool="turn" title="车道连线 J" aria-label="车道连线 J">${icon("corner-up-right")}</button><button data-tool="delete" title="拆除道路 B" aria-label="拆除道路 B">${icon("trash-2")}</button></div>
- <section id="road-dock" class="road-dock" aria-label="道路资产栏"><div class="dock-heading"><nav class="asset-categories" aria-label="道路分类"><button data-category="city">城市道路</button><button data-category="oneway">单向道路</button><button data-category="highway">高速与匝道</button><button data-category="transition">车道过渡</button></nav>${button("close-roads", "收起道路资产", "x", "icon-only")}</div><div id="asset-list" class="asset-list"></div><div class="construction-tools"><div class="build-modes" role="toolbar" aria-label="道路建造方式"><button data-tool="line" title="直线 L" aria-label="直线 L">${icon("move-right")}<span>直线</span></button><button data-tool="curve" title="曲线 C" aria-label="曲线 C">${icon("spline")}<span>曲线</span></button><button data-tool="upgrade" title="升级道路 U" aria-label="升级道路 U">${icon("wrench")}<span>升级</span></button></div><div class="build-height">${button("height-down", "降低道路 PageDown", "arrow-down", "icon-only")}<span id="build-height-label">地面</span>${button("height-up", "抬高道路 PageUp", "arrow-up", "icon-only")}</div><button id="snap-toggle" data-action="snap" title="道路吸附" aria-pressed="true">${icon("magnet")}<span>吸附</span></button><button data-action="alignment" id="alignment-mode" title="单向道路接口对齐：自动、中线、左缘、右缘；地图中按 Tab 切换">对齐：自动</button><span id="asset-description"></span></div><div id="lane-build-tools" class="lane-build-tools" hidden><button id="lane-snap-toggle" data-action="lane-snap" aria-pressed="true" title="按车道吸附；地图中按 Tab 切换候选">${icon("magnet")}车道吸附</button><div class="lane-count-control"><span>起点</span><button data-build-count="lanesStart" data-delta="-1" aria-label="减少起点车道">${icon("minus")}</button><output id="build-start-count">1</output><button data-build-count="lanesStart" data-delta="1" aria-label="增加起点车道">${icon("plus")}</button></div><div class="lane-count-control"><span>终点</span><button data-build-count="lanesEnd" data-delta="-1" aria-label="减少终点车道">${icon("minus")}</button><output id="build-end-count">1</output><button data-build-count="lanesEnd" data-delta="1" aria-label="增加终点车道">${icon("plus")}</button></div><div class="build-side" aria-label="增减及分合流方向"><button data-build-side="left">左侧</button><button data-build-side="right">右侧</button></div><div id="branch-controls" class="branch-controls" hidden><div class="lane-count-control"><span>匝道</span><button data-branch-delta="-1" aria-label="减少匝道车道">${icon("minus")}</button><output id="branch-count">1</output><button data-branch-delta="1" aria-label="增加匝道车道">${icon("plus")}</button></div><label for="branch-length">分离长度 <output id="branch-length-label">65 m</output></label><input id="branch-length" type="range" min="20" max="180" step="5" value="65" aria-label="分离长度"></div></div></section>
+ <section id="road-dock" class="road-dock" aria-label="道路资产栏"><div class="dock-heading"><nav class="asset-categories" aria-label="道路分类"><button data-category="city">城市道路</button><button data-category="oneway">单向道路</button><button data-category="highway">高速与匝道</button></nav>${button("close-roads", "收起道路资产", "x", "icon-only")}</div><div id="asset-list" class="asset-list"></div><div class="construction-tools"><div class="build-modes" role="toolbar" aria-label="道路建造方式"><button data-tool="line" title="直线 L" aria-label="直线 L">${icon("move-right")}<span>直线</span></button><button data-tool="curve" title="曲线 C" aria-label="曲线 C">${icon("spline")}<span>曲线</span></button><button data-tool="widen" title="在道路一侧添加车道" aria-label="添加车道">${icon("plus")}<span>加车道</span></button><button data-tool="upgrade" title="升级道路 U" aria-label="升级道路 U">${icon("wrench")}<span>升级</span></button></div><div class="build-height">${button("height-down", "降低道路 PageDown", "arrow-down", "icon-only")}<span id="build-height-label">地面</span>${button("height-up", "抬高道路 PageUp", "arrow-up", "icon-only")}</div><button id="snap-toggle" data-action="snap" title="道路吸附" aria-pressed="true">${icon("magnet")}<span>吸附</span></button><button data-action="alignment" id="alignment-mode" title="单向道路接口对齐：自动、中线、左缘、右缘；地图中按 Tab 切换">对齐：自动</button><span id="asset-description"></span></div><div id="upgrade-tools" class="road-edit-tools" hidden><div class="build-modes" role="toolbar" aria-label="道路升级方式"><button data-upgrade-mode="replace">替换道路</button><button data-upgrade-mode="smooth">添加平滑过渡</button><button data-upgrade-mode="direct">恢复直接连接</button></div><span class="muted">平滑过渡在较宽路段的连接端点生成</span></div><div id="lane-build-tools" class="lane-build-tools" hidden><button id="lane-snap-toggle" data-action="lane-snap" aria-pressed="true" title="按车道吸附；地图中按 Tab 切换候选">${icon("magnet")}车道吸附</button><div class="lane-count-control"><span id="forward-count-label">车道</span><button data-build-direction="forward" data-delta="-1" aria-label="减少正向车道">${icon("minus")}</button><output id="build-start-count">1</output><button data-build-direction="forward" data-delta="1" aria-label="增加正向车道">${icon("plus")}</button></div><div id="backward-count-control" class="lane-count-control"><span>反向</span><button data-build-direction="backward" data-delta="-1" aria-label="减少反向车道">${icon("minus")}</button><output id="build-backward-count">1</output><button data-build-direction="backward" data-delta="1" aria-label="增加反向车道">${icon("plus")}</button></div><span class="muted">默认直接连接 · 平滑过渡可在升级中添加</span></div></section>
  <div class="map-status"><span id="tool-hint">选择道路资产开始建造。</span><span id="mode-badge">选择</span></div></main>
  <footer class="simulation-bar"><div class="simulation-actions">${button("play", "开始测试", "play", "primary")}${button("reset-sim", "重置测试", "rotate-ccw", "icon-only")}<div class="speed-buttons" aria-label="模拟速度"><button data-speed="1" class="active">1×</button><button data-speed="2">2×</button><button data-speed="4">4×</button></div></div><div class="traffic-control"><div class="traffic-heading"><label for="traffic-range">车流量</label><output id="traffic-total" aria-live="off">目标 24 辆/分</output></div><div class="traffic-inputs"><input id="traffic-range" type="range" min="0" max="400" step="1" value="100" aria-label="车流强度"><label class="traffic-percentage"><input id="traffic-level" type="number" min="0" max="400" step="1" value="100" aria-label="车流百分比"><span>%</span></label></div></div><div class="sim-stat"><span>在途</span><strong id="stat-active">0</strong></div><div class="sim-stat"><span>已通过</span><strong id="stat-completed">0</strong></div><div class="sim-stat"><span>排队</span><strong id="stat-queued">0</strong></div><div class="sim-stat average-stat"><span>平均通行</span><strong id="stat-average">—</strong></div><span id="sim-note">基础车流</span><button data-tool="boundary" class="footer-ports">${icon("log-in")}设置通行口</button></footer>
  <input id="import-file" type="file" accept=".json,application/json" hidden><div id="toast" role="status" hidden></div>
@@ -166,13 +170,17 @@ let category: RoadAsset["category"] = "city",
   trafficBefore: Project | undefined;
 const icons = () =>
   createIcons({ icons: iconSet, attrs: { "stroke-width": 1.8 } });
+let assetsSignature = "";
 function renderAssets() {
+  const signature = JSON.stringify([category, editor.assetId, editor.tool]);
+  if (signature === assetsSignature) return;
+  assetsSignature = signature;
   document.querySelector("#asset-list")!.innerHTML = ROAD_ASSETS.filter(
     (a) => a.category === category,
   )
     .map(
       (a) =>
-        `<button class="road-asset ${a.id === editor.assetId && (editor.building || editor.tool === "upgrade") ? "selected" : ""}" data-asset="${a.id}" aria-label="${a.name}" aria-pressed="${a.id === editor.assetId && (editor.building || editor.tool === "upgrade")}" title="${a.description}">${thumbnail(a)}<strong>${a.name}</strong></button>`,
+        `<button class="road-asset ${a.id === editor.assetId && (editor.building || editor.tool === "upgrade" || editor.tool === "widen") ? "selected" : ""}" data-asset="${a.id}" aria-label="${a.name}" aria-pressed="${a.id === editor.assetId && (editor.building || editor.tool === "upgrade" || editor.tool === "widen")}" title="${a.description}">${thumbnail(a)}<strong>${a.name}</strong></button>`,
     )
     .join("");
   document.querySelectorAll<HTMLElement>("[data-category]").forEach((b) => {
@@ -313,48 +321,42 @@ function render() {
     ? ""
     : junctionLanePanel(editor.junctionLaneTool);
   document.querySelector<HTMLElement>("#lane-build-tools")!.hidden =
-    !editor.building || editor.draw.twoWay;
+    !editor.building && editor.tool !== "widen";
   document.querySelector("#build-start-count")!.textContent = String(
     editor.draw.lanesStart,
   );
-  document.querySelector("#build-end-count")!.textContent = String(
-    editor.draw.lanesEnd,
+  document.querySelector("#build-backward-count")!.textContent = String(
+    editor.draw.backwardLanesStart ?? editor.draw.lanesStart,
   );
+  document.querySelector("#forward-count-label")!.textContent = editor.draw
+    .twoWay
+    ? "正向"
+    : "车道";
+  document.querySelector<HTMLElement>("#backward-count-control")!.hidden =
+    !editor.draw.twoWay;
+  document.querySelector<HTMLElement>("#lane-snap-toggle")!.hidden =
+    editor.tool === "widen";
   document
     .querySelector("#lane-snap-toggle")!
     .setAttribute("aria-pressed", String(editor.laneSnapping));
+  document.querySelector<HTMLElement>("#upgrade-tools")!.hidden =
+    editor.tool !== "upgrade";
   document
-    .querySelectorAll<HTMLElement>("[data-build-side]")
+    .querySelectorAll<HTMLElement>("[data-upgrade-mode]")
     .forEach((b) =>
       b.setAttribute(
         "aria-pressed",
-        String(
-          b.dataset.buildSide ===
-            (editor.draw.align === "right" ? "left" : "right"),
-        ),
+        String(b.dataset.upgradeMode === editor.upgradeMode),
       ),
     );
-  const branchAction = getAsset(editor.assetId).action;
-  document.querySelector<HTMLElement>("#branch-controls")!.hidden =
-    !branchAction;
-  const branchCount = Math.min(
-    editor.branch.lanes,
-    (branchAction === "merge" ? editor.draw.lanesStart : editor.draw.lanesEnd) -
-      1,
-  );
-  document.querySelector("#branch-count")!.textContent = String(
-    Math.max(1, branchCount),
-  );
-  document.querySelector<HTMLInputElement>("#branch-length")!.value = String(
-    editor.branch.length,
-  );
-  document.querySelector("#branch-length-label")!.textContent =
-    `${editor.branch.length} m`;
   document
-    .querySelectorAll<HTMLButtonElement>("[data-build-count]")
+    .querySelectorAll<HTMLButtonElement>("[data-build-direction]")
     .forEach((b) => {
-      const n = editor.draw[b.dataset.buildCount as "lanesStart" | "lanesEnd"];
-      b.disabled = Number(b.dataset.delta) < 0 ? n <= 1 : n >= 6;
+      const count =
+        b.dataset.buildDirection === "backward"
+          ? (editor.draw.backwardLanesStart ?? editor.draw.lanesStart)
+          : editor.draw.lanesStart;
+      b.disabled = Number(b.dataset.delta) < 0 ? count <= 1 : count >= 6;
     });
   renderAssets();
   document.querySelectorAll<HTMLElement>("[data-tool]").forEach((b) => {
@@ -384,6 +386,7 @@ function render() {
       line: "道路建造",
       curve: "曲线建造",
       upgrade: "道路升级",
+      widen: "加车道",
       delete: "拆除 B",
       boundary: "设置通行口",
       turn: "车道连线 J",
@@ -407,13 +410,6 @@ function render() {
   syncTraffic();
   icons();
 }
-document
-  .querySelector<HTMLInputElement>("#branch-length")!
-  .addEventListener("input", (e) => {
-    const length = Number((e.target as HTMLInputElement).value);
-    editor.setBranchLength(length);
-    document.querySelector("#branch-length-label")!.textContent = `${length} m`;
-  });
 editor.onChange = render;
 editor.onStatus = (s) =>
   (document.querySelector("#tool-hint")!.textContent = s);
@@ -476,6 +472,19 @@ document.addEventListener("click", (e) => {
     editor.toggleTurn(target.dataset.turn as "left" | "straight" | "right");
     return;
   }
+  if (target.dataset.upgradeMode) {
+    editor.upgradeMode = target.dataset
+      .upgradeMode as typeof editor.upgradeMode;
+    editor.setTool("upgrade");
+    return;
+  }
+  if (target.dataset.buildDirection) {
+    editor.setDirectionCount(
+      target.dataset.buildDirection as "forward" | "backward",
+      Number(target.dataset.delta),
+    );
+    return;
+  }
   if (target.dataset.asset) {
     editor.chooseAsset(target.dataset.asset);
     dockOpen = true;
@@ -494,7 +503,12 @@ document.addEventListener("click", (e) => {
       tool === "delete" && editor.tool === "delete" ? "select" : tool,
     );
     if (tool === "boundary") dockOpen = false;
-    if (tool === "line" || tool === "curve" || tool === "upgrade")
+    if (
+      tool === "line" ||
+      tool === "curve" ||
+      tool === "upgrade" ||
+      tool === "widen"
+    )
       dockOpen = true;
     render();
     return;

@@ -31,6 +31,7 @@ const options = (lanes: number, twoWay = false) => ({
   width: 3.5,
   speed: 60,
   twoWay,
+  transitionMode: "smooth" as const,
 });
 function pair(from = 2, to = 3, twoWay = false) {
   const p = emptyProject();
@@ -41,7 +42,7 @@ function pair(from = 2, to = 3, twoWay = false) {
   return p;
 }
 
-describe("automatic lane transitions on ordinary road joins", () => {
+describe("explicit smooth upgrades on ordinary road joins", () => {
   it("widens a normal three-lane road from two lanes without changing nominal assets or controls", () => {
     const p = pair(),
       original = structuredClone(p.roads);

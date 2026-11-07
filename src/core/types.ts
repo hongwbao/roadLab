@@ -12,6 +12,7 @@ export type LaneAttachment = {
 };
 export type AutomaticTaper = {
   lanes: number;
+  backwardLanes?: number;
   firstLane: number;
   offset: number;
   span: number;
@@ -22,6 +23,12 @@ export type Road = {
   knots: Knot[];
   lanesStart: number;
   lanesEnd: number;
+  /** Reverse direction counts; absent preserves legacy symmetric roads. */
+  backwardLanesStart?: number;
+  backwardLanesEnd?: number;
+  /** One-way carriageway offset from its editable reference spline, in metres. */
+  sectionOffset?: number;
+  transitionMode?: "direct" | "smooth";
   twoWay: boolean;
   width: number;
   speed: number;
@@ -34,6 +41,8 @@ export type Road = {
   profile?: {
     from: number;
     to: number;
+    fromBackward?: number;
+    toBackward?: number;
     start: number;
     end: number;
     transitionStart: number;
@@ -88,6 +97,7 @@ export type Tool =
   | "curve"
   | "boundary"
   | "upgrade"
+  | "widen"
   | "delete"
   | "turn"
   | "signal";

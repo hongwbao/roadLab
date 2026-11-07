@@ -541,21 +541,25 @@ test("road upgrade uses the selected asset and undo restores the original", asyn
   await page.locator('[data-action="undo"]').click();
   expect((await state(page)).project.roads[0].lanesStart).toBe(1);
 });
-test("procedural transition asset keeps smooth widening and 2+1 exit available", async ({
+test("ordinary roads connect directly and the palette has no dedicated merge or split assets", async ({
   page,
 }) => {
   await open(page);
   await load(page);
-  await page.locator('[data-category="transition"]').click();
-  await page.locator('[data-asset="exit-21"]').click();
+  await expect(page.locator('[data-category="transition"]')).toHaveCount(0);
+  await page.locator('[data-category="oneway"]').click();
+  await page.locator('[data-asset="one-2"]').click();
   await clickWorld(page, -60, -30);
   await clickWorld(page, 0, -30);
+  await endStroke(page);
+  await page.locator('[data-asset="one-3"]').click();
+  await clickWorld(page, 0, -30);
+  await clickWorld(page, 60, -30);
+  await endStroke(page);
   const s = await state(page);
-  expect(s.project.roads).toHaveLength(3);
-  expect(s.project.roads.filter((r: any) => r.kind === "ramp")).toHaveLength(1);
-  expect(s.connections).toHaveLength(3);
-  expect(s.project.roads[0].lanesStart).toBe(2);
-  expect(s.project.roads[0].lanesEnd).toBe(3);
+  expect(s.project.roads).toHaveLength(2);
+  expect(s.project.roads.every((r: any) => !r.autoTaper)).toBe(true);
+  expect(s.connections).toHaveLength(2);
 });
 test("height keys build an elevated road without connecting its crossing", async ({
   page,
@@ -969,49 +973,29 @@ test("two-lane groups can snap to the middle of four lanes and cycle candidates 
   expect((await state(page)).project.roads).toHaveLength(2);
 });
 
-test("generic split controls build a left 4-to-2+2 exit with smooth lane mapping", async ({
+test("asymmetric assets expose independent direction counts on compact screens", async ({
   page,
 }) => {
   await open(page);
   await load(page);
-  await page.locator('[data-category="transition"]').click();
-  await page.locator('[data-asset="exit-21"]').click();
-  await page.getByRole("button", { name: "增加起点车道", exact: true }).click();
-  await page.getByRole("button", { name: "增加起点车道", exact: true }).click();
-  await page.getByRole("button", { name: "增加终点车道", exact: true }).click();
-  await page.getByRole("button", { name: "增加匝道车道", exact: true }).click();
-  await page.locator('[data-build-side="left"]').click();
-  await page.locator("#branch-length").fill("100");
+  await page.locator('[data-asset="city-5-asymmetric"]').click();
+  await expect(page.locator("#build-start-count")).toHaveText("3");
+  await expect(page.locator("#build-backward-count")).toHaveText("2");
+  await page.getByRole("button", { name: "增加反向车道", exact: true }).click();
   await page.setViewportSize({ width: 390, height: 844 });
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= innerWidth,
     ),
   ).toBe(true);
-  await expect(page.locator("#branch-length")).toBeVisible();
-  await page.screenshot({ path: "artifacts/lane-builder-mobile.png" });
+  await expect(page.locator("#backward-count-control")).toBeVisible();
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.evaluate(
-    () =>
-      new Promise<void>((resolve) =>
-        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
-      ),
-  );
-  await clickWorld(page, -80, 0);
-  await clickWorld(page, 0, 0);
+  await clickWorld(page, -50, 0);
+  await clickWorld(page, 50, 0);
   await endStroke(page);
   const s = await state(page);
-  expect(s.project.roads).toHaveLength(3);
-  const ramp = s.project.roads.find((r: any) => r.kind === "ramp");
-  expect(ramp.lanesStart).toBe(2);
-  expect(
-    s.connections
-      .filter((c: any) => c.to.road === ramp.id)
-      .map((c: any) => c.from.lane),
-  ).toEqual([0, 1]);
-  expect(s.issues.filter((i: any) => i.severity === "error")).toHaveLength(0);
-  await page.locator('[data-action="fit"]').click();
-  await page.screenshot({ path: "artifacts/lane-generic-split.png" });
+  expect(s.project.roads[0].lanesStart).toBe(3);
+  expect(s.project.roads[0].backwardLanesStart).toBe(3);
 });
 
 test("junction lane links use on-map points, change routes, and can be restored", async ({
@@ -1098,45 +1082,24 @@ test("a ramp can start at a mainline midpoint using an outer lane without crossi
   expect(s.junctions).toHaveLength(0);
 });
 
-test("reselecting a split asset keeps the displayed side, preview and generated ramp consistent", async ({
+test("reselecting assets clears previous asymmetric counts and builds the displayed ordinary road", async ({
   page,
 }) => {
   await open(page);
   await load(page);
-  await page.locator('[data-category="transition"]').click();
-  await page.locator('[data-asset="exit-21"]').click();
-  await page.locator('[data-build-side="left"]').click();
-  await page.locator('[data-asset="merge-32"]').click();
-  await page.locator('[data-asset="exit-21"]').click();
-  await expect(page.locator('[data-build-side="right"]')).toHaveAttribute(
-    "aria-pressed",
-    "true",
-  );
-  expect(
-    await page.evaluate(() => (window as any).lab.editor.branch.side),
-  ).toBe("right");
-  await clickWorld(page, -60, 0);
-  const end = await screen(page, 0, 0);
-  await page.mouse.move(end.x, end.y);
-  const z = await page.evaluate(() => {
-    const vertices: number[] = [];
-    for (const mesh of (window as any).lab.editor.scene.preview.children.filter(
-      (o: any) => o.isMesh,
-    )) {
-      const p = mesh.geometry.attributes.position;
-      for (let i = 0; i < p.count; i++) vertices.push(p.getZ(i));
-    }
-    return { min: Math.min(...vertices), max: Math.max(...vertices) };
-  });
-  expect(z.max).toBeGreaterThan(20);
-  expect(z.min).toBeGreaterThan(-10);
-  await page.mouse.click(end.x, end.y);
-  const s = await state(page),
-    ramp = s.project.roads.find((r: any) => r.kind === "ramp");
-  expect(ramp.knots.at(-1).p.z).toBeGreaterThan(20);
-  expect(
-    s.connections
-      .filter((c: any) => c.to.road === ramp.id)
-      .map((c: any) => c.from.lane),
-  ).toEqual([2]);
+  await page.locator('[data-asset="city-5-asymmetric"]').click();
+  await page.locator('[data-asset="city-4"]').click();
+  await expect(page.locator("#build-start-count")).toHaveText("2");
+  await expect(page.locator("#build-backward-count")).toHaveText("2");
+  await page.locator('[data-category="oneway"]').click();
+  await page.locator('[data-asset="one-3"]').click();
+  await expect(page.locator("#backward-count-control")).toBeHidden();
+  await clickWorld(page, -50, 0);
+  await clickWorld(page, 50, 0);
+  await endStroke(page);
+  const r = (await state(page)).project.roads[0];
+  expect(r.lanesStart).toBe(3);
+  expect(r.lanesEnd).toBe(3);
+  expect(r.twoWay).toBe(false);
+  expect(r.backwardLanesStart).toBeUndefined();
 });

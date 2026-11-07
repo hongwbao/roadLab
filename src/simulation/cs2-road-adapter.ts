@@ -68,7 +68,12 @@ export function deriveCs2ConnectionRules(
     priority: cs2RoadCompositionPriority({
       speedLimit: road.speed / 3.6,
       forwardLanes: Math.max(road.lanesStart, road.lanesEnd),
-      backwardLanes: road.twoWay ? Math.max(road.lanesStart, road.lanesEnd) : 0,
+      backwardLanes: road.twoWay
+        ? Math.max(
+            road.backwardLanesStart ?? road.lanesStart,
+            road.backwardLanesEnd ?? road.lanesEnd,
+          )
+        : 0,
       highwayRules: road.highwayRules === true,
     }),
   });

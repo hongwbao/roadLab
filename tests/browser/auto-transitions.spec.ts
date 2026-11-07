@@ -26,7 +26,7 @@ async function cancel(page: Page) {
   await page.mouse.click(950, 220, { button: "right" });
 }
 
-test("ordinary 2 and 3 lane assets automatically create a widening at their join", async ({
+test("ordinary 2 and 3 lane assets join directly until explicitly upgraded", async ({
   page,
 }) => {
   const errors: string[] = [];
@@ -40,7 +40,9 @@ test("ordinary 2 and 3 lane assets automatically create a widening at their join
   await click(page, 0);
   const end = await at(page, 85);
   await page.mouse.move(end.x, end.y);
-  await expect(page.locator("#tool-hint")).toContainText("自动生成车道过渡");
+  await expect(page.locator("#tool-hint")).not.toContainText(
+    "自动生成车道过渡",
+  );
   await page.screenshot({ path: "artifacts/automatic-widening-preview.png" });
   await page.mouse.click(end.x, end.y);
   await cancel(page);
@@ -48,6 +50,11 @@ test("ordinary 2 and 3 lane assets automatically create a widening at their join
   expect(s.project.roads).toHaveLength(2);
   expect(s.project.roads[1].lanesStart).toBe(3);
   expect(s.project.roads[1].lanesEnd).toBe(3);
+  expect(s.project.roads[1].autoTaper).toBeUndefined();
+  await page.locator('[data-tool="upgrade"]').click();
+  await page.locator('[data-upgrade-mode="smooth"]').click();
+  await click(page, 45);
+  s = await state(page);
   expect(s.project.roads[1].autoTaper.start.lanes).toBe(2);
   expect(s.connections).toHaveLength(2);
   await page.keyboard.press("Control+s");
@@ -61,7 +68,7 @@ test("ordinary 2 and 3 lane assets automatically create a widening at their join
   expect(errors).toEqual([]);
 });
 
-test("automatic narrowing uses the wider approach and disappears after disconnecting", async ({
+test("an explicit narrowing uses the wider approach and disappears after disconnecting", async ({
   page,
 }) => {
   await setup(page);
@@ -74,6 +81,11 @@ test("automatic narrowing uses the wider approach and disappears after disconnec
   await click(page, 85);
   await cancel(page);
   let s = await state(page);
+  expect(s.project.roads[0].autoTaper).toBeUndefined();
+  await page.locator('[data-tool="upgrade"]').click();
+  await page.locator('[data-upgrade-mode="smooth"]').click();
+  await click(page, -45);
+  s = await state(page);
   expect(s.project.roads[0].autoTaper.end.lanes).toBe(2);
   expect(s.project.roads[1].autoTaper).toBeUndefined();
   await page.screenshot({ path: "artifacts/automatic-narrowing.png" });
@@ -89,7 +101,7 @@ test("automatic narrowing uses the wider approach and disappears after disconnec
   expect(s.project.roads[0].autoTaper.end.lanes).toBe(2);
 });
 
-test("two-way road assets automatically taper both directions without creating an intersection", async ({
+test("a two-way direct join can be explicitly smoothed without creating an intersection", async ({
   page,
 }) => {
   await setup(page);
@@ -102,8 +114,13 @@ test("two-way road assets automatically taper both directions without creating a
   await click(page, 0);
   await click(page, 85);
   await cancel(page);
-  const s = await state(page);
+  let s = await state(page);
   expect(s.project.roads).toHaveLength(2);
+  expect(s.project.roads[1].autoTaper).toBeUndefined();
+  await page.locator('[data-tool="upgrade"]').click();
+  await page.locator('[data-upgrade-mode="smooth"]').click();
+  await click(page, 45);
+  s = await state(page);
   expect(s.project.roads[1].autoTaper.start.lanes).toBe(1);
   expect(s.connections).toHaveLength(2);
   expect(s.junctions).toHaveLength(0);

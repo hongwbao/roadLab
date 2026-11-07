@@ -1,6 +1,9 @@
 import {
   add,
   center,
+  nodePoint,
+  backwardStart,
+  backwardEnd,
   clamp,
   dist,
   knotAt,
@@ -84,6 +87,7 @@ export function makeRoad(
     kind: "road",
     transitionStart: 0,
     transitionEnd: 1,
+    transitionMode: "direct",
     ...opts,
   };
 }
@@ -205,9 +209,55 @@ export function connections(p: Project): Connection[] {
       if (laneWidth(r, l, e) > r.width * 0.7)
         exits.push({ r, l, t: e, p: lanePoint(r, l, e) });
     }
+  // Compare only nearby endpoints. Lane points and shared reference nodes both
+  // matter: skew junction lanes can be farther apart than one lane width.
+  const cells = new Map<string, typeof entries>(),
+    cellSize = 16;
+  const insert = (p: V, row: (typeof entries)[number], kind: string) => {
+    const key = `${kind}:${Math.floor(p.x / cellSize)}:${Math.floor(p.z / cellSize)}`;
+    const bucket = cells.get(key) ?? [];
+    bucket.push(row);
+    cells.set(key, bucket);
+  };
+  for (const entry of entries) {
+    insert(entry.p, entry, "lane");
+    insert(nodePoint(entry.r, entry.t), entry, "node");
+  }
+  const candidates = (row: (typeof entries)[number]) => {
+    const found = new Set<typeof row>();
+    for (const [position, radius, kind] of [
+      [row.p, 5, "lane"],
+      [nodePoint(row.r, row.t), 0.7, "node"],
+    ] as const)
+      for (
+        let x = Math.floor((position.x - radius) / cellSize);
+        x <= Math.floor((position.x + radius) / cellSize);
+        x++
+      )
+        for (
+          let z = Math.floor((position.z - radius) / cellSize);
+          z <= Math.floor((position.z + radius) / cellSize);
+          z++
+        )
+          for (const candidate of cells.get(`${kind}:${x}:${z}`) ?? [])
+            found.add(candidate);
+    return found;
+  };
+  const grouped = (rows: typeof entries) => {
+    const map = new Map<string, typeof entries>();
+    for (const row of rows) {
+      const key = `${row.r.id}:${row.t}`,
+        group = map.get(key) ?? [];
+      group.push(row);
+      map.set(key, group);
+    }
+    return map;
+  };
+  const entryGroups = grouped(entries),
+    exitGroups = grouped(exits);
   const result: Connection[] = [];
   for (const a of exits)
-    for (const b of entries) {
+    for (const b of candidates(a)) {
       if (a.r.id === b.r.id || Math.abs(a.p.y - b.p.y) > 0.5) continue;
       const aAttachment = attachmentAt(a.r, a.t),
         bAttachment = attachmentAt(b.r, b.t);
@@ -220,8 +270,8 @@ export function connections(p: Project): Connection[] {
         )
           continue;
       } else if (aAttachment || bAttachment) continue;
-      const ac = center(a.r, a.t),
-        bc = center(b.r, b.t),
+      const ac = nodePoint(a.r, a.t),
+        bc = nodePoint(b.r, b.t),
         shared = dist(ac, bc) < 0.65,
         close = dist(a.p, b.p) < Math.max(a.r.width, b.r.width) * 0.7;
       if (!shared && !close) continue;
@@ -232,12 +282,12 @@ export function connections(p: Project): Connection[] {
       if (!allowedTurns(a.r, a.l).includes(turnOf(ad, bd))) continue;
       if (shared && dot < -0.75) continue;
       if (!aAttachment && !bAttachment && shared && dot < 0.85) {
-        const from = exits
-            .filter((x) => x.r.id === a.r.id && x.t === a.t)
-            .sort((x, y) => (x.l - y.l) * laneDirection(a.r, a.l)),
-          to = entries
-            .filter((x) => x.r.id === b.r.id && x.t === b.t)
-            .sort((x, y) => (x.l - y.l) * laneDirection(b.r, b.l));
+        const from = [...(exitGroups.get(`${a.r.id}:${a.t}`) ?? [])].sort(
+            (x, y) => (x.l - y.l) * laneDirection(a.r, a.l),
+          ),
+          to = [...(entryGroups.get(`${b.r.id}:${b.t}`) ?? [])].sort(
+            (x, y) => (x.l - y.l) * laneDirection(b.r, b.l),
+          );
         const ai = cross > 0 ? from.at(-1) : from[0],
           bi = cross > 0 ? to.at(-1) : to[0];
         const turn = turnOf(ad, bd),
@@ -251,9 +301,7 @@ export function connections(p: Project): Connection[] {
           if (index < 0 || b.l !== target?.l) continue;
         } else if (a.l !== ai?.l || b.l !== bi?.l) continue;
       } else if (!aAttachment && !bAttachment && shared) {
-        const compatible = entries.filter(
-            (x) => x.r.id === b.r.id && x.t === b.t,
-          ),
+        const compatible = entryGroups.get(`${b.r.id}:${b.t}`) ?? [],
           closest = compatible.reduce(
             (best, x) => (dist(a.p, x.p) < dist(a.p, best.p) ? x : best),
             compatible[0],
@@ -367,10 +415,17 @@ export function splitRoad(
     for (const arm of signal.arms)
       if (arm.road === id && arm.end === 1) arm.road = b.id;
   b.name = r.name + " · 后段";
-  if (r.lanesStart !== r.lanesEnd || r.profile) {
+  if (
+    r.lanesStart !== r.lanesEnd ||
+    backwardStart(r) !== backwardEnd(r) ||
+    r.profile
+  ) {
     const profile = r.profile || {
       from: r.lanesStart,
       to: r.lanesEnd,
+      ...(r.twoWay
+        ? { fromBackward: backwardStart(r), toBackward: backwardEnd(r) }
+        : {}),
       start: 0,
       end: 1,
       transitionStart: r.transitionStart,
@@ -613,7 +668,15 @@ export function reverseRoad(r: Road) {
       outgoing: k.incoming,
       at: 1 - k.at!,
     }));
-  [r.lanesStart, r.lanesEnd] = [r.lanesEnd, r.lanesStart];
+  if (r.twoWay) {
+    const start = backwardStart(r),
+      end = backwardEnd(r);
+    r.backwardLanesStart = r.lanesEnd;
+    r.backwardLanesEnd = r.lanesStart;
+    r.lanesStart = end;
+    r.lanesEnd = start;
+  } else [r.lanesStart, r.lanesEnd] = [r.lanesEnd, r.lanesStart];
+  if (r.sectionOffset !== undefined) r.sectionOffset = -r.sectionOffset;
   [r.transitionStart, r.transitionEnd] = [
     1 - r.transitionEnd,
     1 - r.transitionStart,
@@ -624,8 +687,9 @@ export function reverseRoad(r: Road) {
   if (r.profile) {
     const p = r.profile;
     r.profile = {
-      from: p.to,
-      to: p.from,
+      from: r.twoWay ? (p.toBackward ?? p.to) : p.to,
+      to: r.twoWay ? (p.fromBackward ?? p.from) : p.from,
+      ...(r.twoWay ? { fromBackward: p.to, toBackward: p.from } : {}),
       start: 1 - p.end,
       end: 1 - p.start,
       transitionStart: 1 - p.transitionEnd,
@@ -822,6 +886,31 @@ export function parseProject(text: string): Project {
       r.transitionStart >= r.transitionEnd
     )
       throw new Error("道路属性不合法，未替换当前地图。");
+    for (const n of [r.backwardLanesStart, r.backwardLanesEnd])
+      if (
+        n !== undefined &&
+        (!r.twoWay || !Number.isInteger(n) || n < 1 || n > 6)
+      )
+        throw new Error("反向车道数须为1–6条。");
+    if (
+      r.sectionOffset !== undefined &&
+      (!finite(r.sectionOffset) || Math.abs(r.sectionOffset) > 100)
+    )
+      throw new Error("道路侧向偏移不合法。");
+    if (
+      r.transitionMode !== undefined &&
+      !["direct", "smooth"].includes(r.transitionMode)
+    )
+      throw new Error("道路过渡模式不合法。");
+    r.transitionMode ??= r.autoTaper ? "smooth" : "direct";
+    for (const n of [r.profile?.fromBackward, r.profile?.toBackward])
+      if (
+        n !== undefined &&
+        (!Number.isInteger(n) ||
+          n < (r.twoWay ? 1 : 0) ||
+          n > (r.twoWay ? 6 : 0))
+      )
+        throw new Error("反向渐变车道数不合法。");
     for (const k of r.knots)
       for (const key of ["p", "incoming", "outgoing"])
         if (!k[key] || !["x", "y", "z"].every((n) => finite(k[key][n])))
@@ -877,7 +966,13 @@ export function parseProject(text: string): Project {
           !taper ||
           !Number.isInteger(taper.lanes) ||
           taper.lanes < 1 ||
-          taper.lanes >= r.lanesStart ||
+          (taper.lanes >= r.lanesStart &&
+            (taper.backwardLanes ?? taper.lanes) >= backwardStart(r)) ||
+          (taper.backwardLanes !== undefined &&
+            (!r.twoWay ||
+              !Number.isInteger(taper.backwardLanes) ||
+              taper.backwardLanes < 1 ||
+              taper.backwardLanes > backwardStart(r))) ||
           !Number.isInteger(taper.firstLane) ||
           taper.firstLane < 0 ||
           taper.firstLane + taper.lanes > r.lanesStart ||
@@ -981,18 +1076,52 @@ export function parseProject(text: string): Project {
 }
 export function reconnectIntersections(p: Project): number {
   let count = 0;
+  const sampled = new Map<
+    Road,
+    { points: V[]; minX: number; maxX: number; minZ: number; maxZ: number }
+  >();
+  const samples = (r: Road) => {
+    let row = sampled.get(r);
+    if (row) return row;
+    const points = Array.from({ length: 41 }, (_, i) => center(r, i / 40));
+    row = {
+      points,
+      minX: Math.min(...points.map((p) => p.x)),
+      maxX: Math.max(...points.map((p) => p.x)),
+      minZ: Math.min(...points.map((p) => p.z)),
+      maxZ: Math.max(...points.map((p) => p.z)),
+    };
+    sampled.set(r, row);
+    return row;
+  };
   for (let restart = 0; restart < 50; restart++) {
     let hit = false;
     outer: for (let a = 0; a < p.roads.length; a++)
       for (let b = a + 1; b < p.roads.length; b++) {
         const r = p.roads[a],
           s = p.roads[b];
+        const ar = samples(r),
+          br = samples(s);
+        if (
+          ar.maxX < br.minX - 0.5 ||
+          br.maxX < ar.minX - 0.5 ||
+          ar.maxZ < br.minZ - 0.5 ||
+          br.maxZ < ar.minZ - 0.5
+        )
+          continue;
         for (let i = 1; i <= 40; i++)
           for (let j = 1; j <= 40; j++) {
-            const a0 = center(r, (i - 1) / 40),
-              a1 = center(r, i / 40),
-              b0 = center(s, (j - 1) / 40),
-              b1 = center(s, j / 40);
+            const a0 = ar.points[i - 1],
+              a1 = ar.points[i],
+              b0 = br.points[j - 1],
+              b1 = br.points[j];
+            if (
+              Math.max(a0.x, a1.x) < Math.min(b0.x, b1.x) - 0.001 ||
+              Math.max(b0.x, b1.x) < Math.min(a0.x, a1.x) - 0.001 ||
+              Math.max(a0.z, a1.z) < Math.min(b0.z, b1.z) - 0.001 ||
+              Math.max(b0.z, b1.z) < Math.min(a0.z, a1.z) - 0.001
+            )
+              continue;
             const ax = a1.x - a0.x,
               az = a1.z - a0.z,
               bx = b1.x - b0.x,

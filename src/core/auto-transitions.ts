@@ -2,6 +2,11 @@ import {
   arcParameter,
   arcTable,
   baseCountAt,
+  baseBackwardCountAt,
+  backwardStart,
+  backwardEnd,
+  totalAt,
+  nodePoint,
   center,
   dist,
   lanePoint,
@@ -46,17 +51,20 @@ export function automaticTransitionPreview(project: Project, incoming: Road[]) {
 /** Derived collars live on the wider road; nominal assets and spline controls stay intact. */
 export function updateAutomaticTransitions(project: Project) {
   for (const road of project.roads) delete road.autoTaper;
+  if (!project.roads.some((r) => r.transitionMode === "smooth")) return;
   const ends: End[] = [];
   for (const road of project.roads) {
     for (const end of [0, 1] as const)
       ends.push({
         index: ends.length,
-        eligible: road.lanesStart === road.lanesEnd && !road.profile,
-        halfWidth:
-          baseCountAt(road, end) * road.width * (road.twoWay ? 1 : 0.5),
+        eligible:
+          road.lanesStart === road.lanesEnd &&
+          backwardStart(road) === backwardEnd(road) &&
+          !road.profile,
+        halfWidth: (totalAt(road, end) * road.width) / 2,
         road,
         end,
-        position: center(road, end),
+        position: nodePoint(road, end),
         direction: tangent(road, end),
         neighbours: [],
       });
@@ -119,7 +127,8 @@ export function updateAutomaticTransitions(project: Project) {
     }
   }
   for (const wide of ends) {
-    if (wide.neighbours.length !== 1) continue;
+    if (wide.road.transitionMode !== "smooth" || wide.neighbours.length !== 1)
+      continue;
     const narrow = wide.neighbours[0];
     if (
       narrow.neighbours.length !== 1 ||
@@ -129,7 +138,14 @@ export function updateAutomaticTransitions(project: Project) {
       continue;
     const count = baseCountAt(narrow.road, narrow.end),
       maximum = baseCountAt(wide.road, wide.end);
-    if (count >= maximum || Math.abs(wide.road.width - narrow.road.width) > 0.2)
+    const back = baseBackwardCountAt(narrow.road, narrow.end),
+      wideBack = baseBackwardCountAt(wide.road, wide.end);
+    if (
+      count > maximum ||
+      back > wideBack ||
+      (count === maximum && back === wideBack) ||
+      Math.abs(wide.road.width - narrow.road.width) > 0.2
+    )
       continue;
     // An endpoint sharing a real junction must keep its full approach width.
     if (
@@ -143,7 +159,10 @@ export function updateAutomaticTransitions(project: Project) {
     )
       continue;
     const n = normal(wide.road, wide.end),
-      delta = sub(narrow.position, wide.position),
+      delta = sub(
+        wide.road.twoWay ? narrow.position : center(narrow.road, narrow.end),
+        wide.road.twoWay ? wide.position : center(wide.road, wide.end),
+      ),
       offset = delta.x * n.x + delta.z * n.z;
     let firstLane = 0,
       best = Infinity;
@@ -165,6 +184,7 @@ export function updateAutomaticTransitions(project: Project) {
       continue;
     const taper: AutomaticTaper = {
       lanes: count,
+      ...(wide.road.twoWay ? { backwardLanes: back } : {}),
       firstLane,
       offset,
       span: 0.5,

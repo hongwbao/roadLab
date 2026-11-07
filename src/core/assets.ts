@@ -39,6 +39,40 @@ export const ROAD_ASSETS: RoadAsset[] = [
     },
   },
   {
+    id: "city-3-asymmetric",
+    name: "双向三车道 1＋2",
+    category: "city",
+    description: "反向1 · 正向2车道 · 50 km/h",
+    options: {
+      twoWay: true,
+      lanesStart: 2,
+      lanesEnd: 2,
+      backwardLanesStart: 1,
+      backwardLanesEnd: 1,
+      width: 3.5,
+      speed: 50,
+      kind: "road",
+      align: "center",
+    },
+  },
+  {
+    id: "city-5-asymmetric",
+    name: "双向五车道 2＋3",
+    category: "city",
+    description: "反向2 · 正向3车道 · 60 km/h",
+    options: {
+      twoWay: true,
+      lanesStart: 3,
+      lanesEnd: 3,
+      backwardLanesStart: 2,
+      backwardLanesEnd: 2,
+      width: 3.5,
+      speed: 60,
+      kind: "road",
+      align: "center",
+    },
+  },
+  {
     id: "city-6",
     name: "双向六车道",
     category: "city",
@@ -173,6 +207,10 @@ export const ROAD_ASSETS: RoadAsset[] = [
       align: "center",
     },
   },
+];
+
+// Kept only to read legacy maps and procedural examples; these are no longer palette assets.
+const LEGACY_ROAD_ASSETS: RoadAsset[] = [
   {
     id: "widen-23",
     name: "两车道扩为三车道",
@@ -242,13 +280,17 @@ for (const asset of ROAD_ASSETS)
     asset.options.highwayRules = asset.category === "highway";
 
 export const getAsset = (id: string) =>
-  ROAD_ASSETS.find((a) => a.id === id) || ROAD_ASSETS[0];
+  [...ROAD_ASSETS, ...LEGACY_ROAD_ASSETS].find((a) => a.id === id) ||
+  ROAD_ASSETS[0];
 export const assetForRoad = (r: Road) =>
   ROAD_ASSETS.find(
     (a) =>
       a.options.twoWay === r.twoWay &&
       a.options.lanesStart === r.lanesStart &&
       a.options.lanesEnd === r.lanesEnd &&
+      (!r.twoWay ||
+        (a.options.backwardLanesStart ?? a.options.lanesStart) ===
+          (r.backwardLanesStart ?? r.lanesStart)) &&
       a.options.kind === r.kind &&
       a.options.speed === r.speed,
   ) ||
@@ -257,5 +299,8 @@ export const assetForRoad = (r: Road) =>
       a.options.twoWay === r.twoWay &&
       a.options.lanesStart === r.lanesStart &&
       a.options.lanesEnd === r.lanesEnd &&
+      (!r.twoWay ||
+        (a.options.backwardLanesStart ?? a.options.lanesStart) ===
+          (r.backwardLanesStart ?? r.lanesStart)) &&
       a.options.kind === r.kind,
   );

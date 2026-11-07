@@ -103,7 +103,14 @@ const distance = (a: V, b: V) => Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
 const tuple = (a: readonly V[]): CS2RoadCurve =>
   a.map(vector) as unknown as CS2RoadCurve;
 const nominalWidth = (r: Road) =>
-  Math.max(r.lanesStart, r.lanesEnd) * r.width * (r.twoWay ? 2 : 1);
+  (Math.max(r.lanesStart, r.lanesEnd) +
+    (r.twoWay
+      ? Math.max(
+          r.backwardLanesStart ?? r.lanesStart,
+          r.backwardLanesEnd ?? r.lanesEnd,
+        )
+      : 0)) *
+  r.width;
 const pavementWidth = (r: Road, t: number) =>
   totalAt(r, t) * r.width + CS2_ROADLAB_SNAP_WORLD_POLICY.shoulderWidth * 2;
 
@@ -170,6 +177,10 @@ function rawBezier(road: Road, from: number, to: number): CS2RoadCurve {
 function centerHasNoOffset(road: Road) {
   return (
     road.align === "center" &&
+    !road.sectionOffset &&
+    (!road.twoWay ||
+      ((road.backwardLanesStart ?? road.lanesStart) === road.lanesStart &&
+        (road.backwardLanesEnd ?? road.lanesEnd) === road.lanesEnd)) &&
     !(road.autoTaper?.start?.offset || road.autoTaper?.end?.offset)
   );
 }
@@ -177,12 +188,19 @@ function breakpoints(road: Road) {
   const points = new Set<number>([0, 1]);
   for (let i = 1; i < road.knots.length - 1; i++) points.add(knotAt(road, i));
   const profile = road.profile;
-  if (profile && profile.from !== profile.to) {
+  if (
+    profile &&
+    (profile.from !== profile.to || profile.fromBackward !== profile.toBackward)
+  ) {
     const span = profile.end - profile.start;
     if (span !== 0)
       for (const t of [profile.transitionStart, profile.transitionEnd])
         points.add((t - profile.start) / span);
-  } else if (!profile && road.lanesStart !== road.lanesEnd) {
+  } else if (
+    !profile &&
+    (road.lanesStart !== road.lanesEnd ||
+      road.backwardLanesStart !== road.backwardLanesEnd)
+  ) {
     points.add(road.transitionStart);
     points.add(road.transitionEnd);
   }
@@ -285,6 +303,9 @@ function roadSnapshot(
     road.knots,
     road.lanesStart,
     road.lanesEnd,
+    road.backwardLanesStart,
+    road.backwardLanesEnd,
+    road.sectionOffset,
     road.twoWay,
     road.width,
     road.align,

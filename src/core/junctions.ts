@@ -3,6 +3,7 @@ import {
   arcParameter,
   arcTable,
   center,
+  nodePoint,
   dist,
   mul,
   normal,
@@ -47,7 +48,7 @@ export function buildJunctions(p: Project): Junction[] {
   const groups: { position: V; ends: { r: Road; end: 0 | 1 }[] }[] = [];
   for (const r of p.roads)
     for (const end of [0, 1] as const) {
-      const pos = center(r, end);
+      const pos = nodePoint(r, end);
       let g = groups.find((g) => dist(g.position, pos) < 0.65);
       if (!g) {
         g = { position: pos, ends: [] };

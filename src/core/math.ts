@@ -87,21 +87,46 @@ export function taperWeight(r: Road, t: number, end: "start" | "end") {
   const taper = r.autoTaper?.[end];
   return taper ? 1 - smooth((end === "start" ? t : 1 - t) / taper.span) : 0;
 }
-export function countAt(r: Road, t: number): number {
-  if (!r.autoTaper) return baseCountAt(r, t);
-  let width = 0;
-  for (let lane = 0; lane < laneCount(r); lane++)
-    width += laneWidth(r, lane, t);
-  return width / (r.width * (r.twoWay ? 2 : 1));
+export const backwardStart = (r: Road) =>
+  r.twoWay ? (r.backwardLanesStart ?? r.lanesStart) : 0;
+export const backwardEnd = (r: Road) =>
+  r.twoWay ? (r.backwardLanesEnd ?? r.lanesEnd) : 0;
+export const backwardLaneCount = (r: Road) =>
+  Math.max(backwardStart(r), backwardEnd(r));
+export function baseBackwardCountAt(r: Road, t: number) {
+  if (!r.twoWay) return 0;
+  const p = r.profile,
+    u = p ? p.start + (p.end - p.start) * t : t;
+  const from = p?.fromBackward ?? (p ? p.from : backwardStart(r));
+  const to = p?.toBackward ?? (p ? p.to : backwardEnd(r));
+  return (
+    from +
+    (to - from) *
+      smooth(
+        (u - (p?.transitionStart ?? r.transitionStart)) /
+          Math.max(
+            0.001,
+            (p?.transitionEnd ?? r.transitionEnd) -
+              (p?.transitionStart ?? r.transitionStart),
+          ),
+      )
+  );
 }
-export const totalAt = (r: Road, t: number) =>
-  countAt(r, t) * (r.twoWay ? 2 : 1);
-export function center(r: Road, t: number): V {
-  const baseTotal = baseCountAt(r, t) * (r.twoWay ? 2 : 1);
-  const delta =
-    ((baseTotal - (r.widthOrigin ?? baseCountAt(r, 0) * (r.twoWay ? 2 : 1))) *
-      r.width) /
-    2;
+export function countAt(r: Road, t: number) {
+  return totalAt(r, t) / (r.twoWay ? 2 : 1);
+}
+export function totalAt(r: Road, t: number) {
+  if (!r.autoTaper) return baseCountAt(r, t) + baseBackwardCountAt(r, t);
+  let total = 0;
+  for (let lane = 0; lane < laneCount(r); lane++)
+    total += laneWidth(r, lane, t) / r.width;
+  return total;
+}
+/** Editable node reference stays stable when a carriageway grows on one side. */
+export function nodePoint(r: Road, t: number): V {
+  const nominal = baseCountAt(r, t) + baseBackwardCountAt(r, t);
+  const origin = r.widthOrigin ?? baseCountAt(r, 0) + baseBackwardCountAt(r, 0);
+  const delta = ((nominal - origin) * r.width) / 2;
   const automaticOffset =
     (r.autoTaper?.start?.offset ?? 0) * taperWeight(r, t, "start") +
     (r.autoTaper?.end?.offset ?? 0) * taperWeight(r, t, "end");
@@ -114,62 +139,73 @@ export function center(r: Road, t: number): V {
     ),
   );
 }
+export function center(r: Road, t: number): V {
+  let offset = r.sectionOffset ?? 0;
+  if (
+    r.twoWay &&
+    (backwardStart(r) !== r.lanesStart ||
+      backwardEnd(r) !== r.lanesEnd ||
+      r.autoTaper?.start?.backwardLanes !== undefined ||
+      r.autoTaper?.end?.backwardLanes !== undefined)
+  ) {
+    let forward = 0,
+      backward = 0;
+    for (let lane = 0; lane < laneCount(r); lane++) {
+      if (laneDirection(r, lane) === 1) forward += laneWidth(r, lane, t);
+      else backward += laneWidth(r, lane, t);
+    }
+    offset += (forward - backward) / 2;
+  }
+  return add(nodePoint(r, t), mul(normal(r, t), offset));
+}
 export function laneCount(r: Road): number {
-  return Math.max(r.lanesStart, r.lanesEnd) * (r.twoWay ? 2 : 1);
+  return Math.max(r.lanesStart, r.lanesEnd) + backwardLaneCount(r);
 }
 export function laneDirection(r: Road, lane: number): 1 | -1 {
-  return r.twoWay && lane < Math.max(r.lanesStart, r.lanesEnd) ? -1 : 1;
+  return lane < backwardLaneCount(r) ? -1 : 1;
 }
 export function laneWidth(r: Road, lane: number, t: number): number {
-  const max = Math.max(r.lanesStart, r.lanesEnd),
-    index = r.twoWay
-      ? lane < max
-        ? max - 1 - lane
-        : lane - max
-      : r.align === "right"
-        ? max - 1 - lane
-        : lane;
-  let width = clamp(baseCountAt(r, t) - index) * r.width;
+  const back = laneDirection(r, lane) === -1,
+    backwards = backwardLaneCount(r);
+  const max = Math.max(r.lanesStart, r.lanesEnd);
+  const index = r.twoWay
+    ? back
+      ? backwards - 1 - lane
+      : lane - backwards
+    : r.align === "right"
+      ? max - 1 - lane
+      : lane;
+  let width =
+    clamp((back ? baseBackwardCountAt(r, t) : baseCountAt(r, t)) - index) *
+    r.width;
   for (const end of ["start", "end"] as const) {
     const taper = r.autoTaper?.[end];
     if (!taper) continue;
-    const order = r.twoWay ? index : lane;
-    if (order < taper.firstLane || order >= taper.firstLane + taper.lanes)
+    const order = r.twoWay ? index : lane,
+      count = back ? (taper.backwardLanes ?? taper.lanes) : taper.lanes;
+    if (order < taper.firstLane || order >= taper.firstLane + count)
       width *= 1 - taperWeight(r, t, end);
   }
   return width;
 }
 export function lanePoint(r: Road, lane: number, t: number): V {
-  let offset = 0;
-  if (r.twoWay) {
-    const m = Math.max(r.lanesStart, r.lanesEnd),
-      back = lane < m,
-      index = back ? m - 1 - lane : lane - m;
-    offset =
-      (back ? -1 : 1) *
-      (Math.min(countAt(r, t), index) * r.width + laneWidth(r, lane, t) / 2);
-  } else {
-    let preceding = 0;
-    for (let i = 0; i < lane; i++) preceding += laneWidth(r, i, t);
-    offset =
-      (-totalAt(r, t) * r.width) / 2 + preceding + laneWidth(r, lane, t) / 2;
-  }
-  return add(center(r, t), mul(normal(r, t), offset));
+  let preceding = 0;
+  for (let i = 0; i < lane; i++) preceding += laneWidth(r, i, t);
+  return add(
+    center(r, t),
+    mul(
+      normal(r, t),
+      (-totalAt(r, t) * r.width) / 2 + preceding + laneWidth(r, lane, t) / 2,
+    ),
+  );
 }
 export function boundaryPoint(r: Road, index: number, t: number): V {
-  const count = countAt(r, t),
-    max = Math.max(r.lanesStart, r.lanesEnd);
-  let offset = 0;
-  if (r.twoWay)
-    offset =
-      index <= max
-        ? -Math.min(count, max - index) * r.width
-        : Math.min(count, index - max) * r.width;
-  else {
-    offset = (-count * r.width) / 2;
-    for (let i = 0; i < index; i++) offset += laneWidth(r, i, t);
-  }
-  return add(center(r, t), mul(normal(r, t), offset));
+  let preceding = 0;
+  for (let i = 0; i < index; i++) preceding += laneWidth(r, i, t);
+  return add(
+    center(r, t),
+    mul(normal(r, t), (-totalAt(r, t) * r.width) / 2 + preceding),
+  );
 }
 export const laneEntryT = (r: Road, lane: number) =>
   laneDirection(r, lane) === 1 ? 0 : 1;
