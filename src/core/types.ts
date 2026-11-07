@@ -1,4 +1,5 @@
 import type { TrafficSignal } from "./traffic-signals";
+import type { JunctionLaneRule } from "./junction-lane-connections";
 
 export type V = { x: number; y: number; z: number };
 export type Knot = { p: V; incoming: V; outgoing: V; at?: number };
@@ -63,6 +64,7 @@ export type Blueprint = {
   roads: Road[];
   connections: Connection[];
   signals?: TrafficSignal[];
+  junctionLaneConnections?: JunctionLaneRule[];
 };
 export type Project = {
   version: 1;
@@ -73,6 +75,7 @@ export type Project = {
   templates: Blueprint[];
   trafficMultiplier?: number;
   signals?: TrafficSignal[];
+  junctionLaneConnections?: JunctionLaneRule[];
 };
 export type Issue = {
   road?: string;

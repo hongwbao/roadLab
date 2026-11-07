@@ -1427,3 +1427,340 @@ dialog dd {
     top: 104px;
   }
 }
+
+.signal-modes button[data-signal-mode="cs2"] {
+  grid-column: auto;
+}
+.signal-program {
+  margin-top: 16px;
+}
+.signal-program-heading,
+.signal-phase-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.signal-program-heading h3,
+.signal-phase-heading h3 {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+}
+.signal-program-heading > output {
+  color: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.signal-program-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+  margin: 9px 0 18px;
+  padding: 0;
+  list-style: none;
+}
+.signal-program-tabs li {
+  min-width: 0;
+}
+.signal-phase-tab {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 5px 4px;
+  padding: 8px;
+  text-align: left;
+  border: 1px solid var(--line);
+}
+.signal-phase-tab > span,
+.signal-phase-tab > output {
+  color: var(--muted);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+.signal-phase-tab > strong {
+  grid-row: 2;
+  grid-column: 1 / -1;
+  font-size: 11px;
+  line-height: 1.5;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.signal-phase-tab > output {
+  grid-row: 1;
+  grid-column: 2;
+  white-space: nowrap;
+}
+.signal-phase-tab.selected {
+  border-color: var(--blue);
+  background: #315e78;
+}
+.signal-phase-tab.is-running > span::before {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 5px;
+  border-radius: 50%;
+  background: #75e6aa;
+}
+.signal-phase-actions {
+  display: flex;
+  gap: 4px;
+}
+.signal-phase-actions .icon-only {
+  min-width: 28px;
+  min-height: 28px;
+  padding: 5px;
+}
+.signal-phase-actions svg {
+  width: 15px;
+  height: 15px;
+}
+.signal-phase-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 95px;
+  gap: 9px;
+  margin: 10px 0 16px;
+}
+.signal-phase-fields label,
+.signal-presets label {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.signal-phase-fields input,
+.signal-presets input,
+.signal-presets select {
+  width: 100%;
+  min-width: 0;
+  color: var(--text);
+}
+.signal-phase-fields input[type="number"] {
+  font-variant-numeric: tabular-nums;
+}
+.signal-matrix {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: 11px;
+}
+.signal-matrix caption {
+  margin-bottom: 8px;
+  text-align: left;
+  font-weight: 500;
+}
+.signal-matrix th,
+.signal-matrix td {
+  padding: 6px 3px;
+  text-align: center;
+  border-bottom: 1px solid var(--line);
+}
+.signal-matrix th {
+  font-weight: 500;
+}
+.signal-matrix th:first-child {
+  text-align: left;
+}
+.signal-matrix small {
+  display: block;
+  margin-top: 3px;
+  font-size: 10px;
+  color: var(--muted);
+}
+.signal-movement {
+  display: flex;
+  min-height: 32px;
+  gap: 3px;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.signal-movement input {
+  width: 16px;
+  min-height: 16px;
+  height: 16px;
+  padding: 0;
+  margin: 0;
+  accent-color: var(--blue);
+  cursor: pointer;
+}
+.signal-movement:has(input:disabled) {
+  opacity: 0.55;
+  cursor: default;
+}
+.signal-movement-state {
+  color: var(--muted);
+  font-size: 10px;
+}
+.signal-movement input:checked + .signal-movement-state {
+  color: #75e6aa;
+}
+.signal-program-actions,
+.signal-preset-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin: 12px 0;
+}
+.signal-program-actions button,
+.signal-preset-actions button,
+.signal-presets > button {
+  font-size: 11px;
+}
+.signal-presets {
+  margin: 15px 0;
+}
+.signal-presets summary {
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--text);
+}
+.signal-presets label {
+  margin-top: 12px;
+}
+.signal-empty-phase,
+.signal-preset-error,
+.signal-editor-error {
+  color: #ffb7ae;
+  overflow-wrap: anywhere;
+}
+.signal-panel .signal-editor-error {
+  padding: 9px 0;
+  font-size: 12px;
+}
+.signal-panel select option {
+  background: var(--panel);
+  color: var(--text);
+}
+@media (max-width: 600px) {
+  .signal-phase-fields {
+    grid-template-columns: minmax(0, 1fr) 86px;
+  }
+  .signal-movement {
+    flex-direction: column;
+    gap: 4px;
+  }
+}
+
+.junction-lane-legend {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  margin: 13px 0;
+  font-size: 11px;
+}
+.junction-lane-legend > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.junction-lane-legend i {
+  width: 9px;
+  height: 9px;
+  border: 1px solid #5de2ed;
+  border-radius: 50%;
+}
+.junction-lane-legend .lane-port-in {
+  background: #5de2ed;
+}
+.junction-lane-selection {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-top: 18px;
+  font-size: 12px;
+}
+.junction-lane-selection strong {
+  font-weight: 600;
+}
+.junction-lane-selection > span {
+  font-size: 11px;
+}
+.junction-lane-destinations {
+  padding: 0;
+  margin: 12px 0;
+  list-style: none;
+}
+.junction-lane-destinations li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+}
+.junction-lane-destinations .icon-only {
+  min-width: 29px;
+  min-height: 29px;
+  padding: 5px;
+}
+.junction-lane-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin: 12px 0;
+}
+.junction-lane-actions button,
+.junction-lane-keyboard button,
+[data-junction-lane-action="restore-junction"] {
+  font-size: 11px;
+}
+.junction-lane-closed {
+  color: #ffb7ae;
+}
+.junction-lane-keyboard {
+  margin: 18px 0;
+}
+.junction-lane-keyboard summary {
+  font-size: 11px;
+  color: var(--muted);
+  cursor: pointer;
+}
+.junction-lane-source-buttons,
+.junction-lane-target-buttons {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+  margin-top: 12px;
+}
+.junction-lane-source-buttons button,
+.junction-lane-target-buttons button {
+  overflow-wrap: anywhere;
+  min-width: 0;
+  padding: 7px 6px;
+  text-align: left;
+}
+.junction-lane-target-buttons {
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+.turn-panel p {
+  font-size: 12px;
+  line-height: 1.8;
+}
+.turn-panel .junction-lane-footnote {
+  margin-top: 15px;
+  font-size: 11px;
+}
+.signal-phase-tab.selected > span,
+.signal-phase-tab.selected > output {
+  color: var(--text);
+}
+
+.turn-panel {
+  max-height: calc(100dvh - 240px);
+  overflow-y: auto;
+}
+@media (max-width: 600px) {
+  .turn-panel {
+    max-height: calc(100dvh - 285px);
+  }
+}

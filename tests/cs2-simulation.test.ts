@@ -278,7 +278,12 @@ function crossing(signal = false) {
     makeRoad(v(0, -160), v(0, 0), { ...opts, id: "north" }),
     makeRoad(v(0, 0), v(0, 160), { ...opts, id: "south" }),
   ];
-  if (signal) project.signals = [makeTrafficSignal(buildJunctions(project)[0])];
+  if (signal) {
+    const config = makeTrafficSignal(buildJunctions(project)[0]);
+    // This scenario specifically verifies the original demand-actuated controller.
+    config.mode = "cs2";
+    project.signals = [config];
+  }
   return project;
 }
 const boundary = (

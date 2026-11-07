@@ -17,6 +17,10 @@ import {
   type Cs2SignalLane,
 } from "./cs2-junctions";
 import { buildCs2SignalGroups } from "./cs2-signal-groups";
+import {
+  resolveSignalApproaches,
+  validateSignalProgram,
+} from "../core/traffic-signal-programs";
 
 export type LightColor = "red" | "yellow" | "green";
 export type SignalMovement = {
@@ -25,6 +29,8 @@ export type SignalMovement = {
   road: string;
   end: 0 | 1;
   turn: Turn;
+  /** The source grouping's straight classification can differ from map turn labels on shallow bends. */
+  sourceStraight?: boolean;
   startDirection?: { x: number; z: number };
   endDirection?: { x: number; z: number };
 };
@@ -131,7 +137,34 @@ export class TrafficLightController {
           phases.push({ name, duration, arms: keys, turns, movements: ids });
       };
       let source: Clock["source"];
-      if (config.mode === "cs2") {
+      if (config.mode === "custom") {
+        validateSignalProgram(config.program);
+        const resolved = resolveSignalApproaches(config.program, junction);
+        for (const phase of config.program.phases) {
+          const ids = new Set(
+            links
+              .filter((movement) =>
+                phase.movements.some((permission) => {
+                  const arm = resolved.get(permission.approach);
+                  return (
+                    arm &&
+                    signalArmKey(arm) === signalArmKey(movement) &&
+                    permission.turn === movement.turn
+                  );
+                }),
+              )
+              .map((movement) => movement.id),
+          );
+          const selected = links.filter((movement) => ids.has(movement.id));
+          phases.push({
+            name: phase.name,
+            duration: phase.duration,
+            arms: [...new Set(selected.map(signalArmKey))],
+            turns: [...new Set(selected.map((movement) => movement.turn))],
+            movements: ids,
+          });
+        }
+      } else if (config.mode === "cs2") {
         const groups = buildCs2SignalGroups(
           links.map((movement) => {
             const arm = arms.find(
@@ -146,7 +179,7 @@ export class TrafficLightController {
               // Simulation supplies exact curve tangents. The fallback serves
               // older standalone controller clients without curve geometry.
               endDirection: movement.endDirection ?? arm.direction,
-              straight: movement.turn === "straight",
+              straight: movement.sourceStraight ?? movement.turn === "straight",
               car: true,
             };
           }),
@@ -396,7 +429,12 @@ export class TrafficLightController {
       let yellow = false;
       for (const [id, value] of clock.source.heads) {
         const movement = this.movements.get(id)?.movement;
-        if (!movement || signalArmKey(movement) !== arm) continue;
+        if (
+          !movement ||
+          signalArmKey(movement) !== arm ||
+          movement.turn !== turn
+        )
+          continue;
         if (value & 4) return "green";
         if (value & 2) yellow = true;
       }
@@ -404,7 +442,12 @@ export class TrafficLightController {
     }
     if (!clock || clock.stage === "all-red") return "red";
     const phase = clock.phases[clock.phase];
-    return phase.arms.includes(arm) && phase.turns.includes(turn)
+    return [...phase.movements].some((id) => {
+      const movement = this.movements.get(id)?.movement;
+      return (
+        movement && signalArmKey(movement) === arm && movement.turn === turn
+      );
+    })
       ? clock.stage
       : "red";
   }

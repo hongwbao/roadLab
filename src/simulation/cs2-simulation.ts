@@ -15,6 +15,7 @@ import {
   tangent,
 } from "../core/math";
 import { connections, normalizePorts } from "../core/model";
+import { turnOf } from "../core/lane-rules";
 import {
   isSink,
   isSource,
@@ -533,11 +534,12 @@ export class Cs2TrafficSimulation {
     for (const row of this.geometry.values()) {
       const rule = sourceRules.get(row.connection.id);
       row.laneFlags = rule?.flags ?? 0;
-      row.turn = rule?.turn.isTurn
-        ? rule.turn.right
-          ? "right"
-          : "left"
-        : "straight";
+      // Signal permissions use RoadLab's visible map directions. Original lane
+      // flags retain their source coordinate convention and driving behavior.
+      row.turn = turnOf(
+        { ...unitXZ(row.points[0], row.points[1]), y: 0 },
+        { ...unitXZ(row.points[2], row.points[3]), y: 0 },
+      );
       geometry.set(row.connection.id, {
         points: row.points,
         length: row.length,
@@ -551,6 +553,7 @@ export class Cs2TrafficSimulation {
         road: road.id,
         end: laneDirection(road, row.connection.from.lane) === 1 ? 1 : 0,
         turn: row.turn,
+        sourceStraight: rule ? !rule.turn.isTurn : row.turn === "straight",
         startDirection: unitXZ(row.points[0], row.points[1]),
         endDirection: unitXZ(row.points[3], row.points[2]),
       });

@@ -13,8 +13,6 @@ import {
   dist,
   laneCount,
   laneDirection,
-  lanePoint,
-  laneWidth,
   maxGrade,
   mul,
   nearest,
@@ -69,7 +67,12 @@ import {
 import { Scene, type Hit } from "../render/scene";
 import { Simulation } from "../simulation/simulation";
 import { TrafficLightTool } from "./traffic-light-tool";
+import { JunctionLaneTool } from "./junction-lane-tool";
 import { cloneTrafficSignals } from "../core/traffic-signals";
+import {
+  cloneJunctionLaneRules,
+  removeJunctionLaneRulesForRoads,
+} from "../core/junction-lane-connections";
 export type SnapInfo = {
   kind: "endpoint" | "offset" | "road" | "angle" | "grid" | "lane";
   position: V;
@@ -99,6 +102,7 @@ export class Editor {
   scene: Scene;
   simulation = new Simulation();
   signalTool = new TrafficLightTool(this);
+  junctionLaneTool: JunctionLaneTool;
   tool: Tool = "select";
   assetId = "city-2";
   alignment: Alignment = "auto";
@@ -185,6 +189,7 @@ export class Editor {
     normalizePorts(this.project);
     autoJunction(this.project);
     this.scene = new Scene(el);
+    this.junctionLaneTool = new JunctionLaneTool(this);
     this.scene.fit(this.project.roads);
     this.bind();
     this.simulation.configure(this.project);
@@ -210,6 +215,7 @@ export class Editor {
       this.settings,
       this.tool === "select" && !this.simulation.running,
     );
+    this.junctionLaneTool.sync();
     if (ui) this.onChange();
     this.queueSave();
   }
@@ -313,7 +319,7 @@ export class Editor {
       boundary: "点击端点设置通行口 · 双向道路同时进出 · 右键取消通行口",
       delete: "拆除模式 · 悬停道路预览 · 左键拆除 · B / Esc 退出",
       upgrade: "先选择道路资产，再点击已有道路替换",
-      turn: "点击地图中的车道，设置允许的左转、直行和右转 · J / Esc 退出",
+      turn: "点击路口，连接进出车道 · 右键取消选择 · J / Esc 退出",
       signal: "点击路口中心设置红绿灯 · 右键移除 · K / Esc 退出",
     }[this.tool];
   }
@@ -830,31 +836,6 @@ export class Editor {
     this.branch.offset = Math.max(12, Math.min(50, this.branch.length * 0.5));
     if (this.pointer) this.updatePlacement(this.pointer);
   }
-  private turnHit(x: number, y: number) {
-    const hit = this.scene.hit(x, y),
-      road = this.project.roads.find((r) => r.id === hit?.road);
-    if (!road) return;
-    const raw = this.scene.groundPoint(
-      x,
-      y,
-      hit?.position?.y ?? center(road, 0.5).y,
-    );
-    if (!raw) return;
-    const near = nearest(road, raw);
-    const lanes = Array.from({ length: laneCount(road) }, (_, lane) => lane)
-      .filter(
-        (lane) =>
-          laneWidth(road, lane, near.t) > road.width * 0.7 &&
-          laneWidth(road, lane, laneDirection(road, lane) === 1 ? 1 : 0) >
-            road.width * 0.7,
-      )
-      .sort(
-        (a, b) =>
-          dist(lanePoint(road, a, near.t), raw) -
-          dist(lanePoint(road, b, near.t), raw),
-      );
-    if (lanes.length) return { road, lane: lanes[0] };
-  }
   toggleTurn(turn: Turn) {
     const choice = this.turnSelection,
       road = this.project.roads.find((r) => r.id === choice?.road);
@@ -1267,16 +1248,7 @@ export class Editor {
       return;
     }
     if (this.tool === "turn") {
-      const choice = this.turnHit(e.clientX, e.clientY);
-      if (choice) {
-        this.turnSelection = { road: choice.road.id, lane: choice.lane };
-        this.scene.showLaneTarget(
-          choice.road,
-          [choice.lane],
-          laneDirection(choice.road, choice.lane) === 1 ? 1 : 0,
-        );
-        this.onChange();
-      }
+      this.junctionLaneTool.select(e.clientX, e.clientY);
       return;
     }
     if (this.building) {
@@ -1347,6 +1319,11 @@ export class Editor {
   }
 
   private rightClick(e: PointerEvent) {
+    if (
+      this.tool === "turn" &&
+      this.junctionLaneTool.rightClick(e.clientX, e.clientY)
+    )
+      return;
     if (this.tool === "signal") {
       const junction = this.signalTool.hit(e.clientX, e.clientY);
       if (junction) {
@@ -1528,22 +1505,8 @@ export class Editor {
         return;
       }
       if (this.tool === "turn") {
-        const choice = this.turnHit(e.clientX, e.clientY);
-        const selected = this.turnSelection;
-        const road =
-          choice?.road ??
-          this.project.roads.find((r) => r.id === selected?.road);
-        const lane = choice?.lane ?? selected?.lane;
         this.scene.setHover();
-        this.scene.showLaneTarget(
-          road,
-          lane === undefined ? [] : [lane],
-          road && lane !== undefined
-            ? laneDirection(road, lane) === 1
-              ? 1
-              : 0
-            : 1,
-        );
+        this.junctionLaneTool.move(e.clientX, e.clientY);
         canvas.style.cursor = "crosshair";
         return;
       }
@@ -1639,6 +1602,7 @@ export class Editor {
     canvas.addEventListener("pointerleave", () => {
       if (this.drag || this.pointerPress) return;
       this.scene.setHover();
+      this.junctionLaneTool.clearHover();
       this.scene.showBuildMarker();
       this.scene.showPreviews([]);
       this.snapInfo = undefined;
@@ -1710,6 +1674,8 @@ export class Editor {
       }
       if (e.key === "Delete") {
         e.preventDefault();
+        if (this.tool === "turn" && this.junctionLaneTool.deleteSelected())
+          return;
         this.action("delete");
       }
       if (e.key === "Backspace" && this.drawPoints.length) {
@@ -1769,6 +1735,10 @@ export class Editor {
               this.project.signals,
               new Map(roads.map((r) => [r.id, r.id])),
             ),
+            junctionLaneConnections: cloneJunctionLaneRules(
+              this.project.junctionLaneConnections,
+              new Map(roads.map((r) => [r.id, r.id])),
+            ),
           }),
         "模板已保存",
       );
@@ -1776,12 +1746,20 @@ export class Editor {
     }
     this.edit(() => {
       const signals = cloneTrafficSignals(this.project.signals, ids);
+      const laneRules = cloneJunctionLaneRules(
+        this.project.junctionLaneConnections,
+        ids,
+      );
       remapRoadReferences(roads, ids);
       transformRoads(roads, (p) => add(p, v(15, 30)));
       this.project.roads.push(...roads);
       if (signals.length) {
         this.project.signals ??= [];
         this.project.signals.push(...signals);
+      }
+      if (laneRules.length) {
+        this.project.junctionLaneConnections ??= [];
+        this.project.junctionLaneConnections.push(...laneRules);
       }
       this.selected = new Set(roads.map((r) => r.id));
     }, "道路已复制");
@@ -1892,6 +1870,7 @@ export class Editor {
     }
     if (name === "reverse") {
       this.edit(() => {
+        removeJunctionLaneRulesForRoads(this.project, this.selected);
         for (const road of this.project.roads)
           for (const end of ["start", "end"] as const)
             if (
@@ -1949,6 +1928,7 @@ export class Editor {
         target = this.scene.controls.target;
       const ids = new Map(roads.map((r) => [r.id, uid()])),
         signals = cloneTrafficSignals(t.signals, ids);
+      const laneRules = cloneJunctionLaneRules(t.junctionLaneConnections, ids);
       remapRoadReferences(roads, ids);
       transformRoads(roads, (p) =>
         v(p.x - cx + target.x, p.z - cz + target.z, p.y),
@@ -1957,6 +1937,10 @@ export class Editor {
       if (signals.length) {
         this.project.signals ??= [];
         this.project.signals.push(...signals);
+      }
+      if (laneRules.length) {
+        this.project.junctionLaneConnections ??= [];
+        this.project.junctionLaneConnections.push(...laneRules);
       }
       this.selected = new Set(roads.map((r) => r.id));
     }, "模板已放置，可以拖动整体调整");

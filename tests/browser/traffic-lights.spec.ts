@@ -169,31 +169,192 @@ test("signal countdown follows simulation time and pauses with the traffic", asy
   expect(remaining - after).toBeCloseTo(0.2, 5);
 });
 
-test("new signals use automatic demand groups and retain the mode after saving", async ({
+test("new cross-junction signals use the requested editable four-phase default", async ({
   page,
 }) => {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await junction(page);
-  expect((await state(page)).project.signals[0].mode).toBe("cs2");
-  await expect(page.locator('[data-signal-mode="cs2"]')).toHaveAttribute(
+  const signal = (await state(page)).project.signals[0];
+  expect(signal.mode).toBe("custom");
+  expect(signal.program.phases.map((phase: any) => phase.duration)).toEqual([
+    20, 8, 20, 8,
+  ]);
+  await expect(page.locator('[data-signal-mode="custom"]')).toHaveAttribute(
     "aria-pressed",
     "true",
   );
-  await expect(page.locator("[data-signal-time]")).toHaveCount(0);
-  await expect(page.locator("[data-signal-remaining]")).toHaveText("感应控制");
-  expect(await page.locator("[data-signal-phases] li").count()).toBe(2);
+  await expect(page.locator(".signal-phase-tab")).toHaveCount(4);
+  await expect(
+    page.locator('[data-signal-movement][data-turn="right"]:checked'),
+  ).toHaveCount(4);
+  await expect(
+    page.getByRole("checkbox", { name: "北侧左转", exact: true }),
+  ).not.toBeChecked();
+  await page.locator('.signal-phase-tab[data-phase-id="phase-2"]').click();
+  await expect(
+    page.getByRole("checkbox", { name: "北侧左转", exact: true }),
+  ).not.toBeChecked();
+  await expect(
+    page.getByRole("checkbox", { name: "东侧左转", exact: true }),
+  ).toBeChecked();
+  await expect(
+    page.locator('[data-signal-movement][data-turn="right"]:checked'),
+  ).toHaveCount(4);
+  await page.evaluate(() => {
+    (window as any).lab.editor.simulation.trafficLights.update(25);
+  });
+  await expect(page.locator("[data-signal-live]")).toContainText("东西左转");
+  const heads = await page.evaluate(() => {
+    const editor = (window as any).lab.editor,
+      j = editor.signalTool.junction;
+    const north = j.arms.find((arm: any) => arm.direction.z < -0.9);
+    return editor.scene.trafficLights.heads
+      .filter((head: any) => head.arm === `${north.road}:${north.end}`)
+      .map((head: any) => ({ turn: head.turn, color: head.color }));
+  });
+  expect(heads).toHaveLength(3);
+  expect(heads).toContainEqual({ turn: "left", color: "red" });
+  expect(heads).toContainEqual({ turn: "right", color: "green" });
   await page.locator("#viewport").focus();
   await page.keyboard.press("Control+s");
   await page.reload();
   await page.waitForFunction(() => !!(window as any).lab);
-  expect((await state(page)).project.signals[0].mode).toBe("cs2");
-  await page.locator('[data-tool="signal"]').click();
-  const p = await page.evaluate(() =>
-    (window as any).lab.worldToScreen({ x: 0, y: 0, z: 0 }),
+  expect((await state(page)).project.signals[0].mode).toBe("custom");
+  expect((await state(page)).project.signals[0].program.phases).toHaveLength(4);
+  expect(errors).toEqual([]);
+});
+
+test("custom phase editing supports timing, movement, insertion, ordering, deletion and undo", async ({
+  page,
+}) => {
+  await junction(page);
+  const name = page.locator("[data-signal-phase-name]"),
+    duration = page.locator("[data-signal-phase-duration]");
+  await name.fill("试验通行");
+  await name.dispatchEvent("change");
+  await duration.fill("14");
+  await duration.dispatchEvent("change");
+  await page.getByRole("checkbox", { name: "北侧左转", exact: true }).check();
+  let config = (await state(page)).project.signals[0];
+  expect(config.program.phases[0]).toMatchObject({
+    name: "试验通行",
+    duration: 14,
+  });
+  expect(config.program.phases[0].movements).toContainEqual({
+    approach: "north",
+    turn: "left",
+  });
+  await page.locator('[data-signal-action="add-phase"]').click();
+  await expect(page.locator(".signal-phase-tab")).toHaveCount(5);
+  await expect(page.locator(".signal-empty-phase")).toBeVisible();
+  const created = (await state(page)).project.signals[0].program.phases[4].id;
+  await page.locator("[data-signal-phase-name]").fill("追加相位");
+  await page.locator("[data-signal-phase-name]").dispatchEvent("change");
+  await page.locator('[data-signal-action="phase-up"]').click();
+  config = (await state(page)).project.signals[0];
+  expect(config.program.phases[3].id).toBe(created);
+  await page.locator('[data-signal-action="remove-phase"]').click();
+  await expect(page.locator(".signal-phase-tab")).toHaveCount(4);
+  await page.locator('[data-action="undo"]').click();
+  expect((await state(page)).project.signals[0].program.phases[3].id).toBe(
+    created,
   );
-  await page.mouse.click(p.x, p.y);
-  await expect(page.locator("[data-signal-remaining]")).toHaveText("感应控制");
-  await expect(page.locator("[data-signal-time]")).toHaveCount(0);
+  await page.locator('[data-signal-action="reset-default"]').click();
+  expect(
+    (await state(page)).project.signals[0].program.phases.map(
+      (phase: any) => phase.duration,
+    ),
+  ).toEqual([20, 8, 20, 8]);
+});
+
+test("saved programs import onto another junction and JSON files round-trip with invalid-input recovery", async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await junction(page);
+  await page.locator("[data-signal-phase-name]").fill("可移植试验");
+  await page.locator("[data-signal-phase-name]").dispatchEvent("change");
+  await page.locator("[data-signal-phase-duration]").fill("17");
+  await page.locator("[data-signal-phase-duration]").dispatchEvent("change");
+  await page.getByRole("checkbox", { name: "北侧左转", exact: true }).check();
+  const source = (await state(page)).project.signals[0];
+  await page.locator('[data-signal-detail="presets"] summary').click();
+  await page.locator("[data-signal-preset-name]").fill("四相位复用");
+  await page.locator('[data-signal-action="save-preset"]').click();
+  await expect(page.locator("[data-signal-preset-select] option")).toHaveCount(
+    1,
+  );
+  const pendingDownload = page.waitForEvent("download");
+  await page.locator('[data-signal-action="export-preset"]').click();
+  const download = await pendingDownload;
+  expect(download.suggestedFilename()).toBe("四相位复用.signal.json");
+  const library = await page.evaluate(() =>
+    JSON.parse(localStorage.getItem("roadlab.signal-presets.v1")!),
+  );
+  expect(library).toHaveLength(1);
+  expect(library[0].program).toEqual(source.program);
+  for (const arm of source.arms)
+    expect(JSON.stringify(library[0])).not.toContain(arm.road);
+  await page.evaluate(() => {
+    const editor = (window as any).lab.editor,
+      copy = structuredClone(editor.project.roads);
+    copy.forEach((road: any, index: number) => {
+      road.id = `signal-copy-${index}`;
+      for (const knot of road.knots)
+        for (const key of ["p", "incoming", "outgoing"]) knot[key].x += 500;
+    });
+    editor.edit(() => editor.project.roads.push(...copy));
+    editor.signalTool.selected = editor.simulation.junctions.find(
+      (j: any) => j.position.x > 400,
+    ).id;
+    editor.signalTool.enable();
+    editor.onChange();
+  });
+  await page.locator('[data-signal-action="apply-preset"]').click();
+  const signals = (await state(page)).project.signals,
+    target = signals.find((signal: any) => signal.id !== source.id);
+  expect(target.program).toEqual(source.program);
+  expect(
+    target.arms.every((arm: any) => arm.road.startsWith("signal-copy-")),
+  ).toBe(true);
+  const before = JSON.stringify((await state(page)).project.signals);
+  await page.locator("[data-signal-preset-file]").setInputFiles({
+    name: "broken.json",
+    mimeType: "application/json",
+    buffer: Buffer.from("{not-json"),
+  });
+  await expect(page.locator("[data-signal-error]")).toContainText("JSON");
+  expect(JSON.stringify((await state(page)).project.signals)).toBe(before);
+  const imported = structuredClone(library[0]);
+  imported.name = "文件方案";
+  imported.program.phases[0].duration = 23;
+  await page.locator("[data-signal-preset-file]").setInputFiles({
+    name: "good.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(JSON.stringify(imported)),
+  });
+  expect(
+    (await state(page)).project.signals.find(
+      (signal: any) => signal.id === target.id,
+    ).program.phases[0].duration,
+  ).toBe(23);
+  await expect(page.locator("[data-signal-error]")).toBeHidden();
+  await page.locator("#viewport").focus();
+  await page.keyboard.press("Control+s");
+  await page.reload();
+  await page.waitForFunction(() => !!(window as any).lab);
+  expect(
+    (await state(page)).project.signals.find(
+      (signal: any) => signal.id === target.id,
+    ).program.phases[0].duration,
+  ).toBe(23);
+  expect(
+    await page.evaluate(
+      () =>
+        JSON.parse(localStorage.getItem("roadlab.signal-presets.v1")!).length,
+    ),
+  ).toBe(1);
   expect(errors).toEqual([]);
 });

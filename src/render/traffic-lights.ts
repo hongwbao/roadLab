@@ -33,8 +33,8 @@ export class TrafficLightRenderer {
   group = new T.Group();
   private heads: Head[] = [];
   private textures = new Map<string, T.CanvasTexture>();
-  private texture(color: LightColor, left: boolean) {
-    const key = `${color}:${left}`;
+  private texture(color: LightColor, turn: Turn) {
+    const key = `${color}:${turn}`;
     let texture = this.textures.get(key);
     if (texture) return texture;
     const canvas = document.createElement("canvas");
@@ -56,19 +56,28 @@ export class TrafficLightRenderer {
           ? { red: "#ff6159", yellow: "#ffd568", green: "#75e6aa" }[light]
           : "#35434b";
       c.fill();
-      if (left && light === color) {
+      if (light === color) {
         c.strokeStyle = "#142b25";
         c.lineWidth = 5;
         c.lineCap = "round";
         c.lineJoin = "round";
         const y = 31 + i * 49;
         c.beginPath();
-        c.moveTo(46, y + 9);
-        c.lineTo(46, y - 3);
-        c.lineTo(26, y - 3);
-        c.moveTo(33, y - 10);
-        c.lineTo(26, y - 3);
-        c.lineTo(33, y + 4);
+        if (turn === "straight") {
+          c.moveTo(36, y + 10);
+          c.lineTo(36, y - 10);
+          c.moveTo(29, y - 3);
+          c.lineTo(36, y - 10);
+          c.lineTo(43, y - 3);
+        } else {
+          const x = (value: number) => (turn === "right" ? 72 - value : value);
+          c.moveTo(x(46), y + 9);
+          c.lineTo(x(46), y - 3);
+          c.lineTo(x(26), y - 3);
+          c.moveTo(x(33), y - 10);
+          c.lineTo(x(26), y - 3);
+          c.lineTo(x(33), y + 4);
+        }
         c.stroke();
       }
     }
@@ -114,19 +123,23 @@ export class TrafficLightRenderer {
         );
         pole.position.set(base.x, base.y + 2.2, base.z);
         this.group.add(pole);
-        const turns: ("left" | "straight")[] =
-          config.mode === "cs2" ? ["straight"] : ["left", "straight"];
+        const turns: Turn[] = ["left", "straight", "right"];
         for (const [i, turn] of turns.entries()) {
           const p = add(base, mul(n, (i - (turns.length - 1) / 2) * 1.5));
           const sprite = new T.Sprite(
             new T.SpriteMaterial({
-              map: this.texture("red", turn === "left"),
+              map: this.texture("red", turn),
               depthTest: false,
             }),
           );
           sprite.position.set(p.x, p.y + 5.1, p.z);
           sprite.scale.set(1.65, 3.65, 1);
           sprite.renderOrder = 35;
+          sprite.userData = {
+            signalTurn: turn,
+            signalArm: signalArmKey(arm),
+            signalJunction: junction.id,
+          };
           this.group.add(sprite);
           this.heads.push({
             junction: junction.id,
@@ -155,7 +168,7 @@ export class TrafficLightRenderer {
       const color = controller.armColor(head.junction, head.arm, head.turn);
       if (head.color === color) continue;
       head.color = color;
-      head.sprite.material.map = this.texture(color, head.turn === "left");
+      head.sprite.material.map = this.texture(color, head.turn);
       head.sprite.material.needsUpdate = true;
     }
   }

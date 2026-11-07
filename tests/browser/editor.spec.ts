@@ -1014,7 +1014,7 @@ test("generic split controls build a left 4-to-2+2 exit with smooth lane mapping
   await page.screenshot({ path: "artifacts/lane-generic-split.png" });
 });
 
-test("lane turn rules use on-map selection, change routes, and can be restored", async ({
+test("junction lane links use on-map points, change routes, and can be restored", async ({
   page,
 }) => {
   await open(page);
@@ -1022,18 +1022,38 @@ test("lane turn rules use on-map selection, change routes, and can be restored",
   const before = await state(page);
   const road = before.project.roads.find((r: any) => r.knots[0].p.x < -50);
   await page.locator('[data-tool="turn"]').click();
-  await clickWorld(page, -45, 1.75);
-  await expect(page.locator("#turn-panel")).toContainText("第 1 车道");
-  await page.locator('[data-turn="left"]').click();
-  await page.locator('[data-turn="right"]').click();
+  await clickWorld(page, 0, 0);
+  await expect(page.locator("#turn-panel")).toContainText("路口车道连线");
+  const source = await page.evaluate((id) => {
+    const editor = (window as any).lab.editor;
+    const port = editor.junctionLaneTool.ports.find(
+      (p: any) => p.road === id && p.kind === "in",
+    );
+    return editor.scene.project(port.position);
+  }, road.id);
+  await page.mouse.click(source.x, source.y);
+  const targets = await page.evaluate(() =>
+    (window as any).lab.editor.junctionLaneTool.destinations
+      .filter((link: any) => link.turn !== "straight")
+      .map((link: any) => link.to.key),
+  );
+  expect(targets).toHaveLength(2);
+  for (const key of targets) {
+    const target = await page.evaluate((id) => {
+      const editor = (window as any).lab.editor;
+      return editor.scene.project(
+        editor.junctionLaneTool.ports.find((p: any) => p.key === id).position,
+      );
+    }, key);
+    await page.mouse.click(target.x, target.y);
+  }
   let s = await state(page);
-  const changed = s.project.roads.find((r: any) => r.id === road.id);
-  expect(changed.turns["1"]).toEqual(["straight"]);
+  expect(s.project.junctionLaneConnections[0].to).toHaveLength(1);
   expect(
     s.connections.filter((c: any) => c.from.road === road.id),
   ).toHaveLength(1);
   await page.screenshot({ path: "artifacts/lane-turn-rules.png" });
-  await page.locator('[data-action="reset-turns"]').click();
+  await page.locator('[data-junction-lane-action="restore-lane"]').click();
   s = await state(page);
   expect(
     s.connections.filter((c: any) => c.from.road === road.id),

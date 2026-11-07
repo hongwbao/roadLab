@@ -17,8 +17,12 @@ function crossing(signals: boolean) {
     makeRoad(v(0, 0), v(0, 160), options),
   ];
   project.ports = [];
-  if (signals)
-    project.signals = [makeTrafficSignal(buildJunctions(project)[0])];
+  if (signals) {
+    const config = makeTrafficSignal(buildJunctions(project)[0]);
+    // Keep source automatic-control regression separate from the new user default.
+    config.mode = "cs2";
+    project.signals = [config];
+  }
   const sim = new Simulation();
   sim.configure(project);
   sim.running = true;

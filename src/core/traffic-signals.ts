@@ -1,12 +1,18 @@
 import { buildJunctions, type Junction } from "./junctions";
 import { dist } from "./math";
 import { copy, uid, type Project, type V } from "./types";
+import {
+  createDefaultSignalProgram,
+  validateSignalProgram,
+  type SignalProgram,
+} from "./traffic-signal-programs";
 export type SignalArm = { road: string; end: 0 | 1 };
 export type TrafficSignal = {
   id: string;
   position: V;
   arms: SignalArm[];
-  mode: "cs2" | "protected" | "sequential";
+  mode: "cs2" | "protected" | "sequential" | "custom";
+  program?: SignalProgram;
   green: number;
   leftGreen: number;
   yellow: number;
@@ -31,7 +37,10 @@ export function makeTrafficSignal(junction: Junction): TrafficSignal {
     id: uid("signal"),
     position: copy(junction.position),
     arms: junction.arms.map(({ road, end }) => ({ road, end })),
-    mode: "cs2",
+    mode: junction.arms.length === 4 ? "custom" : "cs2",
+    ...(junction.arms.length === 4
+      ? { program: createDefaultSignalProgram(junction) }
+      : {}),
     green: 20,
     leftGreen: 8,
     yellow: 3,
@@ -86,7 +95,7 @@ export function validateTrafficSignals(project: Project) {
       ![signal.position.x, signal.position.y, signal.position.z].every(
         (n) => Number.isFinite(n) && Math.abs(n) < 100000,
       ) ||
-      !["cs2", "protected", "sequential"].includes(signal.mode) ||
+      !["cs2", "protected", "sequential", "custom"].includes(signal.mode) ||
       !Array.isArray(signal.arms) ||
       signal.arms.length < 3 ||
       signal.arms.length > 100 ||
@@ -107,6 +116,8 @@ export function validateTrafficSignals(project: Project) {
       signal.offset > 600
     )
       throw new Error("红绿灯配时不合法。");
+    if (signal.mode === "custom" || signal.program !== undefined)
+      validateSignalProgram(signal.program);
     ids.add(signal.id);
     for (const arm of signal.arms) {
       if (

@@ -43,6 +43,14 @@ import {
   validateTrafficSignals,
 } from "./traffic-signals";
 import { updateAutomaticTransitions } from "./auto-transitions";
+import {
+  applyJunctionLaneRules,
+  normalizeJunctionLaneRules,
+  validateJunctionLaneRules,
+  remapSplitJunctionLaneRules,
+  removeJunctionLaneRulesForRoads,
+  mirrorJunctionLaneRules,
+} from "./junction-lane-connections";
 export function makeRoad(
   p0: V,
   p3: V,
@@ -259,9 +267,9 @@ export function connections(p: Project): Connection[] {
         enabled: true,
       });
     }
-  return result;
+  return applyJunctionLaneRules(p, result);
 }
-// Connections are derived from geometry; historical manual overrides are retired.
+// Historical manual overrides are retired; explicit junction lane rules use their own field.
 export function autoJunction(p: Project) {
   updateAutomaticTransitions(p);
   p.connections = [];
@@ -281,6 +289,7 @@ export function autoJunction(p: Project) {
         delete road.attachments![end];
     }
   }
+  normalizeJunctionLaneRules(p);
 }
 export function remapRoadReferences(
   roads: Road[],
@@ -407,6 +416,7 @@ export function splitRoad(
   p.ports = p.ports.map((x) =>
     x.road === id && x.end === "end" ? { ...x, road: b.id } : x,
   );
+  remapSplitJunctionLaneRules(p, id, b.id);
   autoJunction(p);
   return b.id;
 }
@@ -432,6 +442,7 @@ export function insertKnot(r: Road, t: number) {
 }
 export function removeRoads(p: Project, ids: Set<string>) {
   p.roads = p.roads.filter((r) => !ids.has(r.id));
+  removeJunctionLaneRulesForRoads(p, ids);
   p.connections = p.connections.filter(
     (c) => !ids.has(c.from.road) && !ids.has(c.to.road),
   );
@@ -486,6 +497,7 @@ export function mirrorRoads(p: Project, ids: Set<string>) {
       const r = roads.find((r) => r.id === ref.road);
       if (r && !r.twoWay) ref.lane = laneCount(r) - 1 - ref.lane;
     }
+  mirrorJunctionLaneRules(p, roads);
 }
 export function setHeight(r: Road, start: number, end: number) {
   const count = r.knots.length;
@@ -929,6 +941,7 @@ export function parseProject(text: string): Project {
     }
   }
   validateTrafficSignals(p);
+  validateJunctionLaneRules(p);
   p.connections = [];
   for (const x of p.ports)
     if (
@@ -955,6 +968,7 @@ export function parseProject(text: string): Project {
         roads: t.roads,
         connections: t.connections,
         signals: t.signals,
+        junctionLaneConnections: t.junctionLaneConnections,
         ports: [],
         templates: [],
       }),
@@ -962,6 +976,7 @@ export function parseProject(text: string): Project {
   }
   normalizePorts(p);
   normalizeTrafficSignals(p);
+  normalizeJunctionLaneRules(p);
   return p;
 }
 export function reconnectIntersections(p: Project): number {
