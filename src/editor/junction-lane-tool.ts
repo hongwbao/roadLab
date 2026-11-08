@@ -1,3 +1,4 @@
+import { buildLaneJunctions } from "../core/lane-junctions";
 import { connections } from "../core/model";
 import {
   junctionLaneKey,
@@ -27,8 +28,10 @@ export class JunctionLaneTool {
     editor.scene.scene.add(this.overlay.group);
   }
   get junction() {
-    return this.editor.simulation.junctions.find(
-      (j) => j.id === this.selected && j.arms.length >= 3,
+    return buildLaneJunctions(this.editor.project).find(
+      (j) =>
+        j.id === this.selected &&
+        (j.arms.length >= 3 || j.kind === "attachment"),
     );
   }
   get ports() {
@@ -108,8 +111,8 @@ export class JunctionLaneTool {
     );
   }
   private junctionHit(x: number, y: number) {
-    return this.editor.simulation.junctions
-      .filter((j) => j.arms.length >= 3)
+    return buildLaneJunctions(this.editor.project)
+      .filter((j) => j.arms.length >= 3 || j.kind === "attachment")
       .map((j) => {
         const p = this.editor.scene.project(j.position),
           edge = this.editor.scene.project({
@@ -194,7 +197,7 @@ export class JunctionLaneTool {
       this.overlay.setState();
       this.overlay.previewTo();
       this.editor.onChange();
-    } else this.editor.onToast("请点击三岔或十字路口中心，显示车道连线。");
+    } else this.editor.onToast("请点击路口或偏移吸附接头，显示车道连线。");
   }
   move(x: number, y: number) {
     this.hover = this.overlay.hit(x, y, (p) => this.editor.scene.project(p));

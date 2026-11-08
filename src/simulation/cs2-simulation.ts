@@ -1,3 +1,4 @@
+import { laneJunctionTrims } from "../core/lane-junctions";
 /** Ordinary-car source runtime assembly. Browser/world adapters are explicit. */
 import { updateAutomaticTransitions } from "../core/auto-transitions";
 import {
@@ -527,6 +528,7 @@ export class Cs2TrafficSimulation {
         },
       ]),
     );
+    this.trims = new Map(laneJunctionTrims(project, this.trims));
     const links = connections(project).filter(
       (connection) => connection.enabled,
     );

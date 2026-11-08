@@ -1,3 +1,4 @@
+import { buildLaneJunctions } from "./core/lane-junctions";
 import {
   CornerUpLeft,
   CornerUpRight,
@@ -261,7 +262,7 @@ function render() {
   if (document.activeElement !== name) name.value = editor.project.name;
   document.querySelector("#scene-name")!.textContent = editor.project.name;
   document.querySelector("#scene-summary")!.textContent =
-    `${editor.project.roads.length} 段道路 · ${editor.simulation.junctions.filter((j) => j.arms.length >= 3).length} 处路口`;
+    `${editor.project.roads.length} 段道路 · ${buildLaneJunctions(editor.project).filter((j) => j.arms.length >= 3 || j.kind === "attachment").length} 处路口`;
   document.querySelector<HTMLElement>("#road-dock")!.hidden =
     !dockOpen ||
     editor.tool === "boundary" ||

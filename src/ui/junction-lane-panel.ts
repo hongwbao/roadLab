@@ -23,7 +23,7 @@ export function junctionLanePanel(tool: JunctionLaneTool) {
   if (!junction)
     return (
       heading +
-      `<p>点击三岔或十字路口中心，显示车道连接点。</p><p class="muted">再点入车道和出车道圆点，添加或取消连线。按 J 或 Esc 返回。</p>`
+      `<p>点击路口或偏移吸附接头，显示车道连接点。分流、汇流和偏移接入都可编辑。</p><p class="muted">再点入车道和出车道圆点，添加或取消连线。按 J 或 Esc 返回。</p>`
     );
   const source = tool.source,
     links = tool.destinations,
@@ -34,7 +34,7 @@ export function junctionLanePanel(tool: JunctionLaneTool) {
   const legend = `<div class="junction-lane-legend"><span><i class="lane-port-in" aria-hidden="true"></i>入车道</span><span><i class="lane-port-out" aria-hidden="true"></i>出车道</span><span class="muted">点两个圆点连线</span></div>`;
   const selection = source
     ? `<div class="junction-lane-selection" role="status"><strong>${esc(source.name)}</strong><span class="muted">${tool.rule ? "自定义连接" : "自动连接"} · ${links.length} 个出口</span></div><p class="muted">点击出车道：添加或取消连接。右键连线可直接移除。</p>${tool.rule && links.length === 0 ? '<p class="junction-lane-closed" role="status">此入车道已禁止全部出口。</p>' : ""}<ul class="junction-lane-destinations">${links.map((link) => `<li><span>${esc(link.to.name)}</span><button type="button" class="icon-only" data-junction-lane-action="remove-link" data-junction-lane-link="${esc(link.id)}" aria-label="移除到${esc(link.to.name)}的连线">${trashIcon}</button></li>`).join("")}</ul><div class="junction-lane-actions"><button type="button" data-junction-lane-action="restore-lane"${tool.rule ? "" : " disabled"}>${resetIcon}此车道恢复自动</button><button type="button" data-junction-lane-action="ban-lane"${tool.rule && links.length === 0 ? " disabled" : ""}>禁止全部出口</button></div>`
-    : `<p>已选 ${junction.arms.length} 岔路口。点击一个实心入车道圆点，选择要编辑的车道。</p><p class="muted">青色曲线是当前可通行路线；空心圆点是可连接的出车道。</p>`;
+    : `<p>已选${junction.kind === "attachment" ? `偏移连接路口（${junction.arms.length} 条道路）` : ` ${junction.arms.length} 岔路口`}。点击一个实心入车道圆点，选择要编辑的车道。</p><p class="muted">青色曲线是当前可通行路线；空心圆点是可连接的出车道。</p>`;
   const keyboard = `<details class="junction-lane-keyboard" data-junction-lane-keyboard${keyboardOpen.get(tool) ? " open" : ""}><summary>按名称选择车道</summary><div class="junction-lane-source-buttons" role="group" aria-label="选择入车道">${tool.ports
     .filter((port) => port.kind === "in")
     .map(

@@ -1,4 +1,4 @@
-import { buildJunctions, type Junction } from "./junctions";
+import { buildLaneJunctions, type LaneJunction } from "./lane-junctions";
 import {
   add,
   arcParameter,
@@ -52,7 +52,7 @@ export type JunctionLaneLink = {
   samples: V[];
 };
 export type JunctionLaneLayout = {
-  junction: Junction;
+  junction: LaneJunction;
   ports: JunctionLanePort[];
   candidates: JunctionLaneLink[];
   links: JunctionLaneLink[];
@@ -99,12 +99,12 @@ const validRef = (
 };
 export function junctionLanePorts(
   project: JunctionLaneProject,
-  junction: Junction,
+  junction: LaneJunction,
 ): JunctionLanePort[] {
   const roads = roadMap(project),
     result: JunctionLanePort[] = [],
     signalized = !!signalForJunction(project.signals, junction);
-  for (const arm of junction.arms) {
+  for (const [armIndex, arm] of junction.arms.entries()) {
     const road = roads.get(arm.road);
     if (!road) continue;
     const table = arcTable(road),
@@ -122,7 +122,10 @@ export function junctionLanePorts(
         kind,
         position: lanePoint(road, lane, t),
         direction: mul(tangent(road, t), laneDirection(road, lane)),
-        name: `${sideName(arm.direction)} · ${kind === "in" ? "入" : "出"} ${number} 车道`,
+        name:
+          junction.kind === "attachment"
+            ? `${kind === "in" ? "入口" : "出口"}${armIndex + 1} · ${road.name} · ${number} 车道`
+            : `${sideName(arm.direction)} · ${kind === "in" ? "入" : "出"} ${number} 车道`,
         roadName: road.name,
         number,
       });
@@ -134,6 +137,7 @@ function pairAllowed(
   roads: ReadonlyMap<string, Road>,
   from: JunctionLanePort,
   to: JunctionLanePort,
+  junction: LaneJunction,
 ) {
   if (from.kind !== "in" || to.kind !== "out" || from.road === to.road)
     return false;
@@ -144,6 +148,9 @@ function pairAllowed(
   const da = mul(tangent(a, from.end), laneDirection(a, from.lane)),
     db = mul(tangent(b, to.end), laneDirection(b, to.lane));
   if (da.x * db.x + da.z * db.z < -0.75) return false;
+  // Attachments fix road placement. Authored links may choose any compatible
+  // lane within this connected offset node, independently of its original pair.
+  if (junction.kind === "attachment") return true;
   const aa = attachmentAt(a, from.end),
     ba = attachmentAt(b, to.end),
     directA = aa?.road === b.id && aa.end === to.end,
@@ -178,19 +185,20 @@ export function junctionLaneLink(
 }
 export function junctionLaneCandidates(
   project: JunctionLaneProject,
-  junction: Junction,
+  junction: LaneJunction,
 ): JunctionLaneLink[] {
   const ports = junctionLanePorts(project, junction),
     roads = roadMap(project),
     result: JunctionLaneLink[] = [];
   for (const from of ports.filter((p) => p.kind === "in"))
     for (const to of ports.filter((p) => p.kind === "out"))
-      if (pairAllowed(roads, from, to)) result.push(junctionLaneLink(from, to));
+      if (pairAllowed(roads, from, to, junction))
+        result.push(junctionLaneLink(from, to));
   return result;
 }
 export function junctionLaneLayout(
   project: JunctionLaneProject,
-  junction: Junction,
+  junction: LaneJunction,
   connections: readonly Connection[],
 ): JunctionLaneLayout {
   const candidates = junctionLaneCandidates(project, junction),
@@ -227,14 +235,14 @@ function candidateIndex(project: JunctionLaneProject) {
       { ref: JunctionLaneEndpoint; links: Map<string, LaneCandidate> }
     >(),
     roads = roadMap(project);
-  for (const junction of buildJunctions(project as Project)) {
+  for (const junction of buildLaneJunctions(project)) {
     const ports = junctionLanePorts(project, junction),
       out = ports.filter((p) => p.kind === "out");
     for (const from of ports.filter((p) => p.kind === "in")) {
       const source = { ref: from, links: new Map<string, LaneCandidate>() };
       sources.set(from.key, source);
       for (const to of out)
-        if (pairAllowed(roads, from, to))
+        if (pairAllowed(roads, from, to, junction))
           source.links.set(to.key, {
             id: junctionLaneConnectionId(from, to),
             from,
@@ -328,7 +336,7 @@ export function restoreJunctionLaneRule(
 }
 export function restoreJunctionLaneRules(
   project: JunctionLaneProject,
-  junction: Junction,
+  junction: LaneJunction,
 ) {
   const sources = new Set(
     junctionLanePorts(project, junction)
