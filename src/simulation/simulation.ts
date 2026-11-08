@@ -114,6 +114,7 @@ export type Vehicle = {
   laneChange?: { from: number; to: number; start: number; length: number };
   stalledFor?: number;
   signalEntry?: string;
+  signalMovement?: string;
   waitingAtSignal?: string;
   driver?: DriverProfile;
   /** Recovered CarData parameters; absent values use source prefab defaults. */
@@ -1699,6 +1700,7 @@ export class Simulation {
   }
   private occupiedSignals() {
     const occupied = new Set<string>();
+    const movements = new Map<string, Set<string>>();
     for (const car of this.vehicles) {
       const junction = car.connector?.junction ?? car.signalEntry;
       if (!junction || !this.trafficLights.has(junction)) continue;
@@ -1710,11 +1712,21 @@ export class Simulation {
             (car.route[car.step + 1] &&
               this.connector(step, car.route[car.step + 1]).junction ===
                 junction)))
-      )
+      ) {
         occupied.add(junction);
-      else car.signalEntry = undefined;
+        const ids = movements.get(junction) ?? new Set<string>();
+        ids.add(
+          car.connector?.movement?.id ??
+            car.signalMovement ??
+            `unknown:${car.id}`,
+        );
+        movements.set(junction, ids);
+      } else {
+        car.signalEntry = undefined;
+        car.signalMovement = undefined;
+      }
     }
-    return occupied;
+    return { occupied, movements };
   }
   private controlsMerge(movement: Movement) {
     return (
@@ -2143,8 +2155,10 @@ export class Simulation {
     if (this.trafficModel === "cs2-derived") this.applySourcePaths();
     if (this.trafficModel === "cs2-derived")
       this.sourceFlow.update(this.sourceFrame / 60);
-    if (this.trafficLights.enabled)
-      this.trafficLights.update(dt, this.occupiedSignals());
+    if (this.trafficLights.enabled) {
+      const { occupied, movements } = this.occupiedSignals();
+      this.trafficLights.update(dt, occupied, movements);
+    }
     const index = new TrafficIndex<Vehicle>(
       this.trafficModel === "cs2-derived" ? 0 : 0.12,
     );
@@ -2260,6 +2274,7 @@ export class Simulation {
       const original = {
         ...car,
         signalEntry: car.signalEntry,
+        signalMovement: car.signalMovement,
         connector: car.connector ? { ...car.connector } : undefined,
         laneChange: car.laneChange ? { ...car.laneChange } : undefined,
       };
@@ -2696,8 +2711,10 @@ export class Simulation {
           permitted &&
           signalStopOffset &&
           car.s >= end - SIGNAL_STOP_OFFSET - VEHICLE_LENGTH / 2
-        )
+        ) {
           car.signalEntry = connector!.junction;
+          car.signalMovement = connector!.movement?.id;
+        }
         if (car.laneChange) {
           const change = car.laneChange,
             progress = (car.s - change.start) / change.length;

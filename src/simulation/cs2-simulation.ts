@@ -170,6 +170,10 @@ import {
   type CS2RuntimeVehicleView,
 } from "./cs2-vehicle-runtime";
 import { TrafficLightController, type SignalMovement } from "./traffic-lights";
+import {
+  SignalMovementOccupancy,
+  type SignalBody,
+} from "./signal-movement-occupancy";
 import type { Step, Vehicle } from "./simulation";
 
 const f = Math.fround;
@@ -413,6 +417,7 @@ export class Cs2TrafficSimulation {
   };
   private selectionWorld?: CS2LaneSelectWorld;
   private continuousConnectionGroups = new Map<string, boolean>();
+  private signalOccupancy = new SignalMovementOccupancy();
   private reservationWorld?: CS2ReservationWorld;
   private laneObjects = new Map<string, CS2LaneSpeedLaneObject[]>();
   private searchTree = new Map<string, CS2LaneCacheBounds>();
@@ -769,6 +774,7 @@ export class Cs2TrafficSimulation {
     this.navigationLimits = 0;
     this.selectionWorld = undefined;
     this.continuousConnectionGroups.clear();
+    this.signalOccupancy.clear();
     this.completedByExit.clear();
     this.trafficLights.clear();
     this.laneOverlaps.clear();
@@ -1005,6 +1011,7 @@ export class Cs2TrafficSimulation {
       throw new Error("Configure the source network before adopting vehicles");
     for (const vehicle of this.runtime.readVehicles())
       this.runtime.removeVehicle(vehicle.id);
+    this.signalOccupancy.clear();
     for (const buffer of this.laneObjects.values()) buffer.length = 0;
     this.searchTree.clear();
     this.blockedLanes.clear();
@@ -1956,6 +1963,7 @@ export class Cs2TrafficSimulation {
     this.blockers.delete(trip.id);
     this.requestSpace.delete(trip.id);
     this.enteredMovements.delete(trip.id);
+    this.signalOccupancy.remove(trip.id);
   }
   private removeLaneMembership(id: number) {
     for (const [lane, buffer] of this.laneObjects)
@@ -2625,6 +2633,48 @@ export class Cs2TrafficSimulation {
     }
     return result;
   }
+  private nominateSignalMovement(id: number, lane: Cs2NetworkLane) {
+    if (
+      !lane.connection ||
+      !lane.from ||
+      !lane.to ||
+      !lane.junction ||
+      !this.trafficLights.has(lane.junction)
+    )
+      return;
+    const source = this.network!.lanes.get(
+        this.network!.roadLaneIds.get(
+          cs2RoadLaneKey(lane.from.road, lane.from.lane),
+        )!.at(-1)!,
+      )!,
+      target = this.network!.lanes.get(
+        this.network!.roadLaneIds.get(
+          cs2RoadLaneKey(lane.to.road, lane.to.lane),
+        )![0],
+      )!;
+    this.signalOccupancy.nominate(id, {
+      id: lane.connection,
+      junction: lane.junction,
+      curve: lane.curve,
+      entryDirection: sub(source.curve.points[3], source.curve.points[2]),
+      exitDirection: sub(target.curve.points[1], target.curve.points[0]),
+    });
+  }
+  private occupiedSignalMovements() {
+    const bodies = new Map<number, SignalBody>();
+    if (!this.trafficLights.enabled) return new Map<string, Set<string>>();
+    for (const row of this.physical.values()) {
+      this.nominateSignalMovement(row.id, this.network!.lanes.get(row.lane)!);
+      bodies.set(row.id, {
+        id: row.id,
+        position: row.view.state.position,
+        ...headingPose(row.view.state),
+        halfLength: FRONT,
+        halfWidth: WIDTH / 2,
+      });
+    }
+    return this.signalOccupancy.update(bodies);
+  }
   private decision(view: CS2RuntimeVehicleView): CS2RuntimeDecision {
     const id = Number(view.id),
       trip = this.trips.get(id)!,
@@ -2706,6 +2756,14 @@ export class Cs2TrafficSimulation {
       current,
       this.constrainArtificialSeams(current, selected.nextLanes),
     );
+    const upcomingSignal = queue
+      .map((entry) => network.lanes.get(entry.laneId)!)
+      .find(
+        (candidate) =>
+          candidate.kind === "connection" &&
+          this.trafficLights.has(candidate.junction),
+      );
+    if (upcomingSignal) this.nominateSignalMovement(id, upcomingSignal);
     trip.owner.elementIndex = Math.min(
       trip.path.length,
       trip.groupIndex + queue.length + 1,
@@ -3112,15 +3170,12 @@ export class Cs2TrafficSimulation {
       for (const trip of this.trips.values())
         if (!trip.car && !trip.request && cs2RequireNewPath(trip.owner.flags))
           void this.requestPath(this.queryForTrip(trip), trip);
-      const occupied = new Set(
-        [...this.physical.values()]
-          .filter(
-            (row) => this.network!.lanes.get(row.lane)?.kind === "connection",
-          )
-          .map((row) => this.network!.lanes.get(row.lane)?.junction)
-          .filter((id): id is string => !!id),
+      const occupiedMovements = this.occupiedSignalMovements();
+      this.trafficLights.update(
+        FRAME,
+        new Set(occupiedMovements.keys()),
+        occupiedMovements,
       );
-      this.trafficLights.update(FRAME, occupied);
       this.prepareSpeedWorld();
       this.navigationRandom = new SourceRandom32(
         deriveCs2WorkerSeed(this.random.nextUInt(), 0),
