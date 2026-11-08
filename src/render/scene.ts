@@ -74,6 +74,8 @@ export class Scene {
   private previewHiddenJunctions = new Set<T.Object3D>();
   private rebuildSignature = "";
   private topologySignature = "";
+  private signalRenderSignature = "";
+  private roadNodesSignature = "";
   private junctionRenderCache = new Map<
     string,
     { signature: string; objects: T.Object3D[] }
@@ -448,6 +450,66 @@ export class Scene {
     }
     return true;
   }
+  private syncRoadEditing(
+    r: Road,
+    overlays: T.Group,
+    handles: T.Group,
+    selected: boolean,
+    showHandles: boolean,
+  ) {
+    for (const object of overlays.children) {
+      if (
+        object instanceof T.Line &&
+        (object.material === this.mats.mark ||
+          object.material === this.mats.selected)
+      )
+        object.material = selected ? this.mats.selected : this.mats.mark;
+    }
+    handles.visible = selected;
+    if (!selected) {
+      if (handles.children.length) this.clear(handles);
+      return;
+    }
+    if (!showHandles || handles.children.length) return;
+    for (let i = 0; i < r.knots.length; i++) {
+      const k = r.knots[i];
+      for (const part of ["p", "incoming", "outgoing"] as const) {
+        if (
+          (part === "incoming" && i === 0) ||
+          (part === "outgoing" && i === r.knots.length - 1)
+        )
+          continue;
+        if (part !== "p")
+          this.line(
+            [k.p, k[part]],
+            new T.LineBasicMaterial({
+              color: 0xc97537,
+              transparent: true,
+              opacity: 0.7,
+            }),
+            handles,
+          );
+        const m = new T.Mesh(
+          new T.SphereGeometry(part === "p" ? 1.4 : 1, 12, 8),
+          new T.MeshBasicMaterial({
+            color: part === "p" ? 0xf08740 : 0xfff5dd,
+            depthTest: false,
+          }),
+        );
+        m.position.copy(vec(k[part]));
+        m.position.y += 0.3;
+        m.renderOrder = 20;
+        m.userData = {
+          road: r.id,
+          knot: i,
+          part,
+          handle: true,
+          radius: part === "p" ? 1.4 : 1,
+        };
+        handles.add(m);
+      }
+    }
+  }
   rebuild(
     p: Project,
     selected: Set<string>,
@@ -472,7 +534,12 @@ export class Scene {
       this.forks = roadForks(p.roads);
       this.topologySignature = topologySignature;
     }
-    this.trafficLights.rebuild(p, this.junctionList);
+    const signalSignature = JSON.stringify([topologySignature, p.signals]);
+    if (signalSignature !== this.signalRenderSignature) {
+      this.trafficLights.rebuild(p, this.junctionList);
+      this.signalRenderSignature = signalSignature;
+    }
+    this.handles.visible = showHandles;
     this.ranges = new Map(
       p.roads.map((r) => [r.id, roadRange(r, this.junctionList)]),
     );
@@ -506,8 +573,10 @@ export class Scene {
         this.roadRenderCache.delete(id);
       }
     this.clear(this.routePreview);
-    this.clear(this.roadNodes);
-    if (showHandles) {
+    this.roadNodes.visible = showHandles;
+    if (showHandles && this.roadNodesSignature !== topologySignature) {
+      this.clear(this.roadNodes);
+      this.roadNodesSignature = topologySignature;
       const nodes: V[] = [];
       for (const road of p.roads)
         for (const end of [0, 1]) {
@@ -542,14 +611,19 @@ export class Scene {
         this.forks.get(r.id),
         medianExtent(r) ? roadMedianRange(p, r, this.junctionList) : undefined,
         hidden,
-        selected.has(r.id),
         settings.paths,
         settings.arrows,
-        showHandles,
       ]);
       const cached = this.roadRenderCache.get(r.id);
       if (cached?.signature === roadSignature) {
         const [road, overlays, details, handles] = cached.groups;
+        this.syncRoadEditing(
+          r,
+          overlays,
+          handles,
+          selected.has(r.id),
+          showHandles,
+        );
         this.roads.add(road);
         this.overlays.add(overlays);
         this.details.add(details);
@@ -595,11 +669,7 @@ export class Scene {
           pts,
           forkSurfaces(this.forks.get(r.id)?.edges ?? []),
         ))
-          this.line(
-            path,
-            selected.has(r.id) ? this.mats.selected : this.mats.mark,
-            overlays,
-          );
+          this.line(path, this.mats.mark, overlays);
       }
       const max = laneCount(r);
       for (let l = 1; l < max; l++) {
@@ -738,50 +808,18 @@ export class Scene {
             );
           }
       }
-      if (selected.has(r.id) && showHandles)
-        for (let i = 0; i < r.knots.length; i++) {
-          const k = r.knots[i];
-          for (const part of ["p", "incoming", "outgoing"] as const) {
-            if (
-              (part === "incoming" && i === 0) ||
-              (part === "outgoing" && i === r.knots.length - 1)
-            )
-              continue;
-            if (part !== "p")
-              this.line(
-                [k.p, k[part]],
-                new T.LineBasicMaterial({
-                  color: 0xc97537,
-                  transparent: true,
-                  opacity: 0.7,
-                }),
-                handles,
-              );
-            const m = new T.Mesh(
-              new T.SphereGeometry(part === "p" ? 1.4 : 1, 12, 8),
-              new T.MeshBasicMaterial({
-                color: part === "p" ? 0xf08740 : 0xfff5dd,
-                depthTest: false,
-              }),
-            );
-            m.position.copy(vec(k[part]));
-            m.position.y += 0.3;
-            m.renderOrder = 20;
-            m.userData = {
-              road: r.id,
-              knot: i,
-              part,
-              handle: true,
-              radius: part === "p" ? 1.4 : 1,
-            };
-            handles.add(m);
-          }
-        }
       this.batchLines(overlays);
       this.batchLines(details);
+      this.syncRoadEditing(
+        r,
+        overlays,
+        handles,
+        selected.has(r.id),
+        showHandles,
+      );
     }
-    const cs = connections(p).filter((x) => x.enabled);
     if (settings.paths) {
+      const cs = connections(p).filter((x) => x.enabled);
       for (const c of cs) {
         const a = p.roads.find((r) => r.id === c.from.road),
           b = p.roads.find((r) => r.id === c.to.road);
@@ -1224,9 +1262,11 @@ export class Scene {
   }
   hit(clientX: number, clientY: number): Hit | undefined {
     this.setRay(clientX, clientY);
-    const handle = this.ray
-      .intersectObjects(this.handles.children, true)
-      .find((x) => x.object.userData.handle);
+    const handle = this.handles.visible
+      ? this.ray
+          .intersectObjects(this.handles.children, true)
+          .find((x) => x.object.userData.handle && x.object.parent?.visible)
+      : undefined;
     if (handle)
       return {
         ...handle.object.userData,
@@ -1423,18 +1463,19 @@ export class Scene {
       height = this.el.clientHeight;
     const distance = this.camera.position.distanceTo(this.controls.target);
     this.details.visible = (3.6 * height) / (2 * distance * tan) > 4;
-    this.handles.traverse((object) => {
-      if (!(object instanceof T.Mesh)) return;
-      const d = this.camera.position.distanceTo(object.position),
-        pixelWorld = (2 * d * tan) / height,
-        radius = object.userData.radius || 1;
-      object.scale.setScalar(
-        Math.max(
-          0.5,
-          (pixelWorld * (object.userData.part === "p" ? 6 : 5)) / radius,
-        ),
-      );
-    });
+    if (this.handles.visible)
+      this.handles.traverse((object) => {
+        if (!(object instanceof T.Mesh)) return;
+        const d = this.camera.position.distanceTo(object.position),
+          pixelWorld = (2 * d * tan) / height,
+          radius = object.userData.radius || 1;
+        object.scale.setScalar(
+          Math.max(
+            0.5,
+            (pixelWorld * (object.userData.part === "p" ? 6 : 5)) / radius,
+          ),
+        );
+      });
     for (const marker of this.buildMarker.children) {
       if (!marker.userData.marker) continue;
       const d = this.camera.position.distanceTo(marker.position);
