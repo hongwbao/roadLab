@@ -2,6 +2,7 @@ import {
   DEFAULT_TRAFFIC_BASE_RATE,
   MAX_ENTRY_RATE,
   pruneDestinationShares,
+  remapDestinationShares,
   trafficBaseRate,
   validateTrafficDemand,
 } from "./traffic-demand";
@@ -470,6 +471,9 @@ export function splitRoad(
   }));
   p.ports = p.ports.map((x) =>
     x.road === id && x.end === "end" ? { ...x, road: b.id } : x,
+  );
+  remapDestinationShares(p, (ref) =>
+    ref.road === id && ref.end === "end" ? { ...ref, road: b.id } : ref,
   );
   remapSplitJunctionLaneRules(p, id, b.id);
   autoJunction(p);

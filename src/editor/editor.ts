@@ -90,7 +90,11 @@ import { Simulation } from "../simulation/simulation";
 import { TrafficLightTool } from "./traffic-light-tool";
 import { JunctionLaneTool } from "./junction-lane-tool";
 import { TrafficDemandTool } from "./traffic-demand-tool";
-import { MAX_ENTRY_PERCENT, trafficBaseRate } from "../core/traffic-demand";
+import {
+  MAX_ENTRY_PERCENT,
+  trafficBaseRate,
+  remapDestinationShares,
+} from "../core/traffic-demand";
 import { cloneTrafficSignals } from "../core/traffic-signals";
 import {
   cloneJunctionLaneRules,
@@ -2373,6 +2377,11 @@ export class Editor {
           this.project.ports
             .filter((p) => p.road === r.id)
             .forEach((p) => (p.end = p.end === "start" ? "end" : "start"));
+          remapDestinationShares(this.project, (ref) =>
+            ref.road === r.id
+              ? { ...ref, end: ref.end === "start" ? "end" : "start" }
+              : ref,
+          );
         }
       }, "道路方向已反转");
       return;

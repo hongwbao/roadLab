@@ -114,6 +114,18 @@ export function pruneDestinationShares(p: Project) {
       );
     }
 }
+/** Keep endpoint-authored shares attached when road editing changes IDs/ends. */
+export function remapDestinationShares(
+  p: Project,
+  remap: (ref: PortReference) => PortReference,
+) {
+  for (const source of p.ports)
+    if (source.destinations)
+      source.destinations = source.destinations.map((d) => ({
+        ...d,
+        ...remap(d),
+      }));
+}
 export function validateTrafficDemand(p: Project) {
   if (
     p.trafficBaseRate !== undefined &&

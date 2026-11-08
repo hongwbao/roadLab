@@ -5,6 +5,7 @@ import {
   normalizePorts,
   parseProject,
   setBoundary,
+  splitRoad,
 } from "../src/core/model";
 import { v } from "../src/core/math";
 import {
@@ -127,4 +128,21 @@ it("new boundary portals use100%, and removing exits prunes authored destination
   normalizePorts(p);
   expect(p.ports[0].destinations).toHaveLength(1);
   expect(destinationShares(p, p.ports[0])[0].percent).toBe(100);
+});
+
+it("keeps destination shares on the same physical outlet after road splitting", () => {
+  const p = fixture(),
+    source = p.ports[0];
+  setDestinationPercent(p, source, p.ports[1], 70);
+  const split = splitRoad(p, "a", 0.5)!;
+  expect(split).toBeTruthy();
+  normalizePorts(p);
+  const destination = destinationShares(p, p.ports[0]).find(
+    (d) => d.port.road === split,
+  )!;
+  expect(destination.percent).toBeCloseTo(70);
+  expect(p.ports[0].destinations!.some((d) => d.road === "a")).toBe(false);
+  expect(parseProject(JSON.stringify(p)).ports[0].destinations).toEqual(
+    p.ports[0].destinations,
+  );
 });

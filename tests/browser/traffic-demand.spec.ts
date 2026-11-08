@@ -232,3 +232,47 @@ test("compact demand settings scroll internally and retain keyboard focus and ma
   await page.keyboard.press("Tab");
   await expect(input).toHaveValue("40");
 });
+
+test("reversing a two-way road retains OD shares on its original physical outlet", async ({
+  page,
+}) => {
+  await setup(page);
+  await page.evaluate(() => {
+    const e = (window as any).lab.editor;
+    e.edit(() => {
+      e.project.roads.find((r: any) => r.id === "out0").twoWay = true;
+    });
+  });
+  const first = page.locator('[data-demand-share="4"]');
+  await first.fill("70");
+  await first.dispatchEvent("change");
+  const before = await page.evaluate(() => {
+    const e = (window as any).lab.editor,
+      r = e.project.roads.find((r: any) => r.id === "out0");
+    return structuredClone(r.knots.at(-1).p);
+  });
+  await page.evaluate(() => {
+    const e = (window as any).lab.editor;
+    e.select("out0");
+    e.action("reverse");
+  });
+  const after = await page.evaluate(() => {
+    const e = (window as any).lab.editor,
+      p = e.project.ports.find((p: any) => p.road === "out0"),
+      d = e.project.ports[0].destinations.find((d: any) => d.road === "out0"),
+      r = e.project.roads.find((r: any) => r.id === "out0");
+    return {
+      end: p.end,
+      targetEnd: d.end,
+      weight: d.weight,
+      position: r.knots[0].p,
+    };
+  });
+  expect(after).toEqual({
+    end: "start",
+    targetEnd: "start",
+    weight: 70,
+    position: before,
+  });
+  await expect(first).toHaveValue("70");
+});
