@@ -352,7 +352,7 @@ function render() {
     ? ""
     : junctionLanePanel(editor.junctionLaneTool);
   document.querySelector<HTMLElement>("#lane-build-tools")!.hidden =
-    !editor.building && !editor.isWidening;
+    !editor.building && !editor.isWidening && !editor.replacing;
   document.querySelector("#build-start-count")!.textContent = String(
     editor.draw.lanesStart,
   );
@@ -366,7 +366,7 @@ function render() {
   document.querySelector<HTMLElement>("#backward-count-control")!.hidden =
     !editor.draw.twoWay;
   document.querySelector<HTMLElement>("#lane-snap-toggle")!.hidden =
-    editor.isWidening;
+    editor.isWidening || editor.replacing;
   document
     .querySelector("#lane-snap-toggle")!
     .setAttribute("aria-pressed", String(editor.laneSnapping));
@@ -436,7 +436,7 @@ function render() {
           ? "车道、隔离带及偏移 · 左键过渡，右键取消"
           : editor.upgradeMode === "direct"
             ? "左键直接连接 · 右键恢复过渡"
-            : "选择道路资产 · 左键替换，右键恢复";
+            : "选择道路资产，调整正反向车道数 · 左键替换，右键恢复";
   renderAssets();
   document.querySelectorAll<HTMLElement>("[data-tool]").forEach((b) => {
     b.classList.toggle("active", b.dataset.tool === editor.tool);

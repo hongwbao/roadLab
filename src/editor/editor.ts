@@ -149,6 +149,35 @@ export class Editor {
   get replacing() {
     return this.tool === "upgrade" && this.upgradeMode === "replace";
   }
+  get replacementSection() {
+    const asset = getAsset(this.assetId);
+    const options: Partial<Road> = {
+      ...asset.options,
+      lanesStart: this.draw.lanesStart,
+      lanesEnd: this.draw.lanesEnd,
+    };
+    if (this.draw.twoWay) {
+      options.backwardLanesStart =
+        this.draw.backwardLanesStart ?? this.draw.lanesStart;
+      options.backwardLanesEnd = this.draw.backwardLanesEnd ?? this.draw.lanesEnd;
+    }
+    const changed =
+      options.lanesStart !== asset.options.lanesStart ||
+      options.lanesEnd !== asset.options.lanesEnd ||
+      (this.draw.twoWay &&
+        (options.backwardLanesStart !==
+          (asset.options.backwardLanesStart ?? asset.options.lanesStart) ||
+          options.backwardLanesEnd !==
+            (asset.options.backwardLanesEnd ?? asset.options.lanesEnd)));
+    return {
+      options,
+      name: changed
+        ? this.draw.twoWay
+          ? `双向 ${options.backwardLanesStart}＋${options.lanesStart} 车道`
+          : `单向 ${options.lanesStart} 车道`
+        : asset.name,
+    };
+  }
   get replacementLabel() {
     return this.replacementChoice === "auto"
       ? "自动"
@@ -1449,6 +1478,15 @@ export class Editor {
     }
     this.onChange();
     if (this.pointer && this.building) this.updatePlacement(this.pointer);
+    if (this.pointer && this.replacing) {
+      this.upgradePreviewKey = "";
+      this.updateUpgradePreview(
+        this.pointer,
+        this.replacementTarget
+          ? { road: this.replacementTarget.road }
+          : undefined,
+      );
+    }
   }
   updateWidening(raw: V) {
     this.pointer = raw;
@@ -1522,7 +1560,7 @@ export class Editor {
       this.onStatus(this.instructions());
       return;
     }
-    const asset = getAsset(this.assetId);
+    const replacement = this.replacementSection;
     let choice: ReplacementAlignment | undefined,
       choices: ReplacementAlignment[] = [];
     if (this.replacing) {
@@ -1530,11 +1568,15 @@ export class Editor {
         n = normal(candidate, near.t);
       choices = replacementAlignments(
         candidate,
-        asset.options,
-        asset.name,
+        replacement.options,
+        replacement.name,
         near.t,
       );
-      const base = replacementRoad(candidate, asset.options, asset.name),
+      const base = replacementRoad(
+          candidate,
+          replacement.options,
+          replacement.name,
+        ),
         c = center(base, near.t);
       const offset = (raw.x - c.x) * n.x + (raw.z - c.z) * n.z;
       choice =
@@ -1547,6 +1589,7 @@ export class Editor {
       candidate,
       this.upgradeMode,
       this.assetId,
+      replacement.options,
       choice?.offset,
       this.medianAction,
       this.medianWidth,
@@ -1558,7 +1601,12 @@ export class Editor {
     this.scene.setHover();
     try {
       const next = this.replacing
-        ? replacementRoad(candidate, asset.options, asset.name, choice!.offset)
+        ? replacementRoad(
+            candidate,
+            replacement.options,
+            replacement.name,
+            choice!.offset,
+          )
         : withRoadMedian(
             candidate,
             this.medianAction === "remove" ? null : this.medianWidth,
@@ -1603,7 +1651,7 @@ export class Editor {
       });
       this.onStatus(
         this.replacing
-          ? `${asset.name} · ${choice!.label} · 偏移 ${choice!.offset.toFixed(1)} m · Tab 切换对齐 · 左键替换，右键恢复`
+          ? `${replacement.name} · ${choice!.label} · 偏移 ${choice!.offset.toFixed(1)} m · Tab 切换对齐 · 左键替换，右键恢复`
           : this.medianAction === "remove"
             ? "移除中央隔离带 · 点击确认"
             : `中央实体隔离带 ${this.medianWidth} m · 左键添加 · 右键移除`,
@@ -1670,12 +1718,12 @@ export class Editor {
       const target = this.replacementTarget;
       if (!target) return;
       this.edit(() => {
-        const asset = getAsset(this.assetId);
+        const replacement = this.replacementSection;
         replaceRoadSection(
           this.project,
           target.road,
-          asset.options,
-          asset.name,
+          replacement.options,
+          replacement.name,
           target.selected.offset,
         );
         reconnectIntersections(this.project);
@@ -1777,11 +1825,12 @@ export class Editor {
             r.transitionMode = "direct";
             delete r.autoTaper;
           } else {
+            const replacement = this.replacementSection;
             replaceRoadSection(
               this.project,
               r.id,
-              getAsset(this.assetId).options,
-              getAsset(this.assetId).name,
+              replacement.options,
+              replacement.name,
             );
             reconnectIntersections(this.project);
           }

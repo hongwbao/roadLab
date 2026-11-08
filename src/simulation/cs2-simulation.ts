@@ -2997,6 +2997,16 @@ export class Cs2TrafficSimulation {
       else this.statistics.discretionaryChanges++;
     }
     const oldBlocker = this.blockers.get(id),
+      rollingExit =
+        !pending &&
+        queue.length === 0 &&
+        trip.groupIndex === trip.groups.length - 1 &&
+        lane.kind === "road" &&
+        lane.road === trip.sink.road &&
+        lane.direction === (trip.sink.end === "end" ? 1 : -1) &&
+        Math.abs(
+          lane.roadInterval![1] - (trip.sink.end === "end" ? 1 : 0),
+        ) < 1e-3,
       iterator = new CS2CarLaneSpeedIterator(this.speedWorld, {
         entity: String(id),
         ignore:
@@ -3102,7 +3112,8 @@ export class Cs2TrafficSimulation {
           break;
         }
       }
-    if (!stop) iterator.iterateTarget(iterator.state.currentPosition);
+    if (!stop && !rollingExit)
+      iterator.iterateTarget(iterator.state.currentPosition);
     let maxSpeed = iterator.state.maxSpeed;
     const receivingStop = this.receivingStopDistances.get(id);
     if (receivingStop !== undefined)
@@ -3141,6 +3152,7 @@ export class Cs2TrafficSimulation {
       current,
       nextLanes: queue,
       maxSpeed,
+      rollingExit,
       random01: speed > 0.01 ? this.navigationRandom.nextFloat() : 0.5,
       canChangeLane: iterator.state.canChangeLane,
       oncoming: iterator.state.oncoming,
