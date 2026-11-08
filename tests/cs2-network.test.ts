@@ -403,7 +403,7 @@ describe("one shared physical/master lane network", () => {
       network.locateRoadLane("dist", 1, 50)!.laneId,
     );
   });
-  it("reads automatic taper widths/offsets and orders node slaves by physical lanes rather than IDs", () => {
+  it("ignores legacy visual taper widths/offsets and orders node slaves by logical lanes rather than IDs", () => {
     const a = road("a", 0, 100, {
         autoTaper: {
           start: { lanes: 1, firstLane: 1, offset: 1.8, span: 0.25 },
@@ -418,9 +418,22 @@ describe("one shared physical/master lane network", () => {
         ],
         revision: 1,
       });
-    expect(network.locateRoadLane("a", 0, 1)).toBeUndefined();
+    expect(network.locateRoadLane("a", 0, 1)).toBeDefined();
     expect(network.locateRoadLane("a", 1, 1)).toBeDefined();
     expect(network.locateRoadLane("a", 0, 99)).toBeDefined();
+    const direct = structuredClone(a);
+    delete direct.autoTaper;
+    const baseline = compileCs2Network({
+      project: project(direct, b),
+      connections: [
+        connect("z-physical-first", "a", 0, "b"),
+        connect("a-physical-second", "a", 1, "b"),
+      ],
+      revision: 1,
+    });
+    expect([...network.lanes]).toEqual([...baseline.lanes]);
+    expect([...network.successors]).toEqual([...baseline.successors]);
+    expect(network.graph).toEqual(baseline.graph);
     const node = [...network.groups.values()].find(
       (group) => group.kind === "connection",
     )!;

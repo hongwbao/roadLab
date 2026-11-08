@@ -1,6 +1,5 @@
 import { buildJunctions, type Junction } from "../core/junctions";
 import { chooseDestination, sourceDemandRate } from "../core/traffic-demand";
-import { updateAutomaticTransitions } from "../core/auto-transitions";
 import {
   add,
   arcParameter,
@@ -604,7 +603,6 @@ export class Simulation {
     this.deferredProject = undefined;
     this.reset();
     this.curviness.clear();
-    updateAutomaticTransitions(p);
     normalizePorts(p);
     if (this.usesSourceRuntime) {
       this.project = p;

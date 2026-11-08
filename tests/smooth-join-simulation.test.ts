@@ -8,14 +8,37 @@ import {
   makeRoad,
 } from "../src/core/model";
 import { setJunctionLaneRule } from "../src/core/junction-lane-connections";
-import { physicalLaneEndpointT } from "../src/core/junction-lane-geometry";
-import { roadSurfaceTriangles } from "../src/core/junction-crosswalks";
+import { visibleRoadSurfaceTriangles } from "../src/render/road-visual-geometry";
 import { Cs2TrafficSimulation } from "../src/simulation/cs2-simulation";
 import {
   compileCs2Network,
   cs2RoadLaneKey,
 } from "../src/simulation/cs2-network";
 import type { Project } from "../src/core/types";
+
+type VisualProject = Project & {
+  roadVisuals?: {
+    version: 1;
+    nodes: { arms: { road: string; end: 0 | 1 }[]; smooth: true }[];
+  };
+};
+
+function visual(project: VisualProject, smooth: boolean) {
+  project.roadVisuals = {
+    version: 1,
+    nodes: smooth
+      ? [
+          {
+            arms: [
+              { road: "a", end: 1 },
+              { road: "b", end: 0 },
+            ],
+            smooth: true,
+          },
+        ]
+      : [],
+  };
+}
 
 function fixture(from = 3, to = 4, smooth = true) {
   const project = emptyProject();
@@ -25,10 +48,10 @@ function fixture(from = 3, to = 4, smooth = true) {
       id: "b",
       lanesStart: to,
       lanesEnd: to,
-      transitionMode: smooth ? "smooth" : "direct",
     }),
   ];
   autoJunction(project);
+  visual(project, smooth);
   return project;
 }
 function authored(project: Project, source: number, target: number) {
@@ -42,9 +65,14 @@ function authored(project: Project, source: number, target: number) {
 }
 
 function pavementProbe(project: Project) {
-  const triangles = project.roads.flatMap((road) =>
-    roadSurfaceTriangles(road, { start: 0, end: 1 }),
-  );
+  // Consume Scene's complete actual surface, including its node seam meshes.
+  const triangles = visibleRoadSurfaceTriangles(project).map((polygon) => ({
+    polygon,
+    minX: Math.min(...polygon.map((p) => p.x)),
+    maxX: Math.max(...polygon.map((p) => p.x)),
+    minZ: Math.min(...polygon.map((p) => p.z)),
+    maxZ: Math.max(...polygon.map((p) => p.z)),
+  }));
   // scene.ts: 3.8x1.65 body; wheel centres +/-0.78 plus half the 0.2m
   // wheel depth. This conservative rectangle also contains cabin and wheels.
   const halfLength = 1.9,
@@ -104,6 +132,8 @@ it.each([
   [3, 4, 0, 3],
   [4, 3, 3, 2],
   [2, 3, 0, 2],
+  [3, 5, 0, 4],
+  [5, 3, 4, 2],
 ])(
   "compiles authored %i to%i lane%i to%i on the actual usable curves",
   (from, to, source, target) => {
@@ -149,26 +179,27 @@ it.each([
   },
 );
 
-it("keeps default automatic mappings and trims unchanged for a smooth3 to4 seam", () => {
+it("keeps the normal direct mappings and full fourth endpoint independent of visual style", () => {
   const project = fixture(),
     links = connections(project),
     network = compileCs2Network({ project, connections: links, revision: 1 });
-  expect(links.map((c) => c.id)).toEqual(["a:0>b:0", "a:1>b:1", "a:2>b:2"]);
+  expect(links.length).toBeGreaterThan(0);
+  expect(links).toEqual(connections(fixture(3, 4, false)));
   expect([...network.connectionLaneIds.keys()]).toEqual(links.map((c) => c.id));
-  const forged = {
+  const explicit = {
     id: "a:0>b:3",
     from: { road: "a", lane: 0 },
     to: { road: "b", lane: 3 },
     enabled: true,
   };
-  const rejected = compileCs2Network({
+  const ordinary = compileCs2Network({
     project,
-    connections: [forged],
+    connections: [explicit],
     revision: 2,
   });
-  expect(rejected.connectionLaneIds.has(forged.id)).toBe(false);
-  expect(rejected.warnings).toContain(
-    `Connection ${forged.id}: lane fades before endpoint`,
+  expect(ordinary.connectionLaneIds.has(explicit.id)).toBe(true);
+  expect(ordinary.warnings).not.toContain(
+    `Connection ${explicit.id}: lane fades before endpoint`,
   );
 });
 
@@ -180,7 +211,7 @@ it("does not extend a true disappearing profile even with a manual collar flag",
     lanesEnd: 3,
     autoTaper: { end: { lanes: 3, firstLane: 0, offset: 0, span: 0.2 } },
   });
-  expect(physicalLaneEndpointT(project.roads[0], 3, 1)).toBeUndefined();
+  expect(laneWidth(project.roads[0], 3, 1)).toBe(0);
   const forged = {
       id: "a:3>b:2",
       from: { road: "a", lane: 3 },
@@ -220,10 +251,8 @@ it.each([
   (from, to, source, target) => {
     const project = fixture(from, to),
       id = authored(project, source, target),
-      fromRoot = physicalLaneEndpointT(project.roads[0], source, 1)!,
-      toRoot = physicalLaneEndpointT(project.roads[1], target, 0)!,
-      fromT = Math.min(fromRoot - 0.05, 0.7),
-      toT = Math.max(toRoot + 0.05, 0.3),
+      fromT = 0.7,
+      toT = 0.3,
       network = compileCs2Network({
         project,
         connections: connections(project),
@@ -244,34 +273,45 @@ it.each([
   },
 );
 
-it("uses the caller's configured width threshold without enabling default fades", () => {
-  const project = fixture(),
-    id = authored(project, 0, 3),
-    ratio = 0.9,
-    network = compileCs2Network({
+it("keeps configured width roots for a functional lane profile independent of visual style", () => {
+  const project = fixture(2, 3);
+  project.roads[1].lanesStart = 2;
+  const startAt = (minimumLaneWidthRatio: number) => {
+    const network = compileCs2Network({
       project,
-      connections: connections(project),
+      connections: [],
       revision: 1,
-      minimumLaneWidthRatio: ratio,
-    }),
-    connection = network.lanes.get(network.connectionLaneIds.get(id)!)!,
-    target = network.lanes.get(network.successors.get(connection.id)![0])!,
-    expected = physicalLaneEndpointT(project.roads[1], 3, 0, ratio)!;
-  expect(target.roadInterval![0]).toBeCloseTo(expected, 8);
-  expect(
-    dist(connection.curve.points[3], lanePoint(project.roads[1], 3, expected)),
-  ).toBeLessThan(0.0001);
+      minimumLaneWidthRatio,
+    });
+    return network.lanes.get(
+      network.roadLaneIds.get(cs2RoadLaneKey("b", 2))![0],
+    )!.roadInterval![0];
+  };
+  const at80 = startAt(0.8),
+    at90 = startAt(0.9);
+  expect(at80).toBeGreaterThan(0);
+  expect(at90).toBeGreaterThan(at80);
+  expect(laneWidth(project.roads[1], 2, at90)).toBeCloseTo(3.6, 5);
+  visual(project, false);
+  expect(startAt(0.9)).toBe(at90);
 });
 
 const metrics: unknown[] = [];
 it.each([
-  [3, 4, 0, 3],
-  [4, 3, 3, 2],
-  [2, 3, 0, 2],
-])(
-  "physically drives authored%i to%i through source%i and target%i and completes",
-  async (from, to, source, target) => {
-    const project = fixture(from, to),
+  [3, 4, 0, 3, false],
+  [3, 4, 0, 3, true],
+  [4, 3, 3, 2, false],
+  [4, 3, 3, 2, true],
+  [2, 3, 0, 2, false],
+  [2, 3, 0, 2, true],
+  [3, 5, 0, 4, false],
+  [3, 5, 0, 4, true],
+  [5, 3, 4, 2, false],
+  [5, 3, 4, 2, true],
+] as const)(
+  "physically drives authored%i to%i through source%i and target%i with visual%s and completes inside visible pavement",
+  async (from, to, source, target, smooth) => {
+    const project = fixture(from, to, smooth),
       id = authored(project, source, target),
       pavement = pavementProbe(project),
       sim = new Cs2TrafficSimulation({ synchronousPathsOnlyForTests: true });
@@ -323,6 +363,7 @@ it.each([
       to,
       source,
       target,
+      smooth,
       used,
       entered,
       maxMove,
@@ -339,76 +380,87 @@ it.each([
   },
 );
 
-it("consumes a disappearing reverse lane on an asymmetric two-way median road without enabling wrong-way targets", async () => {
-  const project = fixture(2, 2);
-  project.roads.forEach((road) => {
-    road.twoWay = true;
-    road.backwardLanesStart = road.backwardLanesEnd = road.id === "b" ? 3 : 2;
-    road.median = { kind: "concrete", width: 2 };
-  });
-  autoJunction(project);
-  const pavement = pavementProbe(project);
-  expect(laneWidth(project.roads[1], 0, 0)).toBe(0);
-  setJunctionLaneRule(project, { road: "b", lane: 0, end: 0 }, [
-    { road: "a", lane: 0, end: 1 },
-  ]);
-  for (const lane of [1, 2])
-    setJunctionLaneRule(project, { road: "b", lane, end: 0 }, []);
-  expect(() =>
+it.each([false, true])(
+  "consumes the fixed reverse endpoint on an asymmetric two-way median road with visual%s without enabling wrong-way targets",
+  async (smooth) => {
+    const project = fixture(2, 2, smooth);
+    project.roads.forEach((road) => {
+      road.twoWay = true;
+      road.backwardLanesStart = road.backwardLanesEnd = road.id === "b" ? 3 : 2;
+      road.median = { kind: "concrete", width: 2 };
+    });
+    autoJunction(project);
+    const pavement = pavementProbe(project);
+    expect(laneWidth(project.roads[1], 0, 0)).toBe(4);
     setJunctionLaneRule(project, { road: "b", lane: 0, end: 0 }, [
-      { road: "a", lane: 2, end: 1 },
-    ]),
-  ).toThrow();
-  const sim = new Cs2TrafficSimulation({ synchronousPathsOnlyForTests: true });
-  sim.configure(project);
-  const id = "b:0>a:0",
-    connection = sim.network!.lanes.get(
-      sim.network!.connectionLaneIds.get(id)!,
+      { road: "a", lane: 0, end: 1 },
+    ]);
+    for (const lane of [1, 2])
+      setJunctionLaneRule(project, { road: "b", lane, end: 0 }, []);
+    expect(() =>
+      setJunctionLaneRule(project, { road: "b", lane: 0, end: 0 }, [
+        { road: "a", lane: 2, end: 1 },
+      ]),
+    ).toThrow();
+    const sim = new Cs2TrafficSimulation({
+      synchronousPathsOnlyForTests: true,
+    });
+    sim.configure(project);
+    const id = "b:0>a:0",
+      connection = sim.network!.lanes.get(
+        sim.network!.connectionLaneIds.get(id)!,
+      )!;
+    expect(connection).toBeDefined();
+    const source = sim.network!.lanes.get(
+      sim.network!.roadLaneIds.get(cs2RoadLaneKey("b", 0))!.at(-1)!,
     )!;
-  expect(connection).toBeDefined();
-  const source = sim.network!.lanes.get(
-    sim.network!.roadLaneIds.get(cs2RoadLaneKey("b", 0))!.at(-1)!,
-  )!;
-  expect(source.direction).toBe(-1);
-  expect(source.roadInterval![1]).toBeGreaterThan(0);
-  expect(dist(connection.curve.points[0], source.curve.points[3])).toBeLessThan(
-    0.0001,
-  );
-  const actor = await sim.spawnTrip(
-    { road: "b", end: "end", type: "source", rate: 0 },
-    { road: "a", end: "start", type: "sink", rate: 0 },
-    { lane: 0, initialSpeed: 10 },
-  );
-  expect(actor).not.toBeNull();
-  sim.running = true;
-  let used = false,
-    entered = false;
-  for (let tick = 0; tick < 3600 && !sim.completed; tick++) {
-    sim.update(1 / 60);
-    const view = sim.runtime!.readVehicle(actor!),
-      car = sim.vehicles[0],
-      displayed = sim.renderVehicles()[0];
-    if (displayed) pavement.inspect(displayed);
-    if (view)
-      used ||= sim.network!.lanes.get(view.current.laneId!)!.connection === id;
-    if (
-      car &&
-      !car.connector &&
-      car.route[car.step]?.road === "a" &&
-      car.lane === 0 &&
-      car.s > 20
-    )
-      entered ||=
-        dist(car.position, lanePoint(project.roads[0], 0, 1 - car.s / 120)) < 1;
-  }
-  expect(used).toBe(true);
-  expect(entered).toBe(true);
-  expect(sim.completed).toBe(1);
-  expect(sim.failed).toBe(0);
-  metrics.push({ reverseMedian: true, pavement: pavement.evidence() });
-  writeFileSync(
-    ".cache/traffic-ai-maintenance/smooth-join-consumer-metrics.json",
-    JSON.stringify(metrics, null, 2),
-  );
-  sim.dispose();
-});
+    expect(source.direction).toBe(-1);
+    expect(source.roadInterval![1]).toBe(0);
+    expect(
+      dist(connection.curve.points[0], source.curve.points[3]),
+    ).toBeLessThan(0.0001);
+    const actor = await sim.spawnTrip(
+      { road: "b", end: "end", type: "source", rate: 0 },
+      { road: "a", end: "start", type: "sink", rate: 0 },
+      { lane: 0, initialSpeed: 10 },
+    );
+    expect(actor).not.toBeNull();
+    sim.running = true;
+    let used = false,
+      entered = false;
+    for (let tick = 0; tick < 3600 && !sim.completed; tick++) {
+      sim.update(1 / 60);
+      const view = sim.runtime!.readVehicle(actor!),
+        car = sim.vehicles[0],
+        displayed = sim.renderVehicles()[0];
+      if (displayed) pavement.inspect(displayed);
+      if (view)
+        used ||=
+          sim.network!.lanes.get(view.current.laneId!)!.connection === id;
+      if (
+        car &&
+        !car.connector &&
+        car.route[car.step]?.road === "a" &&
+        car.lane === 0 &&
+        car.s > 20
+      )
+        entered ||=
+          dist(car.position, lanePoint(project.roads[0], 0, 1 - car.s / 120)) <
+          1;
+    }
+    expect(used).toBe(true);
+    expect(entered).toBe(true);
+    expect(sim.completed).toBe(1);
+    expect(sim.failed).toBe(0);
+    metrics.push({
+      reverseMedian: true,
+      smooth,
+      pavement: pavement.evidence(),
+    });
+    writeFileSync(
+      ".cache/traffic-ai-maintenance/smooth-join-consumer-metrics.json",
+      JSON.stringify(metrics, null, 2),
+    );
+    sim.dispose();
+  },
+);
