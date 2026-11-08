@@ -268,6 +268,110 @@ test("custom phase editing supports timing, movement, insertion, ordering, delet
   ).toEqual([20, 8, 20, 8]);
 });
 
+test("default right-turn heads stay green through every phase transition and the panel describes partial clearance", async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await junction(page);
+  for (let phase = 0; phase < 4; phase++) {
+    await page.evaluate(() => {
+      const lights = (window as any).lab.editor.simulation.trafficLights;
+      lights.update(lights.states[0].remaining);
+    });
+    await expect(page.locator("[data-signal-live]")).toContainText("换相黄灯");
+    await expect(page.locator("[data-signal-live]")).toContainText(
+      "部分方向保持绿灯",
+    );
+    await expect(page.locator("[data-signal-dot]")).toHaveAttribute(
+      "data-color",
+      "green",
+    );
+    for (const stage of ["yellow", "all-red"]) {
+      if (stage === "all-red") {
+        await page.evaluate(() => {
+          const lights = (window as any).lab.editor.simulation.trafficLights;
+          lights.update(lights.states[0].remaining);
+        });
+        await expect(page.locator("[data-signal-live]")).toContainText(
+          "换相清空",
+        );
+        await expect(page.locator("[data-signal-live]")).not.toContainText(
+          "全红",
+        );
+      }
+      const status = await page.evaluate(() => {
+        const editor = (window as any).lab.editor,
+          lights = editor.simulation.trafficLights;
+        editor.scene.trafficLights.update(lights);
+        return {
+          state: lights.states[0],
+          heads: editor.scene.trafficLights.heads.map((head: any) => ({
+            turn: head.turn,
+            color: head.color,
+          })),
+        };
+      });
+      expect(status.state.phase).toBe(phase);
+      expect(status.state.stage).toBe(stage);
+      expect(status.heads.filter((head: any) => head.turn === "right")).toEqual(
+        Array.from({ length: 4 }, () => ({ turn: "right", color: "green" })),
+      );
+      expect(
+        status.heads.some(
+          (head: any) =>
+            head.turn !== "right" &&
+            head.color === (stage === "yellow" ? "yellow" : "red"),
+        ),
+      ).toBe(true);
+      if (phase === 0 && stage === "all-red")
+        await page.screenshot({
+          path: "artifacts/signals-continuous-green.png",
+        });
+    }
+    await page.evaluate(() => {
+      const lights = (window as any).lab.editor.simulation.trafficLights;
+      lights.update(lights.states[0].remaining);
+    });
+    expect(
+      await page.evaluate(
+        () =>
+          (window as any).lab.editor.simulation.trafficLights.states[0].phase,
+      ),
+    ).toBe((phase + 1) % 4);
+  }
+  expect(errors).toEqual([]);
+});
+
+test("a single-phase program displays its actual cycle and renews green without clearance", async ({
+  page,
+}) => {
+  await junction(page);
+  for (let i = 0; i < 3; i++)
+    await page.locator('[data-signal-action="remove-phase"]').click();
+  await expect(page.locator(".signal-phase-tab")).toHaveCount(1);
+  const duration = page.locator("[data-signal-phase-duration]");
+  await duration.fill("9");
+  await duration.dispatchEvent("change");
+  await expect(page.locator(".signal-program-heading output")).toHaveText(
+    "周期 9 s",
+  );
+  await expect(page.locator(".signal-mode-note")).toContainText("保持绿灯");
+  const current = await page.evaluate(() => {
+    const lights = (window as any).lab.editor.simulation.trafficLights;
+    lights.update(9.5);
+    return lights.states[0];
+  });
+  expect(current).toMatchObject({
+    phase: 0,
+    stage: "green",
+    remaining: 8.5,
+    cycle: 9,
+  });
+  await expect(page.locator("[data-signal-live]")).not.toContainText("黄灯");
+  await expect(page.locator("[data-signal-live]")).not.toContainText("清空");
+});
+
 test("saved programs import onto another junction and JSON files round-trip with invalid-input recovery", async ({
   page,
 }) => {

@@ -115,13 +115,35 @@ describe("portable signal phase programs", () => {
       }
       lights.update(config.program!.phases[phase].duration);
       expect(lights.state(j.id)!.stage).toBe("yellow");
+      for (const movement of movements) {
+        const continuing = movement.turn === "right";
+        expect(lights.allows(movement.id, 7, 100, 0)).toBe(continuing);
+        expect(
+          lights.armColor(j.id, signalArmKey(movement), movement.turn),
+        ).toBe(
+          continuing
+            ? "green"
+            : lights.state(j.id)!.phases[phase].movements.has(movement.id)
+              ? "yellow"
+              : "red",
+        );
+      }
       lights.update(config.yellow);
-      expect(
-        movements.every((m) => lights.laneSignal(m.id) === Cs2LaneSignal.Stop),
-      ).toBe(true);
+      for (const movement of movements) {
+        const continuing = movement.turn === "right";
+        expect(lights.laneSignal(movement.id)).toBe(
+          continuing ? Cs2LaneSignal.Go : Cs2LaneSignal.Stop,
+        );
+        expect(lights.allows(movement.id, 7, 100, 0)).toBe(continuing);
+        expect(
+          lights.armColor(j.id, signalArmKey(movement), movement.turn),
+        ).toBe(continuing ? "green" : "red");
+      }
+      expect(lights.state(j.id)!.continuousMovements).toHaveLength(4);
       lights.update(config.allRed);
     }
     expect(lights.state(j.id)!.phase).toBe(0);
+    expect(lights.statistics.yellowPassages).toBe(0);
   });
   it("does not display a Cartesian-product green for north/south left during east/west left + all rights", () => {
     const { j, config, lights } = setup();
@@ -136,6 +158,166 @@ describe("portable signal phase programs", () => {
     expect(lights.armColor(j.id, signalArmKey(east.arm), "straight")).toBe(
       "red",
     );
+  });
+  it("applies yellow admission only to retiring movements and holds newly allowed turns red", () => {
+    const { j, config, lights } = setup();
+    const [current, next] = lights.state(j.id)!.phases,
+      retiring = [...current.movements].find((id) => !next.movements.has(id))!,
+      entering = [...next.movements].find((id) => !current.movements.has(id))!,
+      continuous = [...current.movements].find((id) => next.movements.has(id))!;
+    lights.update(current.duration);
+    expect(lights.laneSignal(retiring)).toBe(Cs2LaneSignal.SafeStop);
+    expect(lights.allows(retiring, 1, 100, 10)).toBe(false);
+    expect(lights.allows(retiring, 2, 5, 10)).toBe(true);
+    expect(lights.allows(continuous, 3, 100, 0)).toBe(true);
+    expect(lights.allows(entering, 4, 0, 10)).toBe(false);
+    expect(lights.statistics.yellowPassages).toBe(1);
+    lights.update(config.yellow);
+    expect(lights.allows(retiring, 2, 0, 10)).toBe(false);
+    expect(lights.allows(continuous, 3, 100, 0)).toBe(true);
+    expect(lights.allows(entering, 4, 0, 10)).toBe(false);
+    lights.update(config.allRed);
+    expect(lights.allows(entering, 4, 100, 0)).toBe(true);
+    expect(lights.allows(retiring, 2, 0, 10)).toBe(false);
+  });
+  it("does not let perpetual continuing-green traffic starve phase changes", () => {
+    const { j, config, movements, lights } = setup(),
+      rights = new Set(
+        movements.filter((m) => m.turn === "right").map((m) => m.id),
+      ),
+      occupied = new Set([j.id]),
+      occupancy = new Map([[j.id, rights]]);
+    for (let phase = 0; phase < 4; phase++) {
+      const duration = config.program!.phases[phase].duration;
+      lights.update(
+        duration + config.yellow + config.allRed,
+        occupied,
+        occupancy,
+      );
+      expect(lights.state(j.id)).toMatchObject({
+        phase: (phase + 1) % 4,
+        stage: "green",
+        clearing: false,
+      });
+    }
+    expect(lights.statistics.clearanceExtensions).toBe(0);
+  });
+  it("keeps retiring, older residual and unknown movements in clearance until their bodies leave", () => {
+    const { j, config, movements, lights } = setup(),
+      [current, next] = lights.state(j.id)!.phases,
+      right = movements.find((m) => m.turn === "right")!.id,
+      retiring = [...current.movements].find((id) => !next.movements.has(id))!,
+      residual = movements.find(
+        (m) => !current.movements.has(m.id) && !next.movements.has(m.id),
+      )!.id,
+      occupied = new Set([j.id]);
+    const occupancy = (ids: string[]) => new Map([[j.id, new Set(ids)]]);
+    lights.update(
+      current.duration + config.yellow + config.allRed + 10,
+      occupied,
+      occupancy([right, retiring]),
+    );
+    expect(lights.state(j.id)).toMatchObject({
+      phase: 0,
+      stage: "all-red",
+      clearing: true,
+    });
+    expect(lights.allows(right, 1, 100, 0)).toBe(true);
+    lights.update(0.1, occupied, occupancy([right, residual]));
+    expect(lights.state(j.id)!.clearing).toBe(true);
+    lights.update(
+      0.1,
+      occupied,
+      occupancy([right, "unknown-occupied-movement"]),
+    );
+    expect(lights.state(j.id)!.clearing).toBe(true);
+    lights.update(0.1, occupied, new Map());
+    expect(lights.state(j.id)!.clearing).toBe(true);
+    lights.update(0.1, occupied, occupancy([right]));
+    expect(lights.state(j.id)).toMatchObject({
+      phase: 1,
+      stage: "green",
+      clearing: false,
+    });
+  });
+  it.each([1, 2])(
+    "keeps %i identical phase permissions continuously green and preserves exact phase durations",
+    (count) => {
+      const { j, config, movements, lights } = setup(),
+        original = config.program!.phases[0];
+      config.program!.phases = Array.from({ length: count }, (_, i) => ({
+        ...structuredClone(original),
+        id: `same-${i}`,
+        name: `连续通行${i}`,
+        duration: i + 1.25,
+      }));
+      lights.configure([j], [config], movements);
+      const cycle = config.program!.phases.reduce((n, p) => n + p.duration, 0);
+      expect(lights.state(j.id)!.cycle).toBe(cycle);
+      for (let phase = 0; phase < count; phase++) {
+        lights.update(config.program!.phases[phase].duration, new Set([j.id]));
+        expect(lights.state(j.id)).toMatchObject({
+          phase: (phase + 1) % count,
+          stage: "green",
+          clearing: false,
+        });
+        for (const movement of movements)
+          expect(lights.allows(movement.id, 1, 100, 0)).toBe(
+            lights.state(j.id)!.phases[0].movements.has(movement.id),
+          );
+      }
+      config.offset = cycle + 0.5;
+      lights.configure([j], [config], movements);
+      expect(lights.state(j.id)).toMatchObject({
+        phase: 0,
+        stage: "green",
+        remaining: 0.75,
+      });
+      expect(lights.statistics.clearanceExtensions).toBe(0);
+    },
+  );
+  it("resets continuous permissions and yellow admissions when a program is reconfigured", () => {
+    const { j, config, movements, lights } = setup(),
+      right = movements.find((m) => m.turn === "right")!;
+    lights.update(config.program!.phases[0].duration);
+    expect(lights.allows(right.id, 1, 100, 0)).toBe(true);
+    const [current, next] = lights.state(j.id)!.phases,
+      retiring = [...current.movements].find((id) => !next.movements.has(id))!;
+    expect(lights.allows(retiring, 2, 5, 10)).toBe(true);
+    config.program!.phases[1].movements =
+      config.program!.phases[1].movements.filter(
+        (permission) => permission.turn !== "right",
+      );
+    lights.configure([j], [config], movements);
+    lights.update(config.program!.phases[0].duration);
+    expect(lights.laneSignal(right.id)).toBe(Cs2LaneSignal.SafeStop);
+    expect(lights.allows(right.id, 1, 100, 0)).toBe(false);
+    expect(lights.allows(right.id, 2, 100, 0)).toBe(false);
+    expect(lights.state(j.id)!.continuousMovements).not.toContain(right.id);
+    lights.clear();
+    expect(lights.states).toEqual([]);
+    expect(lights.allows(right.id, 1, 100, 0)).toBe(true);
+  });
+  it("uses the phase reached inside a large update when filtering continuing-green occupancy", () => {
+    const { j, config, movements } = setup(),
+      a = new TrafficLightController(),
+      b = new TrafficLightController();
+    config.offset = 29;
+    a.configure([j], [config], movements);
+    b.configure([j], [config], movements);
+    const occupied = new Set([j.id]),
+      occupancy = new Map([
+        [
+          j.id,
+          new Set(movements.filter((m) => m.turn === "right").map((m) => m.id)),
+        ],
+      ]);
+    a.update(100, occupied, occupancy);
+    for (let i = 0; i < 4000; i++) b.update(0.025, occupied, occupancy);
+    expect(a.state(j.id)!.phase).toBe(b.state(j.id)!.phase);
+    expect(a.state(j.id)!.stage).toBe(b.state(j.id)!.stage);
+    expect(a.state(j.id)!.remaining).toBeCloseTo(b.state(j.id)!.remaining, 7);
+    expect(a.statistics.clearanceExtensions).toBe(0);
   });
   it("keeps an explicitly empty phase and its own duration rather than silently dropping it", () => {
     const { j, config, movements, lights } = setup();

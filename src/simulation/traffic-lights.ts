@@ -49,6 +49,8 @@ export type SignalState = {
   stage: "green" | "yellow" | "all-red";
   remaining: number;
   clearing: boolean;
+  /** Movements that stay green while the other movements change phase. */
+  continuousMovements: readonly string[];
   phases: readonly SignalPhase[];
   cycle: number;
   actuated?: boolean;
@@ -58,6 +60,7 @@ type Clock = {
   config: TrafficSignal;
   junction: string;
   phases: SignalPhase[];
+  transitions: { continuous: ReadonlySet<string>; changes: boolean }[];
   phase: number;
   stage: SignalState["stage"];
   elapsed: number;
@@ -262,6 +265,18 @@ export class TrafficLightController {
         config,
         junction: junction.id,
         phases,
+        transitions: phases.map((phase, index) => {
+          const next = phases[(index + 1) % phases.length].movements;
+          const continuous = new Set(
+            [...phase.movements].filter((id) => next.has(id)),
+          );
+          return {
+            continuous,
+            changes:
+              continuous.size !== phase.movements.size ||
+              continuous.size !== next.size,
+          };
+        }),
         phase: 0,
         stage: source ? "all-red" : "green",
         elapsed: 0,
@@ -272,11 +287,8 @@ export class TrafficLightController {
       this.clocks.set(junction.id, clock);
       for (const movement of links)
         this.movements.set(movement.id, { clock, movement });
-      const cycle = phases.reduce(
-        (n, p) => n + p.duration + config.yellow + config.allRed,
-        0,
-      );
-      if (!source) this.advance(clock, config.offset % cycle, false);
+      if (!source)
+        this.advance(clock, config.offset % this.cycle(clock), false);
     }
   }
   has(junction: string | undefined) {
@@ -293,7 +305,32 @@ export class TrafficLightController {
         ? clock.config.yellow
         : clock.config.allRed;
   }
-  private advance(clock: Clock, dt: number, occupied: boolean) {
+  private cycle(clock: Clock) {
+    return clock.phases.reduce(
+      (total, phase, index) =>
+        total +
+        phase.duration +
+        (clock.transitions[index].changes
+          ? clock.config.yellow + clock.config.allRed
+          : 0),
+      0,
+    );
+  }
+  private fixedColor(clock: Clock, movement: string): LightColor {
+    if (!clock.phases[clock.phase].movements.has(movement)) return "red";
+    if (
+      clock.stage === "green" ||
+      clock.transitions[clock.phase].continuous.has(movement)
+    )
+      return "green";
+    return clock.stage === "yellow" ? "yellow" : "red";
+  }
+  private advance(
+    clock: Clock,
+    dt: number,
+    occupied: boolean,
+    occupiedMovements?: ReadonlySet<string>,
+  ) {
     for (let guard = 0; guard < 10000; guard++) {
       const remaining = Math.max(0, this.duration(clock) - clock.elapsed);
       if (dt < remaining - 1e-9) {
@@ -301,7 +338,16 @@ export class TrafficLightController {
         return;
       }
       dt = Math.max(0, dt - remaining);
-      if (clock.stage === "all-red" && occupied) {
+      // Continuing green traffic must not keep a phase in clearance forever.
+      // Unknown movement IDs and residual traffic from earlier phases still
+      // block. Older callers without movement occupancy remain conservative.
+      const needsClearance = () =>
+        occupiedMovements === undefined
+          ? occupied
+          : [...occupiedMovements].some(
+              (id) => !clock.transitions[clock.phase].continuous.has(id),
+            );
+      if (clock.stage === "all-red" && needsClearance()) {
         if (!clock.clearing) this.statistics.clearanceExtensions++;
         clock.elapsed = this.duration(clock);
         clock.clearing = true;
@@ -309,7 +355,10 @@ export class TrafficLightController {
       }
       clock.clearing = false;
       clock.elapsed = 0;
-      if (clock.stage === "all-red") {
+      if (
+        clock.stage === "all-red" ||
+        (clock.stage === "green" && !clock.transitions[clock.phase].changes)
+      ) {
         clock.phase = (clock.phase + 1) % clock.phases.length;
         clock.stage = "green";
         clock.yellowPasses.clear();
@@ -318,11 +367,20 @@ export class TrafficLightController {
       if (dt < 1e-9) return;
     }
   }
-  update(dt: number, occupied: ReadonlySet<string> = new Set()) {
+  update(
+    dt: number,
+    occupied: ReadonlySet<string> = new Set(),
+    occupiedMovements?: ReadonlyMap<string, ReadonlySet<string>>,
+  ) {
     if (!Number.isFinite(dt) || dt < 0) return;
     for (const clock of this.clocks.values()) {
       if (!clock.source) {
-        this.advance(clock, dt, occupied.has(clock.junction));
+        this.advance(
+          clock,
+          dt,
+          occupied.has(clock.junction),
+          occupiedMovements?.get(clock.junction),
+        );
         continue;
       }
       const source = clock.source;
@@ -376,11 +434,10 @@ export class TrafficLightController {
     if (!entry) return Cs2LaneSignal.None;
     const lane = entry.clock.source?.lanes.get(movementId);
     if (lane) return lane.signal;
-    if (!entry.clock.phases[entry.clock.phase].movements.has(movementId))
-      return Cs2LaneSignal.Stop;
-    return entry.clock.stage === "green"
+    const color = this.fixedColor(entry.clock, movementId);
+    return color === "green"
       ? Cs2LaneSignal.Go
-      : entry.clock.stage === "yellow"
+      : color === "yellow"
         ? Cs2LaneSignal.SafeStop
         : Cs2LaneSignal.Stop;
   }
@@ -402,12 +459,9 @@ export class TrafficLightController {
       }
       return true;
     }
-    if (
-      !clock.phases[clock.phase].movements.has(movementId) ||
-      clock.stage === "all-red"
-    )
-      return false;
-    if (clock.stage === "green") return true;
+    const color = this.fixedColor(clock, movementId);
+    if (color === "red") return false;
+    if (color === "green") return true;
     if (clock.yellowPasses.has(vehicleId)) return true;
     const remaining = Math.max(0, clock.config.yellow - clock.elapsed);
     const stopping =
@@ -440,16 +494,18 @@ export class TrafficLightController {
       }
       return yellow ? "yellow" : "red";
     }
-    if (!clock || clock.stage === "all-red") return "red";
+    if (!clock) return "red";
     const phase = clock.phases[clock.phase];
-    return [...phase.movements].some((id) => {
+    let yellow = false;
+    for (const id of phase.movements) {
       const movement = this.movements.get(id)?.movement;
-      return (
-        movement && signalArmKey(movement) === arm && movement.turn === turn
-      );
-    })
-      ? clock.stage
-      : "red";
+      if (!movement || signalArmKey(movement) !== arm || movement.turn !== turn)
+        continue;
+      const color = this.fixedColor(clock, id);
+      if (color === "green") return "green";
+      if (color === "yellow") yellow = true;
+    }
+    return yellow ? "yellow" : "red";
   }
   state(junction: string): SignalState | undefined {
     const clock = this.clocks.get(junction);
@@ -462,14 +518,16 @@ export class TrafficLightController {
       stage: clock.stage,
       remaining: Math.max(0, this.duration(clock) - clock.elapsed),
       clearing: clock.clearing,
+      continuousMovements:
+        clock.stage === "green"
+          ? []
+          : clock.source
+            ? [...clock.source.lanes]
+                .filter(([, lane]) => lane.signal === Cs2LaneSignal.Go)
+                .map(([id]) => id)
+            : [...clock.transitions[clock.phase].continuous],
       phases: clock.phases,
-      cycle: clock.source
-        ? 0
-        : clock.phases.reduce(
-            (n, p) =>
-              n + p.duration + clock.config.yellow + clock.config.allRed,
-            0,
-          ),
+      cycle: clock.source ? 0 : this.cycle(clock),
       actuated: !!clock.source,
       sourceState: clock.source?.clock.state,
     };

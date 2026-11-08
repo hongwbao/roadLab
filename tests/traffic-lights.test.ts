@@ -14,6 +14,7 @@ import {
   makeTrafficSignal,
   SIGNAL_STOP_OFFSET,
   signalArmKey,
+  signalStopOffset,
 } from "../src/core/traffic-signals";
 import {
   TrafficLightController,
@@ -22,6 +23,7 @@ import {
 import { Simulation, type Vehicle } from "../src/simulation/simulation";
 import { DEFAULT_DRIVER } from "../src/simulation/driving";
 import { bodiesOverlap, TrafficIndex } from "../src/simulation/collision";
+import { CS2_BASE_CAR } from "../src/simulation/cs2-driving";
 
 function fixture(lanes = 1) {
   const p = emptyProject(),
@@ -229,31 +231,93 @@ it("stops a real car before the crosswalk on red, then releases it on green", ()
   expect(config.mode).toBe("sequential");
 });
 it("does not enter on green when the receiving lane lacks space", () => {
-  const { sim, links } = fixture();
+  const { sim, links, junction } = fixture();
   const link = links.find((c) => sim.trafficLights.allows(c.id, 1, 55, 12))!;
   const car = carFor(sim, link),
-    step = car.route[1];
+    step = car.route[1],
+    targetArm = junction.arms.find((arm) => arm.road === step.road)!;
   const blocker: Vehicle = {
     ...car,
     id: 2,
     route: [step],
     step: 0,
-    s: (sim as any).entry(step) + 3,
+    lane: step.inLane,
+    // The physical source network joins at the stop-line boundary, beyond
+    // the legacy pavement trim. Keep the blocker on the actual receiving lane.
+    s: (sim as any).entry(step) + signalStopOffset(targetArm) + 3,
     speed: 0,
+    cs2Car: { ...CS2_BASE_CAR, maxSpeed: 0, acceleration: 0 },
     nextLaneDecision: Infinity,
   };
+  const network = (sim as any).sourceEngine.network,
+    location = network.locateRoadLane(step.road, blocker.lane, blocker.s);
+  expect(location).toBeDefined();
+  expect(network.lanes.get(location.laneId)).toMatchObject({
+    kind: "road",
+    road: step.road,
+    lane: step.inLane,
+  });
   (sim as any).pose(blocker);
+  const stoppedAt = { ...blocker.position };
   sim.vehicles = [car, blocker];
   sim.running = true;
-  // A very slow downstream vehicle remains inside the receiving clearance.
+  // Both runtimes must actually retain the blocker in the receiving clearance;
+  // driver.speedFactor alone does not control a source-runtime vehicle.
   blocker.driver = { ...DEFAULT_DRIVER, speedFactor: 0.001 };
-  for (let i = 0; i < 180; i++) sim.update(0.05);
+  for (let i = 0; i < 180; i++) {
+    sim.update(0.05);
+    const physical = sim.renderVehicles().find((vehicle) => vehicle.id === 2)!;
+    expect(physical.speed).toBeLessThan(0.001);
+    expect(
+      Math.hypot(
+        physical.position.x - stoppedAt.x,
+        physical.position.z - stoppedAt.z,
+      ),
+    ).toBeLessThan(0.02);
+  }
   expect(car.connector).toBeUndefined();
   expect(car.s + 1.9).toBeLessThanOrEqual(
     (sim as any).exit(car.route[0]) - SIGNAL_STOP_OFFSET + 0.01,
   );
   expect(sim.completed).toBe(0);
+  expect(sim.statistics.junctionEntries).toBe(0);
 });
+
+it.each(["cs2-derived", "legacy"] as const)(
+  "%s keeps a real right-turning car moving during another movement's clearance",
+  (model) => {
+    const { p, sim, movements, links, config, junction } = fixture(3);
+    config.mode = "custom";
+    config.allRed = 8;
+    sim.trafficModel = model;
+    sim.configure(p);
+    const right = movements.find((movement) => movement.turn === "right")!,
+      link = links.find((connection) => connection.id === right.id)!,
+      car = carFor(sim, link);
+    car.s = (sim as any).exit(car.route[0]) - SIGNAL_STOP_OFFSET - 1.9 - 4;
+    car.speed = 3;
+    (sim as any).pose(car);
+    sim.vehicles = [car];
+    sim.trafficLights.update(
+      config.program!.phases[0].duration + config.yellow,
+    );
+    expect(sim.trafficLights.state(junction.id)!.stage).toBe("all-red");
+    expect(
+      sim.trafficLights.armColor(junction.id, signalArmKey(right), "right"),
+    ).toBe("green");
+    sim.running = true;
+    let minimumSpeed = Infinity;
+    for (let i = 0; i < 120; i++) {
+      sim.update(0.05);
+      minimumSpeed = Math.min(minimumSpeed, car.speed);
+    }
+    expect(sim.trafficLights.state(junction.id)!.stage).toBe("all-red");
+    expect(sim.statistics.junctionEntries).toBe(1);
+    expect(minimumSpeed).toBeGreaterThan(0.1);
+    expect(sim.statistics.safetyStops).toBe(0);
+    sim.dispose();
+  },
+);
 
 it("legacy signal admission survives all-red until the admitted car's rear clears", () => {
   const { sim, p, links, junction, config } = fixture();
