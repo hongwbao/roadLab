@@ -1,39 +1,27 @@
 {
-  "recorded_at": "2026-11-08T07:41:42.611091+00:00",
-  "latest_change": "出发前以预计通行时间为唯一成本维度，保留道路限速、车辆极速、交通采样及曲线时间，取消里程舒适度和随机成本偏选；继续遵守车道连线且保持出发后路线固定。包含用户委派Sol medium单独部署的苜蓿叶8米二层。",
-  "record_type": "寻路专项验证；高度8米按用户明确要求未运行测试或部署后验证。本次仅Vite构建及服务重启，不声称整站浏览器或交通压力验证已覆盖新版本。",
+  "recorded_at": "2026-11-08T08:03:18.941772+00:00",
+  "latest_change": "以内置同名改进版存档替换旧苜蓿叶生成地图；32段重建主线和8条四车道原路120km/h，其余100km/h；8个外端延长40米，68条原路按120米上限分为120段，最长111.23米。保留8米高架、8条自定义车道连接、8个出入口及交通需求。",
+  "record_type": "改进版地图快速交付记录；仅最小数据摘要、固定快照Vite构建及服务重启。未运行测试、类型检查、浏览器或部署后验证；此前304核心与85浏览器等历史结果不覆盖新版120段地图。",
   "checks": [
     {
-      "command": "npx vitest run route-choice-policy,cs2-simulation,cs2-path-search",
-      "exit_code": 0,
-      "passed_cases": 277,
-      "scope": "actualroute8seeds,fasterlongroad,speededit,vehiclecap/flow,costcounterexample,authoredlinkandexistingengine/searchoracles;noheightcases"
+      "command": "read generated cloverleaf data summary",
+      "scope": "Minimal data summary only, not a test suite: exact named save68 roads becomes120 segments;48 at120km/h,72 at100km/h;longest111.2332614160934m;8 lane rules and8 ports retained/remapped;8m upper level,global1,base50.",
+      "artifact": "/home/bhw/repos/interchange-lab/.cache/builds/cloverleaf-improved-20261108-074953/data-summary.json"
     },
     {
-      "command": "npx vitest run route-choice-policy,traffic-demand-runtime,early-lane-planning,route-lane-planning",
+      "command": "npx vite build --outDir /home/bhw/repos/interchange-lab/.cache/deployments/cloverleaf-improved-20261108-074953/dist",
       "exit_code": 0,
-      "passed_cases": 19,
-      "scope": "liveweightedflow,fixedroutes,adjacentearlychanges;4routepolicycasesoverlapwith277above;noheightcases"
+      "scope": "Frozen git archive1b18b31; production build only;no typecheck."
     },
     {
-      "command": "npx vite build",
+      "command": "systemctl --user daemon-reload;systemctl --user restart roadlab.service",
       "exit_code": 0,
-      "scope": "fixedb035ef3 includesheight40baabd andtime-first policy;noTypeScript orbrowserverification inthisquick release"
+      "scope": "Fixed improved-cloverleaf release;no post-deploy verification."
     },
     {
-      "command": "Sol medium height-only build+systemctl restart",
+      "command": "git push origin 1b18b317f19d485fc4724e92a5a9369542fa6cd0:main",
       "exit_code": 0,
-      "scope": "40baabd changescloverleafheight12to8,rampsinheritexistinginterpolation;no tests/health/hash checks peruserinstruction"
-    },
-    {
-      "command": "systemctl --user daemon-reload;restart roadlab.service",
-      "exit_code": 0,
-      "scope": "served fixedroute-choice snapshot,8m retained;no post-deployverification"
-    },
-    {
-      "command": "git push origin HEAD:main",
-      "exit_code": 0,
-      "scope": "height40baabd androutingb035ef3 pushed;deliveryrecords follow"
+      "scope": "Application commit pushed; documentation-only delivery follows."
     }
   ],
   "limitations": [
@@ -402,15 +390,19 @@
     "healthz": "ok"
   },
   "current_deployment": {
-    "version": "route-choice-20261108-073635",
+    "version": "cloverleaf-improved-20261108-074953",
     "url": "http://192.168.31.167:5173/",
-    "source_commit": "b035ef390bba2c260bc7991fc696b217483b7452",
-    "source_snapshot": "/home/bhw/repos/interchange-lab/.cache/builds/route-choice-20261108-073635/source",
-    "manifest": "/home/bhw/repos/interchange-lab/.cache/deployments/route-choice-20261108-073635/manifest.json",
+    "source_commit": "1b18b317f19d485fc4724e92a5a9369542fa6cd0",
+    "source_snapshot": "/home/bhw/repos/interchange-lab/.cache/builds/cloverleaf-improved-20261108-074953/source",
+    "release_directory": "/home/bhw/repos/interchange-lab/.cache/deployments/cloverleaf-improved-20261108-074953",
+    "bundle": "index-ULyyj4oK.js",
     "service_restart_exit_code": 0,
     "post_deploy_verification": "not_run",
-    "prior_height_only_release": "cloverleaf-height-8m-20261108-073205",
-    "height_change_tests": "not_run_per_user_request"
+    "tests": "not_run_per_quick_delivery_request",
+    "typecheck": "not_run",
+    "browser_verification": "not_run",
+    "previous_service_unit_backup": "/home/bhw/repos/interchange-lab/.cache/builds/cloverleaf-improved-20261108-074953/previous-roadlab.service",
+    "previous_release_pointer_backup": "/home/bhw/repos/interchange-lab/.cache/builds/cloverleaf-improved-20261108-074953/previous-current-preview-release.json"
   },
   "previous_cs2_preview_checks": [
     {
@@ -1650,5 +1642,81 @@
     "upper_level_m": 8,
     "tests": "not_run_per_user_request",
     "existing_saves": "unchanged;reloadbuiltinexamplefor8m"
+  },
+  "previous_route_choice_delivery_record": {
+    "recorded_at": "2026-11-08T07:41:42.611091+00:00",
+    "latest_change": "出发前以预计通行时间为唯一成本维度，保留道路限速、车辆极速、交通采样及曲线时间，取消里程舒适度和随机成本偏选；继续遵守车道连线且保持出发后路线固定。包含用户委派Sol medium单独部署的苜蓿叶8米二层。",
+    "record_type": "寻路专项验证；高度8米按用户明确要求未运行测试或部署后验证。本次仅Vite构建及服务重启，不声称整站浏览器或交通压力验证已覆盖新版本。",
+    "checks": [
+      {
+        "command": "npx vitest run route-choice-policy,cs2-simulation,cs2-path-search",
+        "exit_code": 0,
+        "passed_cases": 277,
+        "scope": "actualroute8seeds,fasterlongroad,speededit,vehiclecap/flow,costcounterexample,authoredlinkandexistingengine/searchoracles;noheightcases"
+      },
+      {
+        "command": "npx vitest run route-choice-policy,traffic-demand-runtime,early-lane-planning,route-lane-planning",
+        "exit_code": 0,
+        "passed_cases": 19,
+        "scope": "liveweightedflow,fixedroutes,adjacentearlychanges;4routepolicycasesoverlapwith277above;noheightcases"
+      },
+      {
+        "command": "npx vite build",
+        "exit_code": 0,
+        "scope": "fixedb035ef3 includesheight40baabd andtime-first policy;noTypeScript orbrowserverification inthisquick release"
+      },
+      {
+        "command": "Sol medium height-only build+systemctl restart",
+        "exit_code": 0,
+        "scope": "40baabd changescloverleafheight12to8,rampsinheritexistinginterpolation;no tests/health/hash checks peruserinstruction"
+      },
+      {
+        "command": "systemctl --user daemon-reload;restart roadlab.service",
+        "exit_code": 0,
+        "scope": "served fixedroute-choice snapshot,8m retained;no post-deployverification"
+      },
+      {
+        "command": "git push origin HEAD:main",
+        "exit_code": 0,
+        "scope": "height40baabd androutingb035ef3 pushed;deliveryrecords follow"
+      }
+    ],
+    "current_deployment": {
+      "version": "route-choice-20261108-073635",
+      "url": "http://192.168.31.167:5173/",
+      "source_commit": "b035ef390bba2c260bc7991fc696b217483b7452",
+      "source_snapshot": "/home/bhw/repos/interchange-lab/.cache/builds/route-choice-20261108-073635/source",
+      "manifest": "/home/bhw/repos/interchange-lab/.cache/deployments/route-choice-20261108-073635/manifest.json",
+      "service_restart_exit_code": 0,
+      "post_deploy_verification": "not_run",
+      "prior_height_only_release": "cloverleaf-height-8m-20261108-073205",
+      "height_change_tests": "not_run_per_user_request"
+    }
+  },
+  "saved_cloverleaf_improved": {
+    "source_slot_name": "苜蓿叶立交 · 2主线＋2辅道 改进版",
+    "source_asset": "src/core/cloverleaf-improved.ts",
+    "source_roads": 68,
+    "authored_two_lane_main_roads": 32,
+    "original_four_lane_boundary_roads": 8,
+    "main_and_boundary_speed_kmh": 120,
+    "other_speed_kmh": 100,
+    "outer_end_extension_m": 40,
+    "extended_boundary_roads": 8,
+    "segment_target_m": 120,
+    "segments": 120,
+    "segments_at_120_kmh": 48,
+    "segments_at_100_kmh": 72,
+    "longest_segment_m": 111.2332614160934,
+    "upper_level_m": 8,
+    "authored_lane_rules": 8,
+    "ports": 8,
+    "signals": 0,
+    "templates": 0,
+    "traffic_base_rate": 50,
+    "traffic_multiplier": 1,
+    "authored_destination_shares": false,
+    "existing_saves": "Unchanged;reload builtin cloverleaf example from map menu.",
+    "validation_scope": "Build and minimal generated-data summary only;historical checks do not validate this120-segment map."
   }
 }
