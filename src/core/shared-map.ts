@@ -1,4 +1,5 @@
 import { v } from "./math";
+import { DEFAULT_TRAFFIC_BASE_RATE } from "./traffic-demand";
 import { emptyProject, makeRoad } from "./model";
 import type { Port, Project, Road, V } from "./types";
 
@@ -160,7 +161,7 @@ export function sharedRoadMap(): Project {
     road: string,
     end: Port["end"],
     type: Port["type"],
-    rate = 30,
+    rate = DEFAULT_TRAFFIC_BASE_RATE,
   ): Port => ({ road, end, type, rate });
   p.ports = [
     port("r-mw3nidly-jzq", "start", "source"),

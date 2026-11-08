@@ -1,4 +1,11 @@
 import {
+  DEFAULT_TRAFFIC_BASE_RATE,
+  MAX_ENTRY_RATE,
+  pruneDestinationShares,
+  trafficBaseRate,
+  validateTrafficDemand,
+} from "./traffic-demand";
+import {
   add,
   center,
   nodePoint,
@@ -102,6 +109,7 @@ export const emptyProject = (): Project => ({
   ports: [],
   templates: [],
   trafficMultiplier: 1,
+  trafficBaseRate: DEFAULT_TRAFFIC_BASE_RATE,
 });
 export function example(kind = "transition"): Project {
   if (kind === "elevated") return cloverleafExample(makeRoad);
@@ -152,7 +160,12 @@ export function example(kind = "transition"): Project {
   );
   p.roads = [a, b, c, d, e];
   p.ports = [
-    { road: a.id, end: "start", type: "source", rate: 24 },
+    {
+      road: a.id,
+      end: "start",
+      type: "source",
+      rate: DEFAULT_TRAFFIC_BASE_RATE,
+    },
     { road: d.id, end: "end", type: "sink", rate: 1 },
     { road: e.id, end: "end", type: "sink", rate: 1 },
   ];
@@ -349,9 +362,10 @@ export function normalizePorts(p: Project) {
     seen.add(key);
     const wasSink = port.type === "sink";
     port.type = r.twoWay ? "both" : port.end === "start" ? "source" : "sink";
-    if (r.twoWay && wasSink) port.rate = 30;
+    if (r.twoWay && wasSink) port.rate = trafficBaseRate(p);
     return true;
   });
+  pruneDestinationShares(p);
 }
 export function setBoundary(p: Project, id: string, end: "start" | "end") {
   const r = p.roads.find((r) => r.id === id);
@@ -361,7 +375,7 @@ export function setBoundary(p: Project, id: string, end: "start" | "end") {
     road: id,
     end,
     type: r.twoWay ? "both" : end === "start" ? "source" : "sink",
-    rate: r.twoWay || end === "start" ? 30 : 1,
+    rate: r.twoWay || end === "start" ? trafficBaseRate(p) : 1,
   });
   return true;
 }
@@ -1079,9 +1093,10 @@ export function parseProject(text: string): Project {
       !["source", "sink", "both"].includes(x.type) ||
       !finite(x.rate) ||
       x.rate < 0 ||
-      x.rate > 240
+      x.rate > MAX_ENTRY_RATE
     )
       throw new Error("出入口属性不合法。");
+  validateTrafficDemand(p);
   if (!Array.isArray(p.templates)) p.templates = [];
   for (const t of p.templates) {
     if (

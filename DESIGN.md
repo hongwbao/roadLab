@@ -295,3 +295,9 @@ components:
 ### Traffic AI Settings
 
 地图菜单底部使用现有details样式收起“交通 AI 设置”，展开后仅显示“车道预判距离”数字输入与米单位，默认500，范围100–2000。说明运行中可调且随地图保存。复用暗色面板、青色焦点和等宽数字，不增加常驻底栏表单或新弹窗。无效输入恢复当前有效值，并通过已有toast给出范围。
+
+### Traffic Demand
+
+I通行口工具扩展为“车流测试”上下文面板，桌面位于左侧工具栏右边，复用暗色面板和青色焦点。入口使用两列按钮，显示各入口百分比；下面显示当前入口比例、总需求、每车道需求和出口分配列表。出口名称、比例与实际辆/分同属一行组，活动行使用既有raised底色。悬停或键盘聚焦显示青色虚线、方向箭头及琥珀目标环，面板文字同步入口／出口编号。100%基准与通行口增删操作收进details。长面板内部滚动，标题与关闭按钮保持可见；窄屏沿用工具栏右侧浮动面板，保留页脚车流控制。
+
+OD guide finish: screen-space blue stroke with dark contrast outline,approximately13px/8px dashes,visible directional arrow andblueorigin/ambertarget rings withminimum11px radius;uniforms andmarker scale update oncamera changes withoutroad/line rebuilds. Entry→exit identification stays in sticky panelheading.

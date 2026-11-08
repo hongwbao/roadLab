@@ -1,4 +1,9 @@
 import {
+  chooseDestination,
+  sourceDemandRate,
+  sourceLanes,
+} from "../core/traffic-demand";
+import {
   coordinateLaneMerges,
   type MergeOccupant,
   type MergeRequest,
@@ -227,6 +232,8 @@ type Geometry = {
 };
 type Boundary = {
   port: Port;
+  lane: number;
+  lanes: number;
   credit: number;
   waiting: number;
   request?: number;
@@ -447,7 +454,7 @@ export class Cs2TrafficSimulation {
       (sum, boundary) =>
         sum +
         (isSource(boundary.port) &&
-        boundary.port.rate * this.trafficMultiplier > 0
+        sourceDemandRate(this.project!, boundary.port) > 0
           ? boundary.waiting
           : 0),
       0,
@@ -686,7 +693,7 @@ export class Cs2TrafficSimulation {
     this.pathService?.configure(this.graph);
     this.boundaries = project.ports
       .filter(isSource)
-      .map((port) => ({ port, credit: 0, waiting: 0 }));
+      .flatMap((port) => this.boundariesForPort(port));
     for (const source of project.ports.filter(isSource))
       for (const sink of project.ports.filter(isSink)) {
         if (portKey(source) === portKey(sink)) continue;
@@ -810,7 +817,10 @@ export class Cs2TrafficSimulation {
     for (const boundary of this.boundaries) {
       const port = active.get(portKey(boundary.port));
       if (port)
-        Object.assign(boundary.port, port, { rate: Math.max(0, port.rate) });
+        Object.assign(boundary.port, port, {
+          rate: Math.max(0, port.rate),
+          destinations: port.destinations?.map((d) => ({ ...d })),
+        });
       else {
         boundary.port.rate = 0;
         boundary.port.type = "sink";
@@ -822,8 +832,20 @@ export class Cs2TrafficSimulation {
           (boundary) => portKey(boundary.port) === portKey(port),
         )
       )
-        this.boundaries.push({ port: { ...port }, credit: 0, waiting: 0 });
+        this.boundaries.push(...this.boundariesForPort({ ...port }));
     this.project.ports = ports.map((port) => ({ ...port }));
+  }
+  private boundariesForPort(port: Port): Boundary[] {
+    const lanes = sourceLanes(this.project!, port).filter(
+      (lane) => this.targets(port, true, lane).length > 0,
+    );
+    return lanes.map((lane, i) => ({
+      port,
+      lane,
+      lanes: lanes.length,
+      credit: i / lanes.length,
+      waiting: 0,
+    }));
   }
   private endpoint(road: Road, direction: 1 | -1, exit: boolean) {
     const total = this.arcs.get(road.id)!.at(-1)!.s,
@@ -1837,7 +1859,8 @@ export class Cs2TrafficSimulation {
   }
   private demand() {
     for (const boundary of this.boundaries) {
-      const rate = Math.max(0, boundary.port.rate * this.trafficMultiplier);
+      const rate =
+        sourceDemandRate(this.project!, boundary.port) / boundary.lanes;
       if (!isSource(boundary.port) || rate === 0) continue;
       boundary.credit += rate / 3600;
       const count = Math.floor(boundary.credit + 1e-9);
@@ -1845,17 +1868,19 @@ export class Cs2TrafficSimulation {
       boundary.waiting += count;
       this.generated += count;
       if (!boundary.waiting || boundary.request || boundary.ready) continue;
-      const exits = this.project!.ports.filter(isSink).filter(
-        (sink) => portKey(sink) !== portKey(boundary.port),
+      const sink = chooseDestination(
+        this.project!,
+        boundary.port,
+        this.random.nextUInt() / 4294967296,
       );
-      if (!exits.length) continue;
-      const sink = exits[this.random.nextUInt() % exits.length],
-        id = ++this.nextId,
+      if (!sink) continue;
+      const id = ++this.nextId,
         seed = this.random.nextUInt(),
         trip: Trip = {
           id,
           source: boundary.port,
           sink,
+          lane: boundary.lane,
           initialSpeed: 0,
           externalSpawn: true,
           owner: { flags: Cs2PathFlags.Obsolete, elementIndex: 0 },
@@ -1870,7 +1895,10 @@ export class Cs2TrafficSimulation {
         };
       boundary.request = id;
       this.trips.set(id, trip);
-      void this.requestPath(this.query(boundary.port, sink), trip).then(() => {
+      void this.requestPath(
+        this.query(boundary.port, sink, boundary.lane),
+        trip,
+      ).then(() => {
         if (boundary.request === id) {
           boundary.ready = trip;
           boundary.request = undefined;
@@ -1887,7 +1915,7 @@ export class Cs2TrafficSimulation {
     for (const boundary of this.boundaries) {
       if (
         !isSource(boundary.port) ||
-        boundary.port.rate * this.trafficMultiplier <= 0
+        sourceDemandRate(this.project!, boundary.port) <= 0
       )
         continue;
       const trip = boundary.ready;

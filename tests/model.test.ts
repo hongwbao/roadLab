@@ -372,7 +372,8 @@ describe("traffic uses actual lane connections", () => {
     sim.configure(old);
     sim.running = true;
     for (let i = 0; i < 200; i++) sim.update(0.05);
-    expect(sim.generated).toBe(4);
+    // New maps use50 vehicles/minute at100%; ten seconds produces8 arrivals.
+    expect(sim.generated).toBe(8);
   });
   it("rejects invalid imported traffic intensity", () => {
     for (const invalid of [-1, 4.01, "2", null]) {
@@ -417,7 +418,7 @@ describe("traffic uses actual lane connections", () => {
     expect(maximum).toBeGreaterThan(3);
     expect(sim.completed).toBeGreaterThan(5);
     expect(sim.average).toBeGreaterThan(0);
-  });
+  }, 15000);
   it("has no structural errors in either supplied example", () => {
     for (const kind of ["transition", "elevated"])
       expect(

@@ -1,4 +1,5 @@
 import { buildJunctions, type Junction } from "../core/junctions";
+import { chooseDestination, sourceDemandRate } from "../core/traffic-demand";
 import { updateAutomaticTransitions } from "../core/auto-transitions";
 import {
   add,
@@ -994,7 +995,7 @@ export class Simulation {
   private spawn(index: TrafficIndex<Vehicle>) {
     const congestion = this.occupancy();
     for (const source of [...new Set(this.routes.map((x) => x.source))]) {
-      const rate = source.rate * (this.project?.trafficMultiplier ?? 1);
+      const rate = sourceDemandRate(this.project!, source);
       if (rate <= 0) {
         this.demand.delete(source);
         continue;
@@ -1007,9 +1008,12 @@ export class Simulation {
       this.generated += arrivals;
       this.demand.set(source, demand);
       if (this.vehicles.length >= 350 || !demand.waiting) continue;
-      const options = this.routes.filter((x) => x.source === source),
-        option = options[Math.floor(this.rand() * options.length)],
-        r = this.roads.get(source.road)!,
+      const sink = chooseDestination(this.project!, source, this.rand()),
+        option = this.routes.find(
+          (x) => x.source === source && x.sink === sink,
+        );
+      if (!option) continue;
+      const r = this.roads.get(source.road)!,
         dir = source.end === "start" ? 1 : -1,
         valid = Array.from({ length: laneCount(r) }, (_, i) => i).filter(
           (i) =>

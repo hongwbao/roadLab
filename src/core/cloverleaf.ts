@@ -1,5 +1,6 @@
 import { v } from "./math";
 import { LANE_WIDTH } from "./road-standards";
+import { DEFAULT_TRAFFIC_BASE_RATE } from "./traffic-demand";
 import type { Project, Road, V } from "./types";
 
 type RoadFactory = (
@@ -20,6 +21,7 @@ export function cloverleafExample(makeRoad: RoadFactory): Project {
     ports: [],
     templates: [],
     trafficMultiplier: 1,
+    trafficBaseRate: DEFAULT_TRAFFIC_BASE_RATE,
   };
   const directions = ["东行", "南行", "西行", "北行"];
   const keys = ["east", "south", "west", "north"];
@@ -134,7 +136,12 @@ export function cloverleafExample(makeRoad: RoadFactory): Project {
     );
     collectors.push(parts);
     project.ports.push(
-      { road: incoming.id, end: "start", type: "source", rate: 72 },
+      {
+        road: incoming.id,
+        end: "start",
+        type: "source",
+        rate: DEFAULT_TRAFFIC_BASE_RATE,
+      },
       { road: outgoing.id, end: "end", type: "sink", rate: 1 },
     );
   }

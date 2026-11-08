@@ -1848,3 +1848,197 @@ dialog dd {
   padding: 5px 6px;
   font-variant-numeric: tabular-nums;
 }
+
+/* OD demand follows the existing contextual port tool. */
+.boundary-panel {
+  left: 76px;
+  top: 86px;
+  width: 360px;
+  max-height: calc(100dvh - 178px);
+  overflow-y: auto;
+}
+.boundary-panel .panel-heading button {
+  width: 30px;
+}
+.demand-sticky-heading {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--panel);
+  padding-bottom: 8px;
+}
+.demand-sticky-heading .panel-heading {
+  margin: 0;
+}
+.demand-sticky-heading .demand-target-hint {
+  margin: 7px 0 0;
+  font-size: 11px;
+}
+.boundary-panel .panel-heading svg {
+  width: 16px;
+  height: 16px;
+}
+.demand-sources {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  margin: 12px 0 16px;
+}
+.demand-sources button {
+  width: auto;
+  flex: 1 0 auto;
+  display: flex;
+  gap: 9px;
+  align-items: center;
+  padding: 7px 9px;
+}
+.demand-sources button span {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.demand-sources button[aria-pressed="true"] {
+  border-color: var(--blue);
+  color: var(--blue);
+}
+.demand-source-name {
+  font-size: 13px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.demand-entry-control,
+.demand-entry-control > span,
+.demand-base label,
+.demand-base label > span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.demand-entry-control,
+.demand-base label {
+  justify-content: space-between;
+  margin-top: 12px;
+}
+.demand-entry-control input,
+.demand-base input {
+  width: 86px;
+  font-variant-numeric: tabular-nums;
+}
+.demand-flow-summary {
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-top: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.demand-flow-summary strong {
+  font-size: 15px;
+}
+.demand-flow-summary > span,
+.demand-target-name span {
+  color: var(--muted);
+  font-size: 11px;
+}
+.boundary-panel .demand-formula {
+  margin: 5px 0 18px;
+  font-variant-numeric: tabular-nums;
+}
+.boundary-panel .demand-distribution-heading {
+  margin-top: 18px;
+}
+.boundary-panel .demand-distribution-heading button {
+  width: auto;
+  padding: 5px 8px;
+}
+.demand-destinations {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+}
+.demand-destinations li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 76px;
+  align-items: center;
+  column-gap: 8px;
+  row-gap: 2px;
+  padding: 9px 6px;
+  border-bottom: 1px solid var(--line);
+}
+.demand-destinations li.active {
+  background: var(--panel-raised);
+}
+.boundary-panel .demand-target-name {
+  min-width: 0;
+  width: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  background: transparent;
+  padding: 3px 0;
+  text-align: left;
+}
+.demand-target-name span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  width: 100%;
+}
+.demand-destinations li.active .demand-target-name strong {
+  color: var(--blue);
+}
+.demand-share-field {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.demand-share-field input {
+  width: 61px;
+  min-width: 0;
+  font-variant-numeric: tabular-nums;
+}
+.demand-destinations output {
+  grid-column: 2;
+  color: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.boundary-panel .demand-target-hint {
+  color: var(--blue);
+  margin: 10px 0;
+}
+.boundary-panel .demand-live-note {
+  margin: 14px 0;
+  line-height: 1.6;
+}
+.demand-base,
+.demand-port-tools {
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+  margin-top: 12px;
+}
+.demand-base summary,
+.demand-port-tools summary {
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 11px;
+}
+.demand-base p {
+  line-height: 1.6;
+}
+@media (max-width: 700px) {
+  .boundary-panel {
+    left: 55px;
+    top: 112px;
+    width: calc(100% - 70px);
+    max-height: calc(100dvh - 280px);
+  }
+  .demand-flow-summary {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .demand-sources {
+    gap: 4px;
+  }
+}

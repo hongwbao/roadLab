@@ -92,6 +92,8 @@ export type Port = {
   end: "start" | "end";
   type: "source" | "sink" | "both";
   rate: number;
+  /** Optional authored OD shares. Missing means equal shares of all exits. */
+  destinations?: { road: string; end: "start" | "end"; weight: number }[];
 };
 export type Blueprint = {
   id: string;
@@ -109,6 +111,8 @@ export type Project = {
   ports: Port[];
   templates: Blueprint[];
   trafficMultiplier?: number;
+  /** Total vehicles/minute per entry at100%, divided among entry lanes. */
+  trafficBaseRate?: number;
   /** Metres of fixed-route lane lookahead; absent uses500. */
   laneLookahead?: number;
   signals?: TrafficSignal[];

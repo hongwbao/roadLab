@@ -89,6 +89,8 @@ import { Scene, type Hit } from "../render/scene";
 import { Simulation } from "../simulation/simulation";
 import { TrafficLightTool } from "./traffic-light-tool";
 import { JunctionLaneTool } from "./junction-lane-tool";
+import { TrafficDemandTool } from "./traffic-demand-tool";
+import { MAX_ENTRY_PERCENT, trafficBaseRate } from "../core/traffic-demand";
 import { cloneTrafficSignals } from "../core/traffic-signals";
 import {
   cloneJunctionLaneRules,
@@ -124,6 +126,7 @@ export class Editor {
   simulation = new Simulation();
   signalTool = new TrafficLightTool(this);
   junctionLaneTool: JunctionLaneTool;
+  trafficDemandTool: TrafficDemandTool;
   tool: Tool = "select";
   upgradeMode: "replace" | "widen" | "median" | "smooth" | "direct" = "replace";
   medianWidth = 2;
@@ -279,6 +282,7 @@ export class Editor {
     autoJunction(this.project);
     this.scene = new Scene(el);
     this.junctionLaneTool = new JunctionLaneTool(this);
+    this.trafficDemandTool = new TrafficDemandTool(this);
     this.scene.fit(this.project.roads);
     this.bind();
     this.simulation.configure(this.project);
@@ -305,6 +309,7 @@ export class Editor {
       this.tool === "select" && !this.simulation.running,
     );
     this.junctionLaneTool.sync();
+    this.trafficDemandTool.sync();
     if (ui) this.onChange();
     this.queueSave();
   }
@@ -334,14 +339,15 @@ export class Editor {
   }
   setPortRate(index: number, rate: number) {
     const p = this.project.ports[index];
+    const maximum = (trafficBaseRate(this.project) * MAX_ENTRY_PERCENT) / 100;
     if (
       !p ||
       !isSource(p) ||
       !Number.isFinite(rate) ||
       rate < 0 ||
-      rate > 240
+      rate > maximum
     ) {
-      this.onToast("入口基准流量为 0–240 辆/分。");
+      this.onToast(`入口流量为0–${maximum}辆/分。`);
       this.onChange();
       return;
     }
@@ -442,7 +448,7 @@ export class Editor {
       select: "左键拖动旋转 · 右键拖动平移 · 滚轮或中键缩放 · 单击道路查看",
       line: "左键单击起点、终点 · 拖动可移动镜头 · 右键返回一步",
       curve: "依次点击起点、弯曲位置、终点 · 右键返回",
-      boundary: "点击端点设置通行口 · 双向道路同时进出 · 右键取消通行口",
+      boundary: "点击入口设置车流与出口比例 · 点击空端点添加通行口 · 右键取消",
       delete: "拆除模式 · 悬停道路预览 · 左键拆除 · B / Esc 退出",
       upgrade:
         this.upgradeMode === "widen"
@@ -1699,10 +1705,20 @@ export class Editor {
         this.onToast("请点击道路的端点。");
         return;
       }
+      const existing = this.project.ports.findIndex(
+        (p) => p.road === port.road && p.end === port.end,
+      );
+      if (existing >= 0) {
+        if (isSource(this.project.ports[existing]))
+          this.trafficDemandTool.choose(existing);
+        else this.trafficDemandTool.chooseTarget(existing);
+        return;
+      }
       this.edit(
         () => setBoundary(this.project, port.road, port.end),
         "已设置通行口；双向道路可同时进出",
       );
+      this.trafficDemandTool.chooseReference(port);
       return;
     }
     if (this.tool === "upgrade") {

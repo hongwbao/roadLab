@@ -1,4 +1,10 @@
 import { buildLaneJunctions } from "./core/lane-junctions";
+import { bindTrafficDemandPanel } from "./ui/traffic-demand-panel";
+import {
+  sourceDemandRate,
+  trafficBaseRate,
+  MAX_ENTRY_PERCENT,
+} from "./core/traffic-demand";
 import {
   CornerUpLeft,
   CornerUpRight,
@@ -155,6 +161,10 @@ document.querySelector("#app")!.innerHTML = `
  <dialog id="confirm-dialog"><h2 id="confirm-title">载入其他地图？</h2><p id="confirm-message">当前路网会被替换，可以撤销或先保存存档。</p><div class="dialog-actions"><button data-action="cancel-dialog">取消</button><button id="confirm-yes" class="primary">确认载入</button></div></dialog>
  <dialog id="help-dialog"><div class="panel-heading"><h2>道路建造</h2>${button("close-help", "关闭", "x", "icon-only")}</div><ol><li>在下方选择道路资产，鼠标会立即显示蓝色道路预览。</li><li>左键单击起点、终点建造直线；曲线再增加一个弯曲控制位置。左键拖动用于旋转镜头。</li><li>靠近道路端点或路段时会吸附，显示圆环和文字。单向接口支持左右路缘偏移对齐；在地图中按 Tab 切换。交叉处自动生成路口。</li><li>按 B 切换拆除，悬停预览，左键删除；右键或 Esc 退出。</li><li>按 I 设置通行口，双向道路同时进出；右键取消通行口。</li></ol><dl><dt>WASD / 方向键 / 画面边缘</dt><dd>移动地图；按住 Shift 加速</dd><dt>左键拖动 / 右键拖动</dt><dd>旋转俯仰 / 移动地图</dd><dt>滚轮 / 中键上下拖动 / 中键单击</dt><dd>缩放 / 连续缩放 / 拉近一级</dd><dt>Q / E · T / G · 滚轮或 R / F</dt><dd>旋转 / 俯仰 / 缩放</dd><dt>Shift＋F / H</dt><dd>查看全图 / 俯视</dd><dt>L / C / U / V</dt><dd>直线 / 曲线 / 升级 / 选择</dd><dt>PageUp / PageDown</dt><dd>抬高 / 降低道路</dd><dt>Ctrl Z / Ctrl Shift Z / Ctrl S</dt><dd>撤销 / 重做 / 保存</dd><dt>Shift＋拖动空白</dt><dd>框选道路</dd><dt>右键单击 / Esc / Space</dt><dd>返回上一步 / 退出工具 / 测试暂停</dd></dl></dialog>`;
 const editor = new Editor(document.querySelector("#viewport")!);
+const updateTrafficDemandPanel = bindTrafficDemandPanel(
+  editor.trafficDemandTool,
+  document.querySelector<HTMLElement>("#boundary-panel")!,
+);
 bindTrafficLightPanel(
   editor,
   document.querySelector<HTMLElement>("#signal-panel")!,
@@ -199,7 +209,7 @@ function selectedPanel() {
   if (!r) return "";
   const asset = assetForRoad(r),
     ports = editor.project.ports.filter((p) => p.road === r.id);
-  return `<div class="panel-heading"><h2>${esc(asset?.name || r.name)}</h2>${button("deselect", "关闭", "x", "icon-only")}</div><div class="road-information"><span>${roadLength(r).toFixed(0)} m</span><span>${point(r, 0).y.toFixed(0)} → ${point(r, 1).y.toFixed(0)} m</span></div><label class="road-speed">最高限速 <input type="number" min="5" max="160" step="1" value="${r.speed}" data-road-speed="${r.id}" aria-label="道路最高限速"><span>km/h</span></label><p class="muted">拖动端点和曲线柄调整道路；Alt＋拖动道路可整体移动。${editor.selected.size > 1 ? `已选择 ${editor.selected.size} 段道路。` : ""}</p><div class="selection-actions">${button("duplicate", "复制", "copy")}${!r.twoWay ? button("reverse", "反向", "rotate-ccw") : ""}${button("delete", "拆除", "trash-2", "danger")}</div><details><summary>更多操作</summary><div class="selection-actions">${button("rotate", "旋转", "rotate-cw")}${button("mirror", "镜像", "flip-horizontal")}${button("add-knot", "增加控制点", "plus")}${button("template", "保存模板", "copy")}</div></details>${ports.length ? `<div class="port-settings"><h3>通行口基准流量</h3>${ports.map((p) => `<div class="port-row"><span>${p.end === "start" ? "起点" : "终点"} · ${p.type === "both" ? "双向进出" : p.type === "source" ? "入口" : "出口"}</span>${isSource(p) ? `<label><input type="number" min="0" max="240" value="${p.rate}" data-port="${editor.project.ports.indexOf(p)}" aria-label="入口基准流量"><span>辆/分</span></label>` : ""}<button data-remove-port="${editor.project.ports.indexOf(p)}" class="icon-only" title="取消通行口">${icon("x")}</button></div>`).join("")}<p class="muted">运行中调整流量会保留现有车辆。</p></div>` : ""}`;
+  return `<div class="panel-heading"><h2>${esc(asset?.name || r.name)}</h2>${button("deselect", "关闭", "x", "icon-only")}</div><div class="road-information"><span>${roadLength(r).toFixed(0)} m</span><span>${point(r, 0).y.toFixed(0)} → ${point(r, 1).y.toFixed(0)} m</span></div><label class="road-speed">最高限速 <input type="number" min="5" max="160" step="1" value="${r.speed}" data-road-speed="${r.id}" aria-label="道路最高限速"><span>km/h</span></label><p class="muted">拖动端点和曲线柄调整道路；Alt＋拖动道路可整体移动。${editor.selected.size > 1 ? `已选择 ${editor.selected.size} 段道路。` : ""}</p><div class="selection-actions">${button("duplicate", "复制", "copy")}${!r.twoWay ? button("reverse", "反向", "rotate-ccw") : ""}${button("delete", "拆除", "trash-2", "danger")}</div><details><summary>更多操作</summary><div class="selection-actions">${button("rotate", "旋转", "rotate-cw")}${button("mirror", "镜像", "flip-horizontal")}${button("add-knot", "增加控制点", "plus")}${button("template", "保存模板", "copy")}</div></details>${ports.length ? `<div class="port-settings"><h3>通行口基准流量</h3>${ports.map((p) => `<div class="port-row"><span>${p.end === "start" ? "起点" : "终点"} · ${p.type === "both" ? "双向进出" : p.type === "source" ? "入口" : "出口"}</span>${isSource(p) ? `<label><input type="number" min="0" max="${(trafficBaseRate(editor.project) * MAX_ENTRY_PERCENT) / 100}" value="${p.rate}" data-port="${editor.project.ports.indexOf(p)}" aria-label="入口基准流量"><span>辆/分</span></label>` : ""}<button data-remove-port="${editor.project.ports.indexOf(p)}" class="icon-only" title="取消通行口">${icon("x")}</button></div>`).join("")}<p class="muted">运行中调整流量会保留现有车辆。</p></div>` : ""}`;
 }
 function syncTraffic(inputs = true) {
   const m = editor.project.trafficMultiplier ?? 1;
@@ -213,7 +223,7 @@ function syncTraffic(inputs = true) {
   }
   const total = editor.project.ports
       .filter(isSource)
-      .reduce((s, p) => s + p.rate * m, 0),
+      .reduce((s, p) => s + sourceDemandRate(editor.project, p), 0),
     waiting = editor.simulation.waiting,
     text = `目标 ${new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 1 }).format(total)} 辆/分${waiting ? ` · 待进入 ${waiting}` : ""}`;
   const out = document.querySelector("#traffic-total")!;
@@ -279,6 +289,7 @@ function render() {
     !!editor.project.roads.length || editor.building;
   document.querySelector<HTMLElement>("#boundary-panel")!.hidden =
     editor.tool !== "boundary";
+  if (editor.tool === "boundary") updateTrafficDemandPanel();
   const selection = document.querySelector<HTMLElement>("#selection-panel")!;
   selection.hidden = !editor.active || editor.tool !== "select";
   selection.innerHTML = selection.hidden ? "" : selectedPanel();
@@ -330,6 +341,7 @@ function render() {
     }
     signalPanel.scrollTop = scrollTop;
     updateTrafficLightPanel(editor);
+    if (editor.tool === "boundary") updateTrafficDemandPanel();
   }
   const turnPanel = document.querySelector<HTMLElement>("#turn-panel")!;
   turnPanel.hidden = editor.tool !== "turn";
@@ -906,6 +918,7 @@ function frame(now: number) {
   last = now;
   editor.scene.updateCars(editor.simulation.renderVehicles());
   editor.scene.trafficLights.update(editor.simulation.trafficLights);
+  editor.trafficDemandTool.updateView();
   editor.scene.render();
   if (now - lastStats > 250) {
     lastStats = now;
