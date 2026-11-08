@@ -146,3 +146,14 @@ it("keeps destination shares on the same physical outlet after road splitting", 
     p.ports[0].destinations,
   );
 });
+
+it("newly converted entry portals start at100% instead of inheriting the old sink placeholder rate", () => {
+  const p = fixture();
+  p.ports = [
+    { road: "in", end: "start", type: "sink", rate: 1 },
+    ...p.ports.slice(1),
+  ];
+  normalizePorts(p);
+  expect(p.ports[0].type).toBe("source");
+  expect(entryPercent(p, p.ports[0])).toBe(100);
+});

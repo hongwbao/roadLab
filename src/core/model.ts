@@ -35,6 +35,7 @@ import {
 import {
   copy,
   isSink,
+  isSource,
   uid,
   type Connection,
   type Issue,
@@ -363,7 +364,7 @@ export function normalizePorts(p: Project) {
     seen.add(key);
     const wasSink = port.type === "sink";
     port.type = r.twoWay ? "both" : port.end === "start" ? "source" : "sink";
-    if (r.twoWay && wasSink) port.rate = trafficBaseRate(p);
+    if (isSource(port) && wasSink) port.rate = trafficBaseRate(p);
     return true;
   });
   pruneDestinationShares(p);

@@ -20,7 +20,8 @@ test("shared traffic map loads in the deployed UI with reachable routes", async 
     for (let i = 0; i < 200; i++) sim.update(0.05);
   });
   await expect(page.locator("#stat-active")).not.toHaveText("0");
-  await expect(page.locator("#traffic-total")).toContainText("1,320");
+  // Eleven entries at50/minute, with this stress map's saved400% multiplier.
+  await expect(page.locator("#traffic-total")).toContainText("2,200");
   expect(errors).toEqual([]);
   await page.screenshot({ path: "artifacts/shared-map-traffic.png" });
 });
