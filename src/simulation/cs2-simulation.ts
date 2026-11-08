@@ -9,6 +9,7 @@ import {
   type MergeOccupant,
   type MergeRequest,
 } from "./lane-merge-coordination";
+import { LaneCongestion, leastOccupiedLane } from "./lane-congestion";
 import { laneJunctionTrims } from "../core/lane-junctions";
 /** Ordinary-car source runtime assembly. Browser/world adapters are explicit. */
 import { updateAutomaticTransitions } from "../core/auto-transitions";
@@ -18,9 +19,7 @@ import {
   DEFAULT_LANE_LOOKAHEAD,
   MIN_LANE_LOOKAHEAD,
   MAX_LANE_LOOKAHEAD,
-  chooseEarlyLane,
   laneChangeGapClear,
-  earlyLaneSpeedLimit,
   type EarlyLanePlan,
 } from "./early-lane-planning";
 import { buildJunctions, type Junction } from "../core/junctions";
@@ -428,6 +427,11 @@ export class Cs2TrafficSimulation {
       length: number;
     }
   >();
+  private laneCongestion?: LaneCongestion;
+  private congestionChoices = new Map<
+    number,
+    { group: string; eligible: string; goal: string; reviewAt: number }
+  >();
   private reservationWorld?: CS2ReservationWorld;
   private laneObjects = new Map<string, CS2LaneSpeedLaneObject[]>();
   private searchTree = new Map<string, CS2LaneCacheBounds>();
@@ -645,6 +649,9 @@ export class Cs2TrafficSimulation {
       roadTrims: this.trims,
       connectionGeometry: geometry,
     });
+    this.laneCongestion = new LaneCongestion(this.network, (group) =>
+      this.continuousConnection(group),
+    );
     this.graph = this.network.graph;
     this.runtime = new Cs2VehicleRuntime(this.network.curves, {
       afterNavigation: (vehicle, context) =>
@@ -800,6 +807,8 @@ export class Cs2TrafficSimulation {
     this.receivingJunctions.clear();
     this.receivingStopDistances.clear();
     this.receivingCorridors.clear();
+    this.laneCongestion = undefined;
+    this.congestionChoices.clear();
     this.completedByExit.clear();
     this.trafficLights.clear();
     this.laneOverlaps.clear();
@@ -1037,6 +1046,7 @@ export class Cs2TrafficSimulation {
     for (const vehicle of this.runtime.readVehicles())
       this.runtime.removeVehicle(vehicle.id);
     this.signalOccupancy.clear();
+    this.congestionChoices.clear();
     for (const buffer of this.laneObjects.values()) buffer.length = 0;
     this.searchTree.clear();
     this.blockedLanes.clear();
@@ -1518,6 +1528,7 @@ export class Cs2TrafficSimulation {
     if (this.laneLookahead !== metres) {
       this.laneLookahead = metres;
       this.earlyLanePlans.clear();
+      this.congestionChoices.clear();
     }
     if (this.project) this.project.laneLookahead = metres;
     return true;
@@ -1608,20 +1619,88 @@ export class Cs2TrafficSimulation {
       const remaining =
         this.curveS(lane.id, trip.groups[trip.groupIndex].interval[1]) - row.s;
       const plan = this.routeLanePlan(trip, remaining),
-        target = chooseEarlyLane(
-          plan,
-          group.members,
-          lane.id,
-          remaining,
-          row.speed,
-          this.laneLookahead,
+        preparing =
+          !!plan &&
+          remaining + plan.distanceAfterCurrent <= this.laneLookahead + 1e-6,
+        eligible = preparing ? plan!.allowed : group.members,
+        signature = eligible.join("|"),
+        active = row.view.current.changeLaneId;
+      if (row.view.car.maxSpeed <= 0) continue;
+      let choice = this.congestionChoices.get(row.id);
+      if (
+        !active &&
+        (!choice ||
+          choice.group !== lane.group ||
+          choice.eligible !== signature ||
+          choice.reviewAt <= this.elapsed)
+      ) {
+        const counts = new Map(
+          eligible.map((id) => {
+            const candidate = network.lanes.get(id)!;
+            return [
+              id,
+              this.laneCongestion!.count(
+                id,
+                row.id,
+                this.physicalS(
+                  candidate,
+                  this.nearest(candidate, row.view.state.position),
+                  row.view.state.position,
+                ),
+                this.laneLookahead,
+                this.occupancy,
+              ),
+            ];
+          }),
         );
+        choice = {
+          group: lane.group,
+          eligible: signature,
+          goal: leastOccupiedLane(
+            group.members,
+            eligible,
+            lane.id,
+            counts,
+            choice?.goal,
+          ),
+          reviewAt: this.elapsed + 1,
+        };
+        this.congestionChoices.set(row.id, choice);
+      }
+      const goal =
+          choice?.group === lane.group && eligible.includes(choice.goal)
+            ? choice.goal
+            : eligible.includes(lane.id)
+              ? lane.id
+              : eligible[0],
+        origin = group.members.indexOf(lane.id),
+        destination =
+          active && (!goal || goal === lane.id)
+            ? group.members.indexOf(active)
+            : goal
+              ? group.members.indexOf(goal)
+              : origin,
+        target =
+          active ||
+          (destination === origin
+            ? null
+            : group.members[origin + Math.sign(destination - origin)]),
+        mandatory = preparing && !eligible.includes(lane.id);
       if (!target || target === lane.id) continue;
-      const origin = group.members.indexOf(lane.id),
-        destination = plan!.allowed
-          .map((id) => group.members.indexOf(id))
-          .filter((i) => i >= 0)
-          .sort((a, b) => Math.abs(a - origin) - Math.abs(b - origin))[0];
+      if (!active && !mandatory && remaining < Math.max(35, row.speed * 2)) {
+        const successors = network.successors.get(lane.id) ?? [],
+          next =
+            successors.length === 1
+              ? network.lanes.get(successors[0])
+              : undefined;
+        if (
+          !next ||
+          (next.kind === "connection"
+            ? !this.continuousConnection(next.group)
+            : next.road !== lane.road)
+        )
+          continue;
+      }
       const corridor: string[] = [];
       for (
         let i = origin + Math.sign(destination - origin);
@@ -1636,7 +1715,10 @@ export class Cs2TrafficSimulation {
         id: row.id,
         position: this.roadS(lane, row.t),
         speed: row.speed,
-        distance: remaining + plan!.distanceAfterCurrent,
+        distance: mandatory
+          ? remaining + plan!.distanceAfterCurrent
+          : this.laneLookahead + 1,
+        mandatory,
         target: this.laneKey(network.lanes.get(target)!),
         corridor,
       });
@@ -1992,6 +2074,7 @@ export class Cs2TrafficSimulation {
   }
   private removeLaneMembership(id: number) {
     this.receivingStopDistances.delete(id);
+    this.congestionChoices.delete(id);
     for (const [lane, buffer] of this.laneObjects)
       if (buffer.some((entry) => entry.object === String(id)))
         this.cacheCommands.push({
@@ -2430,51 +2513,26 @@ export class Cs2TrafficSimulation {
       lane = network.lanes.get(view.current.laneId!)!,
       group = network.groups.get(lane.group)!;
     if (lane.kind !== "road" || !group.allowChange) return selected;
-    const row = this.physical.get(trip.id),
-      speed = speedOf(view),
-      remaining =
-        this.curveS(lane.id, trip.groups[trip.groupIndex].interval[1]) -
-        (row?.s ?? 0);
-    const plan = this.routeLanePlan(trip, remaining);
     let target: string | null = null;
     const active = view.current.changeLaneId;
     if (active && view.current.changeProgress > 0) target = active;
-    else if (this.mergeTargets.has(trip.id))
-      target = this.mergeAllowed.has(trip.id)
-        ? this.mergeTargets.get(trip.id)!
-        : null;
-    else if (
-      !plan &&
-      remaining > Math.max(35, speed * 4) &&
-      selected.changeLaneId
-    ) {
-      const origin = group.members.indexOf(lane.id),
-        destination = group.members.indexOf(selected.changeLaneId);
-      const next = group.members[origin + Math.sign(destination - origin)];
-      if (next && next !== lane.id) {
-        const position = this.roadS(lane, row?.t ?? selected.curvePosition.x);
-        const front = (key: string) =>
-          Math.min(
-            Infinity,
-            ...(this.globalOccupancy.get(key) ?? [])
-              .filter((v) => v.id !== trip.id && v.s > position)
-              .map((v) => v.s - position),
-          );
-        const own = front(this.laneKey(lane)),
-          other = front(this.laneKey(network.lanes.get(next)!));
-        if (
-          own < speed * 3 + 10 &&
-          other > own + Math.max(8, speed * 0.75) &&
-          laneChangeGapClear(
-            trip.id,
-            position,
-            speed,
-            this.globalOccupancy.get(this.laneKey(network.lanes.get(next)!)) ??
-              [],
-          )
+    else if (this.mergeAllowed.has(trip.id)) {
+      const candidate = this.mergeTargets.get(trip.id)!,
+        next = network.lanes.get(candidate)!;
+      if (
+        this.laneCongestion!.gapClear(
+          candidate,
+          trip.id,
+          this.physicalS(
+            next,
+            this.nearest(next, view.state.position),
+            view.state.position,
+          ),
+          speedOf(view),
+          this.occupancy,
         )
-          target = next;
-      }
+      )
+        target = candidate;
     }
     if (
       target &&
@@ -3039,26 +3097,6 @@ export class Cs2TrafficSimulation {
         maxSpeed,
         cs2MaxBrakingSpeed(car, receivingStop, CS2_NAVIGATION_TIMESTEP),
       );
-    const lanePlan = this.earlyLanePlans.get(id)?.plan;
-    if (
-      lane.kind === "road" &&
-      lanePlan &&
-      this.earlyLanePlans.get(id)?.index === trip.groupIndex
-    ) {
-      const remaining =
-        this.curveS(lane.id, trip.groups[trip.groupIndex].interval[1]) -
-        (this.physical.get(id)?.s ?? 0);
-      maxSpeed = Math.min(
-        maxSpeed,
-        earlyLaneSpeedLimit(
-          lanePlan,
-          network.groups.get(lane.group)!.members,
-          lane.id,
-          remaining,
-          !!current.changeLaneId,
-        ),
-      );
-    }
     if (lane.kind === "road")
       maxSpeed = Math.min(maxSpeed, this.mergeSpeedCaps.get(id) ?? Infinity);
     const checked = cs2CheckLaneSelectionBlocker({

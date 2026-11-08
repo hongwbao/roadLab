@@ -55,3 +55,47 @@ it("reserves an empty target slot for only one converging car", () => {
   expect([...result.allowed]).toEqual([1]);
   expect(result.speedCaps.get(2)).toBeLessThan(15);
 });
+
+it("delays an ordinary balancing move without slowing either lane to force a gap", () => {
+  const request = {
+    id: 1,
+    position: 100,
+    speed: 15,
+    distance: 500,
+    target: "next",
+    corridor: ["next"],
+    mandatory: false,
+  };
+  const result = coordinateLaneMerges(
+    [request],
+    new Map([
+      [
+        "next",
+        [
+          { id: 2, s: 100, speed: 15 },
+          { id: 3, s: 110, speed: 15 },
+        ],
+      ],
+    ]),
+  );
+  expect(result.allowed.size).toBe(0);
+  expect(result.speedCaps.size).toBe(0);
+});
+
+it("arbitrates ordinary moves to one slot without a lane-change speed penalty", () => {
+  const request = {
+    id: 1,
+    position: 100,
+    speed: 15,
+    distance: 500,
+    target: "middle",
+    corridor: ["middle"],
+    mandatory: false,
+  };
+  const result = coordinateLaneMerges(
+    [request, { ...request, id: 2 }],
+    new Map(),
+  );
+  expect([...result.allowed]).toEqual([1]);
+  expect(result.speedCaps.size).toBe(0);
+});

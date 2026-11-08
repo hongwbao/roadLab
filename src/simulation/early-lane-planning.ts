@@ -138,29 +138,3 @@ export function laneChangeGapClear(
       : -gap >= Math.max(6, other.speed * 1.3);
   });
 }
-
-/** A last safety boundary is upstream of the connector, not a planned stop at
- * its stop line. Normal free-flow changes have no preparation speed penalty. */
-export function earlyLaneSpeedLimit(
-  plan: EarlyLanePlan | null,
-  members: readonly string[],
-  current: string,
-  remaining: number,
-  changing: boolean,
-) {
-  if (!plan || (plan.allowed.includes(current) && !changing)) return Infinity;
-  const from = members.indexOf(current),
-    targets = plan.allowed
-      .map((id) => members.indexOf(id))
-      .filter((i) => i >= 0);
-  const steps = targets.length
-    ? Math.max(1, Math.min(...targets.map((i) => Math.abs(i - from))))
-    : 1;
-  const distance = Math.max(0, remaining + plan.distanceAfterCurrent),
-    hold = Math.min(60, Math.max(25, steps * 12));
-  if (distance > hold + 30) return Infinity;
-  const cap = Math.sqrt(4 * Math.max(0, distance - hold));
-  // Let an already started move finish even inside the last eight metres.
-  // The connected queue separately prevents an unaligned connector entry.
-  return changing ? Math.max(2, cap) : cap;
-}

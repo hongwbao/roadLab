@@ -12,6 +12,8 @@ export type MergeRequest = {
   distance: number;
   target: string;
   corridor: readonly string[];
+  /** Ordinary traffic balancing waits for a gap without creating speed caps. */
+  mandatory?: boolean;
 };
 /** Negotiate a longitudinal slot upstream. The requester keeps its road route;
  * lower-priority followers in every intervening lane make room concurrently. */
@@ -39,6 +41,27 @@ export function coordinateLaneMerges(
   );
   for (const request of ordered) {
     protectedIds.add(request.id);
+    if (request.mandatory === false) {
+      const occupied = claims.get(request.target) ?? [];
+      if (
+        !occupied.some(
+          (other) =>
+            Math.abs(other.position - request.position) <
+            Math.max(12, request.speed * 1.5, other.speed * 1.5),
+        ) &&
+        laneChangeGapClear(
+          request.id,
+          request.position,
+          request.speed,
+          occupancy.get(request.target) ?? [],
+        )
+      ) {
+        allowed.add(request.id);
+        occupied.push(request);
+        claims.set(request.target, occupied);
+      }
+      continue;
+    }
     for (const lane of request.corridor) {
       const rows = occupancy.get(lane) ?? [];
       // One closest follower and leader suffice; existing following propagates
