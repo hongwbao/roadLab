@@ -1,7 +1,11 @@
-import type { Project } from "./types";
+import type { Project, Road } from "./types";
+
+// The save retains road-tool metadata; runtime geometry lives in knots.
+type SavedRoad = Road & { height?: number; endHeight?: number };
+type SavedProject = Omit<Project, "roads"> & { roads: SavedRoad[] };
 
 // Exact user-authored named save: 苜蓿叶立交 · 2主线＋2辅道 改进版.
-const saved: Project = {
+const saved: SavedProject = {
   "version": 1,
   "name": "苜蓿叶立交 · 2主线＋2辅道",
   "roads": [
