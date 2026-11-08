@@ -1,6 +1,11 @@
 import { expect, it } from "vitest";
 import { mkdirSync, writeFileSync } from "node:fs";
-import { emptyProject, makeRoad, parseProject } from "../src/core/model";
+import {
+  emptyProject,
+  example,
+  makeRoad,
+  parseProject,
+} from "../src/core/model";
 import { lanePoint, v } from "../src/core/math";
 import type { Vehicle } from "../src/simulation/simulation";
 import { bodiesOverlap } from "../src/simulation/collision";
@@ -330,5 +335,372 @@ it("finishes an aligned lane change at a short road endpoint instead of blocking
   for (let i = 0; i < 2000 && !sim.completed; i++) sim.update(0.05);
   expect(sim.completed).toBe(1);
   expect(sim.failed).toBe(0);
+  sim.dispose();
+});
+
+function segmentedApproach(count = 4) {
+  const project = emptyProject(),
+    length = 480 / count;
+  project.roads = Array.from({ length: count }, (_, i) =>
+    makeRoad(v(i * length, 0), v((i + 1) * length, 0), {
+      id: `part-${i}`,
+      lanesStart: 2,
+      lanesEnd: 2,
+      speed: 100,
+    }),
+  );
+  project.roads.push(
+    makeRoad(v(480, 0), v(480, 200), {
+      id: "exit",
+      lanesStart: 1,
+      lanesEnd: 1,
+      speed: 100,
+    }),
+  );
+  project.junctionLaneConnections = [0, 1].map((lane) => ({
+    from: { road: `part-${count - 1}`, end: 1 as const, lane },
+    to: lane === 1 ? [{ road: "exit", end: 0 as const, lane: 0 }] : [],
+  }));
+  const car: Vehicle = {
+    id: 1,
+    route: project.roads.map((road, i) => ({
+      road: road.id,
+      direction: 1 as const,
+      inLane: i === 0 || road.id === "exit" ? 0 : 1,
+      outLane: road.id === "exit" ? 0 : 1,
+    })),
+    step: 0,
+    s: 110,
+    lane: 0,
+    speed: 100 / 3.6,
+    age: 0,
+    color: 0,
+    position: lanePoint(project.roads[0], 0, 110 / length),
+    heading: Math.PI / 2,
+    pitch: 0,
+  };
+  return { project, car };
+}
+
+function observeSeam(sim: Cs2TrafficSimulation, count: number) {
+  let minimum = Infinity,
+    carried = false,
+    overlaps = 0,
+    entryLane: number | undefined,
+    sourceExitLane: number | undefined;
+  const exitLanes: number[] = [];
+  for (let tick = 0; tick < 1800 && sim.completed < count; tick++) {
+    sim.update(0.05);
+    const cars = sim.renderVehicles(),
+      view = sim.runtime!.readVehicle(1);
+    for (let a = 0; a < cars.length; a++)
+      for (let b = a + 1; b < cars.length; b++)
+        if (bodiesOverlap(cars[a], cars[b], 0)) overlaps++;
+    const car = cars.find((c) => c.id === 1);
+    if (car && car.position.x >= 110 && car.position.x <= 150)
+      minimum = Math.min(minimum, car.speed);
+    for (const c of cars)
+      if (c.laneChange)
+        expect(Math.abs(c.laneChange.to - c.laneChange.from)).toBe(1);
+    if (view) {
+      const lane = sim.network!.lanes.get(view.current.laneId!)!;
+      if (lane.road === "part-0")
+        sourceExitLane =
+          view.current.changeLaneId && view.current.changeProgress >= 1
+            ? sim.network!.lanes.get(view.current.changeLaneId)!.lane
+            : lane.lane;
+      if (lane.road === "part-1" && entryLane === undefined)
+        entryLane = lane.lane;
+      if (
+        lane.road === "part-1" &&
+        view.current.changeLaneId &&
+        view.current.changeProgress > 0 &&
+        view.current.changeProgress < 1
+      )
+        carried = true;
+      if (lane.from?.road === "part-0" && lane.to?.road === "part-1")
+        exitLanes.push(lane.from.lane);
+    }
+  }
+  return { minimum, carried, overlaps, exitLanes, entryLane, sourceExitLane };
+}
+
+it.each([15, 100 / 3.6])(
+  "carries an adjacent change across authored 120m seams at %sm/s like the unsegmented road",
+  (speed) => {
+    const metrics = [1, 4].map((count) => {
+      const { project, car } = segmentedApproach(count);
+      car.speed = speed;
+      const sim = new Cs2TrafficSimulation({
+        synchronousPathsOnlyForTests: true,
+      });
+      sim.configure(project);
+      sim.adoptVehicles([car]);
+      sim.running = true;
+      const metrics = observeSeam(sim, 1);
+      expect(sim.completed).toBe(1);
+      expect(sim.failed).toBe(0);
+      expect(metrics.overlaps).toBe(0);
+      if (count === 4) expect(metrics.carried).toBe(true);
+      sim.dispose();
+      return metrics;
+    });
+    expect(metrics[1].minimum).toBeGreaterThan(speed - 0.1);
+    expect(Math.abs(metrics[1].minimum - metrics[0].minimum)).toBeLessThan(0.1);
+  },
+);
+
+it.each(["identity", "forbidden", "crossed", "junction"] as const)(
+  "respects %s authored mappings and physical junctions at the segment boundary",
+  (kind) => {
+    const { project, car } = segmentedApproach();
+    if (kind !== "junction")
+      project.junctionLaneConnections!.push(
+        ...[0, 1].map((lane) => ({
+          from: { road: "part-0", end: 1 as const, lane },
+          to:
+            kind === "forbidden" && lane === 0
+              ? []
+              : [
+                  {
+                    road: "part-1",
+                    end: 0 as const,
+                    lane: kind === "crossed" ? 1 - lane : lane,
+                  },
+                ],
+        })),
+      );
+    else
+      project.roads.push(
+        makeRoad(v(120, 0), v(120, -100), {
+          id: "branch",
+          lanesStart: 1,
+          lanesEnd: 1,
+          speed: 50,
+        }),
+      );
+    if (kind === "crossed") car.route[1].inLane = 0;
+    const sim = new Cs2TrafficSimulation({
+      synchronousPathsOnlyForTests: true,
+    });
+    sim.configure(project);
+    sim.adoptVehicles([car]);
+    sim.running = true;
+    const metrics = observeSeam(sim, 1);
+    expect(metrics.carried).toBe(kind === "identity");
+    if (kind === "forbidden") {
+      expect(metrics.entryLane).toBe(1);
+      expect(metrics.sourceExitLane).toBe(1);
+      expect(metrics.exitLanes.every((l) => l === 1)).toBe(true);
+    }
+    if (kind === "crossed")
+      expect(metrics.entryLane).toBe(1 - metrics.sourceExitLane!);
+    expect(sim.completed).toBe(1);
+    expect(sim.failed).toBe(0);
+    expect(metrics.overlaps).toBe(0);
+    sim.dispose();
+  },
+);
+
+it("keeps the rear gap when a faster target-lane car approaches the seam", () => {
+  const { project, car } = segmentedApproach(),
+    rear: Vehicle = {
+      ...car,
+      id: 2,
+      s: 100,
+      lane: 1,
+      speed: 120 / 3.6,
+      route: car.route.map((step) => ({
+        ...step,
+        inLane: step.road === "exit" ? 0 : 1,
+      })),
+      position: lanePoint(project.roads[0], 1, 100 / 120),
+    },
+    sim = new Cs2TrafficSimulation({ synchronousPathsOnlyForTests: true });
+  sim.configure(project);
+  sim.adoptVehicles([car, rear]);
+  sim.running = true;
+  const metrics = observeSeam(sim, 2);
+  expect(metrics.overlaps).toBe(0);
+  expect(sim.completed).toBe(2);
+  expect(sim.failed).toBe(0);
+  sim.dispose();
+});
+
+it.each(["lane-count", "median", "offset", "fork", "merge"] as const)(
+  "keeps the ordinary boundary guard for a %s discontinuity",
+  (kind) => {
+    const { project } = segmentedApproach(),
+      target = project.roads[1];
+    if (kind === "lane-count") target.lanesStart = target.lanesEnd = 3;
+    if (kind === "offset") target.sectionOffset = 1;
+    if (kind === "median") {
+      project.roads.slice(0, 4).forEach((road) => {
+        road.twoWay = true;
+      });
+      target.median = { kind: "concrete", width: 2 };
+    }
+    if (kind === "fork" || kind === "merge") {
+      project.roads.push(
+        makeRoad(
+          kind === "fork" ? v(120, 0) : v(120, -100),
+          kind === "fork" ? v(120, -100) : v(120, 0),
+          { id: "branch", lanesStart: 1, lanesEnd: 1, speed: 50 },
+        ),
+      );
+    }
+    const sim = new Cs2TrafficSimulation({
+      synchronousPathsOnlyForTests: true,
+    });
+    sim.configure(project);
+    const seams = [...sim.network!.groups.values()].filter((g) => {
+      const lane = sim.network!.lanes.get(g.members[0])!;
+      return (
+        lane.kind === "connection" &&
+        lane.from?.road === "part-0" &&
+        lane.to?.road === "part-1"
+      );
+    });
+    expect(seams.length).toBeGreaterThan(0);
+    for (const group of seams)
+      expect((sim as any).continuousConnection(group.id)).toBe(false);
+    sim.dispose();
+  },
+);
+
+it.each([3, 10, 30].flatMap((gap) => [0, 10].map((speed) => ({ gap, speed }))))(
+  "keeps safe gaps to a car $gap metres after a transparent seam at $speed m/s",
+  ({ gap, speed }) => {
+    const { project, car } = segmentedApproach(),
+      leader: Vehicle = {
+        ...car,
+        id: 2,
+        step: 1,
+        s: gap,
+        lane: 1,
+        speed,
+        route: car.route.map((step) => ({
+          ...step,
+          inLane: step.road === "exit" ? 0 : 1,
+        })),
+        position: lanePoint(project.roads[1], 1, gap / 120),
+      },
+      sim = new Cs2TrafficSimulation({ synchronousPathsOnlyForTests: true });
+    sim.configure(project);
+    sim.adoptVehicles([car, leader]);
+    sim.running = true;
+    const metrics = observeSeam(sim, 2);
+    expect(metrics.overlaps).toBe(0);
+    expect(sim.completed).toBe(2);
+    expect(sim.failed).toBe(0);
+    sim.dispose();
+  },
+);
+
+it("recomputes continuity after a live rule edit and keeps the restricted exit legal", () => {
+  const { project } = segmentedApproach(),
+    sim = new Cs2TrafficSimulation({ synchronousPathsOnlyForTests: true });
+  sim.configure(project);
+  const seam = () =>
+    [...sim.network!.groups.values()].find((g) => {
+      const lane = sim.network!.lanes.get(g.members[0])!;
+      return (
+        lane.kind === "connection" &&
+        lane.from?.road === "part-0" &&
+        lane.to?.road === "part-1"
+      );
+    })!;
+  expect((sim as any).continuousConnection(seam().id)).toBe(true);
+  project.junctionLaneConnections!.push({
+    from: { road: "part-0", end: 1, lane: 0 },
+    to: [],
+  });
+  sim.configure(project);
+  expect((sim as any).continuousConnection(seam().id)).toBe(false);
+  const from = sim.network!.roadLaneIds.get(JSON.stringify(["part-0", 0]))!;
+  expect(sim.network!.successors.get(from.at(-1)!) ?? []).toEqual([]);
+  sim.dispose();
+});
+
+it("crosses the improved cloverleaf's first ordinary seam while changing, then uses its authored right exit", async () => {
+  const project = example("elevated");
+  // Isolate one actual OD trip, rather than mask pressure with a lower demand assertion.
+  project.ports.forEach((port) => {
+    port.rate = 0;
+  });
+  const sim = new Cs2TrafficSimulation({
+      synchronousPathsOnlyForTests: true,
+      deterministicSeed: 1,
+    }),
+    source = project.ports.find((p) => p.road === "cloverleaf-east-in")!;
+  sim.configure(project);
+  const id = (await sim.spawnTrip(source, project.ports[3], {
+    lane: 0,
+    startDistance: 55,
+    initialSpeed: 100 / 3.6,
+  }))!;
+  sim.running = true;
+  let firstMinimum = Infinity,
+    carried = false,
+    usedRightExit = false,
+    minimum = Infinity,
+    stopped = 0;
+  let fixedRoads: string[] = [];
+  for (let tick = 0; tick < 2400 && !sim.completed; tick++) {
+    sim.update(0.05);
+    const view = sim.runtime!.readVehicle(id),
+      car = sim.vehicles[0];
+    if (!view || !car) continue;
+    const trip = (sim as any).trips.get(id);
+    if (!fixedRoads.length) fixedRoads = [...trip.fixedRoads];
+    expect(trip.fixedRoads).toEqual(fixedRoads);
+    minimum = Math.min(minimum, car.speed);
+    if (car.speed < 0.2) stopped += 0.05;
+    if (car.route[car.step]?.road === source.road && car.s > 60)
+      firstMinimum = Math.min(firstMinimum, car.speed);
+    const lane = sim.network!.lanes.get(view.current.laneId!)!;
+    if (
+      lane.road === fixedRoads[1] &&
+      view.current.changeLaneId &&
+      view.current.changeProgress > 0 &&
+      view.current.changeProgress < 1
+    )
+      carried = true;
+    if (lane.to?.road === "cloverleaf-east-right") {
+      expect(lane.from).toEqual({
+        road: "cloverleaf-east-collector-0",
+        lane: 1,
+      });
+      expect(lane.to.lane).toBe(0);
+      usedRightExit = true;
+    }
+    if (car.laneChange)
+      expect(Math.abs(car.laneChange.to - car.laneChange.from)).toBe(1);
+  }
+  expect(carried).toBe(true);
+  expect(usedRightExit).toBe(true);
+  expect(firstMinimum).toBeGreaterThan(26);
+  expect(fixedRoads).toContain("cloverleaf-east-right");
+  expect(sim.completed).toBe(1);
+  expect(sim.failed).toBe(0);
+  mkdirSync(".cache/traffic-ai-maintenance", { recursive: true });
+  writeFileSync(
+    ".cache/traffic-ai-maintenance/cloverleaf-regression.json",
+    JSON.stringify(
+      {
+        firstMinimum,
+        minimum,
+        stopped,
+        carried,
+        usedRightExit,
+        completed: sim.completed,
+        failed: sim.failed,
+        overlaps: 0,
+        fixedRoads,
+      },
+      null,
+      2,
+    ),
+  );
   sim.dispose();
 });

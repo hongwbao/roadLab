@@ -35,6 +35,7 @@ import {
   laneDirection,
   lanePoint,
   mul,
+  sub,
   tangent,
 } from "../core/math";
 import { connections, normalizePorts } from "../core/model";
@@ -411,6 +412,7 @@ export class Cs2TrafficSimulation {
     objects: new Map(),
   };
   private selectionWorld?: CS2LaneSelectWorld;
+  private continuousConnectionGroups = new Map<string, boolean>();
   private reservationWorld?: CS2ReservationWorld;
   private laneObjects = new Map<string, CS2LaneSpeedLaneObject[]>();
   private searchTree = new Map<string, CS2LaneCacheBounds>();
@@ -766,6 +768,7 @@ export class Cs2TrafficSimulation {
     this.enteredCount = 0;
     this.navigationLimits = 0;
     this.selectionWorld = undefined;
+    this.continuousConnectionGroups.clear();
     this.completedByExit.clear();
     this.trafficLights.clear();
     this.laneOverlaps.clear();
@@ -2477,7 +2480,118 @@ export class Cs2TrafficSimulation {
     }
     return current;
   }
+  /** Authored road segments can be one continuous carriageway. Allow an
+   * ongoing adjacent change across only a complete, aligned legal bijection;
+   * editing eligibility and logical node ownership do not make it a junction.
+   * The topology cache is discarded by configure, including lane-rule edits. */
+  private continuousConnection(groupId: string): boolean {
+    const cached = this.continuousConnectionGroups.get(groupId);
+    if (cached !== undefined) return cached;
+    // Cache negative results too; topology and geometry are immutable until
+    // the next configure. No network-wide scan belongs in the vehicle tick.
+    this.continuousConnectionGroups.set(groupId, false);
+    const network = this.network!,
+      group = network.groups.get(groupId)!,
+      first = network.lanes.get(group.members[0])!;
+    if (group.kind !== "connection" || !first.from || !first.to) return false;
+    if (this.junctions.some((junction) => junction.id === first.junction))
+      return false;
+    const sourceId = network.roadLaneIds
+        .get(cs2RoadLaneKey(first.from.road, first.from.lane))
+        ?.at(-1),
+      targetId = network.roadLaneIds.get(
+        cs2RoadLaneKey(first.to.road, first.to.lane),
+      )?.[0];
+    if (!sourceId || !targetId || first.from.road === first.to.road)
+      return false;
+    const source = network.groups.get(network.lanes.get(sourceId)!.group)!,
+      target = network.groups.get(network.lanes.get(targetId)!.group)!;
+    if (
+      !source.allowChange ||
+      !target.allowChange ||
+      source.members.length !== target.members.length ||
+      group.members.length !== source.members.length
+    )
+      return false;
+    // Include every legal movement at the logical node, not just the requested
+    // road pair: an aligned pair inside a fork/merge is still a real conflict.
+    for (const row of this.geometry.values()) {
+      if (row.junction !== first.junction) continue;
+      for (const road of [row.connection.from.road, row.connection.to.road])
+        if (road !== first.from.road && road !== first.to.road) return false;
+    }
+    const destinations = new Set<string>();
+    for (const id of source.members) {
+      const outgoing = network.successors.get(id) ?? [];
+      if (outgoing.length !== 1 || !group.members.includes(outgoing[0]))
+        return false;
+      const connector = network.lanes.get(outgoing[0])!,
+        onward = network.successors.get(connector.id) ?? [];
+      if (onward.length !== 1 || !target.members.includes(onward[0]))
+        return false;
+      if (destinations.has(onward[0])) return false;
+      destinations.add(onward[0]);
+      const from = network.lanes.get(id)!.curve,
+        to = network.lanes.get(onward[0])!.curve,
+        a = from.points[3],
+        b = to.points[0],
+        u = sub(a, from.points[2]),
+        w = sub(to.points[1], b),
+        lengths = Math.hypot(u.x, u.y, u.z) * Math.hypot(w.x, w.y, w.z);
+      if (
+        dist(a, b) > 0.1 ||
+        connector.curve.length > 0.1 ||
+        Math.abs(from.width - to.width) > 0.05 ||
+        lengths < 1e-8 ||
+        (u.x * w.x + u.y * w.y + u.z * w.z) / lengths < 0.999
+      )
+        return false;
+    }
+    for (const [id, successors] of network.successors)
+      if (
+        !group.members.includes(id) &&
+        successors.some((next) => destinations.has(next))
+      )
+        return false;
+    this.continuousConnectionGroups.set(groupId, true);
+    return true;
+  }
+  /** A transparent seam must not hide a car just beyond the authoring boundary.
+   * Check the same front/rear merge gaps on both carried lanes, using physical
+   * positions in one travel coordinate rather than restarting distance at zero. */
+  private continuousChangeClear(
+    view: CS2RuntimeVehicleView,
+    current: CS2NavigationCurrentState,
+    connectionGroup: string,
+  ) {
+    const network = this.network!,
+      connectors = network.groups.get(connectionGroup)!.members;
+    return [current.laneId!, current.changeLaneId!].every((id) => {
+      const lane = network.lanes.get(id)!,
+        connector = (network.successors.get(id) ?? []).find((next) =>
+          connectors.includes(next),
+        )!;
+      if (!connector) return false;
+      const onward = network.successors.get(connector)![0],
+        next = network.lanes.get(onward)!,
+        remaining = Math.max(
+          0,
+          lane.curve.length -
+            this.physicalS(
+              lane,
+              this.nearest(lane, view.state.position),
+              view.state.position,
+            ),
+        ),
+        start = this.roadS(next, 0),
+        occupants = (this.globalOccupancy.get(this.laneKey(next)) ?? []).map(
+          (row) => ({ ...row, s: row.s - start + remaining }),
+        );
+      return laneChangeGapClear(Number(view.id), 0, speedOf(view), occupants);
+    });
+  }
   private connectedQueue(
+    view: CS2RuntimeVehicleView,
     current: CS2NavigationCurrentState,
     queue: CS2NavigationQueuedLane[],
   ) {
@@ -2494,7 +2608,9 @@ export class Cs2TrafficSimulation {
         !result.length &&
         next.kind === "connection" &&
         current.changeLaneId &&
-        current.changeProgress < 1
+        current.changeProgress < 1 &&
+        (!this.continuousConnection(next.group) ||
+          !this.continuousChangeClear(view, current, next.group))
       )
         break;
       const successors = this.network!.successors.get(previous.id) ?? [];
@@ -2586,6 +2702,7 @@ export class Cs2TrafficSimulation {
     });
     current = this.prepareEarlyLaneChange(trip, view, selected.current);
     queue = this.connectedQueue(
+      view,
       current,
       this.constrainArtificialSeams(current, selected.nextLanes),
     );
