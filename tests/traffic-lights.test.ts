@@ -281,6 +281,81 @@ it("does not enter on green when the receiving lane lacks space", () => {
   );
   expect(sim.completed).toBe(0);
   expect(sim.statistics.junctionEntries).toBe(0);
+  // Restore only the blocker's prefab; preserve the waiting car, signal clock
+  // and route state so recovery cannot be attributed to resetting the test.
+  const runtime = (sim as any).sourceEngine.runtime,
+    released = runtime.getVehicle(2)!;
+  runtime.removeVehicle(2);
+  runtime.addVehicle({ ...released, car: { ...CS2_BASE_CAR } });
+  for (let i = 0; i < 2400 && sim.completed < 2; i++) sim.update(0.05);
+  expect(sim.completed).toBe(2);
+  expect(sim.statistics.junctionEntries).toBe(1);
+  expect(sim.failed).toBe(0);
+  sim.dispose();
+});
+
+it("serves an independent empty receiving lane while the opposite right-turn exit stays blocked", () => {
+  const { p, sim, links, junction, movements, config } = fixture();
+  config.mode = "protected";
+  sim.configure(p);
+  const right = new Set(
+      movements
+        .filter((movement) => movement.turn === "right")
+        .map((movement) => movement.id),
+    ),
+    link = links.find(
+      (connection) =>
+        right.has(connection.id) &&
+        sim.trafficLights.allows(connection.id, 1, 55, 12),
+    )!,
+    free = links.find(
+      (connection) =>
+        right.has(connection.id) &&
+        connection.from.road !== link.from.road &&
+        connection.to.road !== link.to.road &&
+        sim.trafficLights.allows(connection.id, 3, 55, 12),
+    )!,
+    car = carFor(sim, link),
+    independent = carFor(sim, free, 3),
+    step = car.route[1],
+    targetArm = junction.arms.find((arm) => arm.road === step.road)!,
+    blocker: Vehicle = {
+      ...car,
+      id: 2,
+      route: [step],
+      step: 0,
+      lane: step.inLane,
+      s: (sim as any).entry(step) + signalStopOffset(targetArm) + 3,
+      speed: 0,
+      cs2Car: { ...CS2_BASE_CAR, maxSpeed: 0, acceleration: 0 },
+      nextLaneDecision: Infinity,
+    };
+  (sim as any).pose(blocker);
+  const stoppedAt = { ...blocker.position };
+  sim.vehicles = [car, blocker, independent];
+  sim.running = true;
+  for (let i = 0; i < 800 && sim.completed < 1; i++) {
+    sim.update(0.05);
+    const physical = sim.renderVehicles().find((vehicle) => vehicle.id === 2)!;
+    expect(physical.speed).toBeLessThan(0.001);
+    expect(
+      Math.hypot(
+        physical.position.x - stoppedAt.x,
+        physical.position.z - stoppedAt.z,
+      ),
+    ).toBeLessThan(0.02);
+  }
+  expect(sim.completedByExit.get(free.to.road)).toBe(1);
+  expect(sim.completed).toBe(1);
+  expect(sim.statistics.junctionEntries).toBe(1);
+  expect(car.connector).toBeUndefined();
+  const engine = (sim as any).sourceEngine,
+    physicalLane = engine.network.lanes.get(
+      engine.runtime.readVehicle(1).current.laneId,
+    );
+  expect(physicalLane).toMatchObject({ kind: "road", road: link.from.road });
+  expect(sim.failed).toBe(0);
+  sim.dispose();
 });
 
 it.each(["cs2-derived", "legacy"] as const)(
