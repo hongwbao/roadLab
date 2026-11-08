@@ -1,52 +1,63 @@
 {
-  "recorded_at": "2026-11-08T04:28:28.676871+00:00",
-  "latest_change": "偏移吸附接头纳入路口车道连线：同层分流、汇流及双路段偏移接入可点选；允许自定义合法目标车道、删线、禁行与恢复自动；进入真实寻路并保存、撤销，苜蓿叶显示24处连接路口。",
-  "record_type": "固定源码及静态构建的偏移连接路口验证；历史交通压力失败保留，不宣称通过完整高需求碰撞验收。",
+  "recorded_at": "2026-11-08T05:14:49.384981+00:00",
+  "latest_change": "修复工具切换与选择显隐导致全图道路重建的卡顿；路面缓存与编辑控件分离，复用端点标记和信号外观，不显示路径时不计算全路网连线；快速切屏前同步拾取投影。",
+  "record_type": "固定版本UI响应性能验证；同步处理计时不是跨设备现场INP或FPS保证，历史交通压力失败仍保留。",
   "checks": [
     {
       "command": "npm run build",
       "exit_code": 0,
-      "scope": "exact frozen98ef59f whole-project TypeScript and production bundle"
+      "scope": "exact frozen ba2354e whole-project TypeScript and production bundle"
     },
     {
       "command": "npx vitest run [25 scoped suites]",
       "exit_code": 0,
       "passed_cases": 282,
-      "scope": "offset fork/merge/two-road joins;legacy lane contacts;reverse median lanes;unrelated/elevated exclusion;stable IDs;history/save;sole authored connector sink route completed;existing engine/model/signal/road suites"
+      "scope": "existing models,road geometry,median/offset/cloverleaf,lane links,source engine andsignals"
     },
     {
-      "command": "PLAYWRIGHT_PORT=5199 npx playwright test",
+      "command": "PLAYWRIGHT_PORT=5198 npx playwright test",
       "exit_code": 0,
-      "passed_cases": 73,
-      "scope": "complete static browser suite,including3new point-driven offset cases;original junction lane names/focus;speed,upgrades,cloverleaf,traffic signals"
+      "passed_cases": 77,
+      "scope": "final full static suite;4new performance/selection/cache invalidation/viewport cases plus all previous road,offset lane links,signals and save flows"
     },
     {
-      "command": "impeccable finish review",
+      "command": "Chrome Profiler + actual editor.setTool samples",
+      "exit_code": 0,
+      "scope": "same40-road cloverleaf1440x900,9tool switches;before median1920.9ms/max1980.9ms,final6.1ms/8.4ms;extra mesh builds240to0;drawcalls342both;after full click handler max14.6ms"
+    },
+    {
+      "command": "PLAYWRIGHT_PORT=5197 [compact case+immediate resize] --repeat-each=3",
+      "exit_code": 0,
+      "passed_cases": 6,
+      "scope": "supplemental development verification before final frozen77case run;first build transient compact draw failure retained in logs"
+    },
+    {
+      "command": "impeccable finish review + final recapture scoring",
       "disposition": "ship",
       "primary_findings": 0,
-      "scope": "desktop1440x900 fork/merge,compact1024x768 and390x844;retained Operate HUD;name helper remains available where compact panel covers map ports"
+      "scope": "retained geometry/HUD/selection/port visuals at1440x900,1024x768,390x844;not field latency or traffic certification"
     },
     {
       "command": "HTTP SHA-256 localhost/LAN5173",
       "exit_code": 0,
       "passed_cases": 10,
-      "scope": "all5index/metadata/JS/CSS/worker resources match verified release"
+      "scope": "all5resources match fixed verified dist"
     },
     {
-      "command": "PLAYWRIGHT_PORT=5173 npx playwright test [offset3+original junction2+signal preset1]",
+      "command": "PLAYWRIGHT_PORT=5173 [performance4+offset3+compact1+preset1]",
       "exit_code": 0,
-      "passed_cases": 6,
-      "scope": "actual live point edits,real network,undo/save/reload,ban/delete/restore,reverse merge,keyboard focus and schemeJSON"
+      "passed_cases": 9,
+      "scope": "actual served runtime cache reuse/timing,selection,picking,edit invalidation,resize,offset network/save,schemeJSON"
     },
     {
       "command": "SMOKE_URL=http://192.168.31.167:5173/ node tests/production.mjs",
       "exit_code": 0,
-      "scope": "live5roads/2routes/canvas;no page or asset errors"
+      "scope": "LAN5roads/2routes/canvas;no page or asset errors"
     },
     {
       "command": "git ls-remote origin refs/heads/main",
       "exit_code": 0,
-      "scope": "application98ef59f verified before final delivery-record commit"
+      "scope": "application ba2354e verified before final performance/validation documentation commit"
     }
   ],
   "limitations": [
@@ -62,7 +73,8 @@
     "提前准备针对自定义车道连线的出口约束；目标车道无空隙时减速等待，不能消除超饱和拥堵。道路替换右键恢复只保留该路段最近一次断面记录。",
     "新版苜蓿叶竖曲线需从地图菜单重新载入示例；用户已有存档保留原控制点，不强行调整旧匝道坡度。",
     "限速5–160km/h；普通编辑事务会暂停测试。虚线3米/6米按实际三维距离绘制，路段端头允许截短。",
-    "偏移连接识别同层真实车道接触或有效吸附；纯直线双路段接缝不会自动开放。连线节点扩展不创建街道路口铺面、斑马线或自动信号灯。"
+    "偏移连接识别同层真实车道接触或有效吸附；纯直线双路段接缝不会自动开放。连线节点扩展不创建街道路口铺面、斑马线或自动信号灯。",
+    "UI基准来自本机40段苜蓿叶、9次同步setTool调用；不代表首次载图、真实道路几何修改、开始测试时网络初始化或所有规模地图的帧率。"
   ],
   "previous_verified_stable_snapshot": {
     "recorded_at": "2026-11-06T11:58:12.595591+00:00",
@@ -412,20 +424,21 @@
     "healthz": "ok"
   },
   "current_deployment": {
-    "version": "offset-junctions-20261108-041750",
+    "version": "ui-performance-20261108-050427",
     "url": "http://192.168.31.167:5173/",
-    "source_commit": "98ef59f132047d96579f25714068c3dccc07f360",
-    "source_snapshot": "/home/bhw/repos/interchange-lab/.cache/builds/offset-junctions-20261108-041750/source",
-    "manifest": "/home/bhw/repos/interchange-lab/.cache/deployments/offset-junctions-20261108-041750/manifest.json",
+    "source_commit": "ba2354ec1d137a9c07d71c4b950aea6cfc8ae2e4",
+    "source_snapshot": "/home/bhw/repos/interchange-lab/.cache/builds/ui-performance-20261108-050427/source",
+    "manifest": "/home/bhw/repos/interchange-lab/.cache/deployments/ui-performance-20261108-050427/manifest.json",
     "dist_sha256": {
       "assets/cs2-path-worker-DFcwOVUm.js": "98850414cebb8d678b7082ac85feaef178e9d67b2bf4f7cbb1707e248b3b074c",
-      "assets/index-BTyxAU9a.js": "0fcbd6718ddf62179434b29e613b4ce6c095dc3652c36dc9879b1502c78d44c3",
       "assets/index-CoFJ0xDj.css": "61cc2449c3c101ef47df6a7b431cc8c60aec76a19f3864e5917c0f3189f084fc",
-      "index.html": "9eecdfcad462ca2ac94414718af5c920bf645147c6cf0c10a09cc29b0a7c7efe",
-      "release.json": "2117ffdf651ca3edaa3a0eefef2564f7b3864e3845724422a717bfafc520e804"
+      "assets/index-DYjnOND_.js": "2291c9dfe565c511731f2e946b0c7545c694f799f129d49d27d7485aa771d6bd",
+      "index.html": "294ea7bc44d5e1fdb64e2264d93d3a5c313dad1483735e77b2e7e57d8c1142ee",
+      "release.json": "154033a0dbbb5559b848706db512a3fc3ee847151de9251cd39efa6bca89319e"
     },
-    "http_verification": "/home/bhw/repos/interchange-lab/.cache/deployments/offset-junctions-20261108-041750/http-verification.json",
-    "ui_review": "/home/bhw/repos/interchange-lab/.cache/deployments/offset-junctions-20261108-041750/ui-review/finish-review.md",
+    "http_verification": "/home/bhw/repos/interchange-lab/.cache/deployments/ui-performance-20261108-050427/http-verification.json",
+    "ui_review": "/home/bhw/repos/interchange-lab/.cache/deployments/ui-performance-20261108-050427/ui-review/finish-review.md",
+    "ui_final_verdict": "/home/bhw/repos/interchange-lab/.cache/deployments/ui-performance-20261108-050427/ui-review/postfix-verdict.md",
     "service": "roadlab.service,active"
   },
   "previous_cs2_preview_checks": [
@@ -725,8 +738,8 @@
   "github_sync": {
     "repository": "https://github.com/hongwbao/roadLab",
     "branch": "main",
-    "verified_application_commit": "98ef59f132047d96579f25714068c3dccc07f360",
-    "scope": "functional source verified onmain;final verification record committed afterward"
+    "verified_application_commit": "ba2354ec1d137a9c07d71c4b950aea6cfc8ae2e4",
+    "scope": "runtime source verified onmain;final measured performance and verification record committed afterward"
   },
   "previous_road_expansion_deployment": {
     "version": "road-expansion-20261107-103432",
@@ -827,9 +840,8 @@
   "previous_github_sync": {
     "repository": "https://github.com/hongwbao/roadLab",
     "branch": "main",
-    "verified_application_commit": "524cc5fdf5c2c58353a6bbfe91e97a0cc8925977",
-    "verified_checks_commit": "87ad0b00365349df25cdd2d24b35a6794f9a32d5",
-    "scope": "application and corrected async assertion verified onmain;delivery record committed afterward"
+    "verified_application_commit": "98ef59f132047d96579f25714068c3dccc07f360",
+    "scope": "functional source verified onmain;final verification record committed afterward"
   },
   "previous_median_upgrades_deployment": {
     "version": "median-upgrades-20261107-121216",
@@ -1138,5 +1150,91 @@
       "exit_code": 0,
       "scope": "functional source and async verification87ad0b0 verified before final delivery record commit"
     }
-  ]
+  ],
+  "previous_offset_junction_deployment": {
+    "version": "offset-junctions-20261108-041750",
+    "url": "http://192.168.31.167:5173/",
+    "source_commit": "98ef59f132047d96579f25714068c3dccc07f360",
+    "source_snapshot": "/home/bhw/repos/interchange-lab/.cache/builds/offset-junctions-20261108-041750/source",
+    "manifest": "/home/bhw/repos/interchange-lab/.cache/deployments/offset-junctions-20261108-041750/manifest.json",
+    "dist_sha256": {
+      "assets/cs2-path-worker-DFcwOVUm.js": "98850414cebb8d678b7082ac85feaef178e9d67b2bf4f7cbb1707e248b3b074c",
+      "assets/index-BTyxAU9a.js": "0fcbd6718ddf62179434b29e613b4ce6c095dc3652c36dc9879b1502c78d44c3",
+      "assets/index-CoFJ0xDj.css": "61cc2449c3c101ef47df6a7b431cc8c60aec76a19f3864e5917c0f3189f084fc",
+      "index.html": "9eecdfcad462ca2ac94414718af5c920bf645147c6cf0c10a09cc29b0a7c7efe",
+      "release.json": "2117ffdf651ca3edaa3a0eefef2564f7b3864e3845724422a717bfafc520e804"
+    },
+    "http_verification": "/home/bhw/repos/interchange-lab/.cache/deployments/offset-junctions-20261108-041750/http-verification.json",
+    "ui_review": "/home/bhw/repos/interchange-lab/.cache/deployments/offset-junctions-20261108-041750/ui-review/finish-review.md",
+    "service": "roadlab.service,active"
+  },
+  "previous_offset_junction_checks": [
+    {
+      "command": "npm run build",
+      "exit_code": 0,
+      "scope": "exact frozen98ef59f whole-project TypeScript and production bundle"
+    },
+    {
+      "command": "npx vitest run [25 scoped suites]",
+      "exit_code": 0,
+      "passed_cases": 282,
+      "scope": "offset fork/merge/two-road joins;legacy lane contacts;reverse median lanes;unrelated/elevated exclusion;stable IDs;history/save;sole authored connector sink route completed;existing engine/model/signal/road suites"
+    },
+    {
+      "command": "PLAYWRIGHT_PORT=5199 npx playwright test",
+      "exit_code": 0,
+      "passed_cases": 73,
+      "scope": "complete static browser suite,including3new point-driven offset cases;original junction lane names/focus;speed,upgrades,cloverleaf,traffic signals"
+    },
+    {
+      "command": "impeccable finish review",
+      "disposition": "ship",
+      "primary_findings": 0,
+      "scope": "desktop1440x900 fork/merge,compact1024x768 and390x844;retained Operate HUD;name helper remains available where compact panel covers map ports"
+    },
+    {
+      "command": "HTTP SHA-256 localhost/LAN5173",
+      "exit_code": 0,
+      "passed_cases": 10,
+      "scope": "all5index/metadata/JS/CSS/worker resources match verified release"
+    },
+    {
+      "command": "PLAYWRIGHT_PORT=5173 npx playwright test [offset3+original junction2+signal preset1]",
+      "exit_code": 0,
+      "passed_cases": 6,
+      "scope": "actual live point edits,real network,undo/save/reload,ban/delete/restore,reverse merge,keyboard focus and schemeJSON"
+    },
+    {
+      "command": "SMOKE_URL=http://192.168.31.167:5173/ node tests/production.mjs",
+      "exit_code": 0,
+      "scope": "live5roads/2routes/canvas;no page or asset errors"
+    },
+    {
+      "command": "git ls-remote origin refs/heads/main",
+      "exit_code": 0,
+      "scope": "application98ef59f verified before final delivery-record commit"
+    }
+  ],
+  "ui_performance": {
+    "before": {
+      "samples": 9,
+      "median_ms": 1920.9000000059605,
+      "max_ms": 1980.8999999910593,
+      "pavement_builds": 240,
+      "draw_calls": 342,
+      "click_handler_max_ms": null,
+      "application_commit": "98ef59f132047d96579f25714068c3dccc07f360"
+    },
+    "after": {
+      "samples": 9,
+      "median_ms": 6.0999999940395355,
+      "max_ms": 8.400000005960464,
+      "pavement_builds": 0,
+      "draw_calls": 342,
+      "click_handler_max_ms": 14.599999994039536,
+      "application_commit": "ba2354ec1d137a9c07d71c4b950aea6cfc8ae2e4"
+    },
+    "method": "Same40-road cloverleaf1440x900,headless Chrome,9setTool calls. SynchronousCPUtime,notfieldINP/FPS. Oldmicrotaskclicktimerinvalid:null;onlysetTool samplescomparable.",
+    "comparison_file": "/home/bhw/repos/interchange-lab/.cache/deployments/ui-performance-20261108-050427/logs/comparison.json"
+  }
 }
