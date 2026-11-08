@@ -198,7 +198,7 @@ function selectedPanel() {
   if (!r) return "";
   const asset = assetForRoad(r),
     ports = editor.project.ports.filter((p) => p.road === r.id);
-  return `<div class="panel-heading"><h2>${esc(asset?.name || r.name)}</h2>${button("deselect", "关闭", "x", "icon-only")}</div><div class="road-information"><span>${roadLength(r).toFixed(0)} m</span><span>${r.speed} km/h</span><span>${point(r, 0).y.toFixed(0)} → ${point(r, 1).y.toFixed(0)} m</span></div><p class="muted">拖动端点和曲线柄调整道路；Alt＋拖动道路可整体移动。${editor.selected.size > 1 ? `已选择 ${editor.selected.size} 段道路。` : ""}</p><div class="selection-actions">${button("duplicate", "复制", "copy")}${!r.twoWay ? button("reverse", "反向", "rotate-ccw") : ""}${button("delete", "拆除", "trash-2", "danger")}</div><details><summary>更多操作</summary><div class="selection-actions">${button("rotate", "旋转", "rotate-cw")}${button("mirror", "镜像", "flip-horizontal")}${button("add-knot", "增加控制点", "plus")}${button("template", "保存模板", "copy")}</div></details>${ports.length ? `<div class="port-settings"><h3>通行口基准流量</h3>${ports.map((p) => `<div class="port-row"><span>${p.end === "start" ? "起点" : "终点"} · ${p.type === "both" ? "双向进出" : p.type === "source" ? "入口" : "出口"}</span>${isSource(p) ? `<label><input type="number" min="0" max="240" value="${p.rate}" data-port="${editor.project.ports.indexOf(p)}" aria-label="入口基准流量"><span>辆/分</span></label>` : ""}<button data-remove-port="${editor.project.ports.indexOf(p)}" class="icon-only" title="取消通行口">${icon("x")}</button></div>`).join("")}<p class="muted">运行中调整流量会保留现有车辆。</p></div>` : ""}`;
+  return `<div class="panel-heading"><h2>${esc(asset?.name || r.name)}</h2>${button("deselect", "关闭", "x", "icon-only")}</div><div class="road-information"><span>${roadLength(r).toFixed(0)} m</span><span>${point(r, 0).y.toFixed(0)} → ${point(r, 1).y.toFixed(0)} m</span></div><label class="road-speed">最高限速 <input type="number" min="5" max="160" step="1" value="${r.speed}" data-road-speed="${r.id}" aria-label="道路最高限速"><span>km/h</span></label><p class="muted">拖动端点和曲线柄调整道路；Alt＋拖动道路可整体移动。${editor.selected.size > 1 ? `已选择 ${editor.selected.size} 段道路。` : ""}</p><div class="selection-actions">${button("duplicate", "复制", "copy")}${!r.twoWay ? button("reverse", "反向", "rotate-ccw") : ""}${button("delete", "拆除", "trash-2", "danger")}</div><details><summary>更多操作</summary><div class="selection-actions">${button("rotate", "旋转", "rotate-cw")}${button("mirror", "镜像", "flip-horizontal")}${button("add-knot", "增加控制点", "plus")}${button("template", "保存模板", "copy")}</div></details>${ports.length ? `<div class="port-settings"><h3>通行口基准流量</h3>${ports.map((p) => `<div class="port-row"><span>${p.end === "start" ? "起点" : "终点"} · ${p.type === "both" ? "双向进出" : p.type === "source" ? "入口" : "出口"}</span>${isSource(p) ? `<label><input type="number" min="0" max="240" value="${p.rate}" data-port="${editor.project.ports.indexOf(p)}" aria-label="入口基准流量"><span>辆/分</span></label>` : ""}<button data-remove-port="${editor.project.ports.indexOf(p)}" class="icon-only" title="取消通行口">${icon("x")}</button></div>`).join("")}<p class="muted">运行中调整流量会保留现有车辆。</p></div>` : ""}`;
 }
 function syncTraffic(inputs = true) {
   const m = editor.project.trafficMultiplier ?? 1;
@@ -434,8 +434,13 @@ function render() {
   play.innerHTML = `${icon(editor.simulation.running ? "pause" : "play")}<span>${editor.simulation.running ? "暂停测试" : "开始测试"}</span>`;
   const alignment =
     document.querySelector<HTMLButtonElement>("#alignment-mode")!;
-  alignment.hidden = editor.draw.twoWay;
-  alignment.textContent = `对齐：${{ auto: "自动", center: "中线", left: "左缘", right: "右缘" }[editor.alignment]}`;
+  alignment.hidden = editor.draw.twoWay && !editor.replacing;
+  alignment.title = editor.replacing
+    ? "鼠标位置自动对齐车道；Tab 或点击此处固定对齐方式"
+    : "切换道路建造对齐方式";
+  alignment.textContent = editor.replacing
+    ? `替换对齐：${editor.replacementLabel}`
+    : `对齐：${{ auto: "自动", center: "中线", left: "左缘", right: "右缘" }[editor.alignment]}`;
   if (sectionMode)
     document.querySelector<HTMLElement>("#alignment-mode")!.hidden = true;
   document.querySelector("#build-height-label")!.textContent =
@@ -873,6 +878,11 @@ document.addEventListener("input", (e) => {
 });
 document.addEventListener("change", (e) => {
   const input = e.target as HTMLInputElement;
+  if (input.dataset.roadSpeed)
+    editor.setRoadSpeed(
+      input.dataset.roadSpeed,
+      input.value === "" ? NaN : Number(input.value),
+    );
   if (input.dataset.signalTime)
     editor.signalTool.change(
       input.dataset.signalTime as

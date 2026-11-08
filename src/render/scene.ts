@@ -28,6 +28,13 @@ import { allowedTurns } from "../core/lane-rules";
 import { renderRoadMedian } from "./road-median";
 import { roadMedianRange } from "../core/road-median";
 import { roadCrosswalkQuads } from "../core/junction-crosswalks";
+import {
+  roadForks,
+  forkPavement,
+  forkEdgePaths,
+  forkSurfaces,
+  type ForkNeighbours,
+} from "../core/road-forks";
 import { roadSegmentNodes } from "../core/road-segments";
 import type { Project, Road, Settings, V } from "../core/types";
 import type { Step, Vehicle } from "../simulation/simulation";
@@ -62,7 +69,9 @@ export class Scene {
   private junctionList: Junction[] = [];
   private ranges = new Map<string, { start: number; end: number }>();
   private currentProject?: Project;
+  private forks = new Map<string, ForkNeighbours>();
   private previewHiddenRoads = new Set<string>();
+  private previewHiddenJunctions = new Set<T.Object3D>();
   private rebuildSignature = "";
   private topologySignature = "";
   private junctionRenderCache = new Map<
@@ -99,6 +108,11 @@ export class Scene {
       side: T.DoubleSide,
     }),
     mark: new T.LineBasicMaterial({ color: 0xf0eed8 }),
+    dashedMark: new T.LineDashedMaterial({
+      color: 0xf0eed8,
+      dashSize: 3,
+      gapSize: 6,
+    }),
     centerline: new T.LineBasicMaterial({ color: 0xf3c454 }),
     lane: new T.LineBasicMaterial({
       color: 0x33a7ac,
@@ -318,6 +332,7 @@ export class Scene {
       points.map((p) => vec({ ...p, y: p.y + 0.065 })),
     );
     const l = new T.Line(g, material);
+    if (material instanceof T.LineDashedMaterial) l.computeLineDistances();
     if (hit) l.userData = hit;
     group.add(l);
     return l;
@@ -350,8 +365,19 @@ export class Scene {
       indices.push(j, j + 2, j + 1, j + 1, j + 2, j + 3);
     }
     const g = new T.BufferGeometry();
-    g.setAttribute("position", new T.Float32BufferAttribute(positions, 3));
-    g.setIndex(indices);
+    const blockers = this.forks.get(r.id)?.pavement ?? [];
+    if (material === this.mats.asphalt && blockers.length) {
+      g.setAttribute(
+        "position",
+        new T.Float32BufferAttribute(
+          forkPavement(r, range, forkSurfaces(blockers)),
+          3,
+        ),
+      );
+    } else {
+      g.setAttribute("position", new T.Float32BufferAttribute(positions, 3));
+      g.setIndex(indices);
+    }
     g.computeVertexNormals();
     const mesh = new T.Mesh(g, material);
     mesh.userData = { road: r.id };
@@ -368,18 +394,35 @@ export class Scene {
       );
     if (material !== this.mats.asphalt) return;
     // A thin deck gives elevated roads a readable edge; columns are visual only.
+    const edgeBlockers = forkSurfaces(this.forks.get(r.id)?.edges ?? []);
     for (const sign of [-1, 1]) {
-      const side: number[] = [];
+      const edge: V[] = [];
       for (let i = 0; i <= n; i++) {
-        const t = range.start + ((range.end - range.start) * i) / n,
-          c = center(r, t),
-          norm = normal(r, t),
-          q = add(c, mul(norm, (pavementWidth(r, t) / 2 + 0.35) * sign));
-        side.push(q.x, q.y - 0.02, q.z, q.x, q.y - 0.45, q.z);
+        const t = range.start + ((range.end - range.start) * i) / n;
+        edge.push(
+          add(
+            center(r, t),
+            mul(normal(r, t), (pavementWidth(r, t) / 2 + 0.35) * sign),
+          ),
+        );
       }
+      const side: number[] = [];
+      for (const path of forkEdgePaths(edge, edgeBlockers))
+        for (let i = 0; i < path.length - 1; i++) {
+          const a = path[i],
+            b = path[i + 1];
+          for (const [p, drop] of [
+            [a, 0.02],
+            [b, 0.02],
+            [a, 0.45],
+            [a, 0.45],
+            [b, 0.02],
+            [b, 0.45],
+          ] as const)
+            side.push(p.x, p.y - drop, p.z);
+        }
       const sg = new T.BufferGeometry();
       sg.setAttribute("position", new T.Float32BufferAttribute(side, 3));
-      sg.setIndex(indices);
       sg.computeVertexNormals();
       group.add(new T.Mesh(sg, this.mats.side));
     }
@@ -426,6 +469,7 @@ export class Scene {
     this.rebuildSignature = signature;
     if (topologySignature !== this.topologySignature) {
       this.junctionList = buildJunctions(p);
+      this.forks = roadForks(p.roads);
       this.topologySignature = topologySignature;
     }
     this.trafficLights.rebuild(p, this.junctionList);
@@ -495,6 +539,7 @@ export class Scene {
       const roadSignature = JSON.stringify([
         r,
         range,
+        this.forks.get(r.id),
         medianExtent(r) ? roadMedianRange(p, r, this.junctionList) : undefined,
         hidden,
         selected.has(r.id),
@@ -546,11 +591,15 @@ export class Scene {
             ),
           );
         }
-        this.line(
+        for (const path of forkEdgePaths(
           pts,
-          selected.has(r.id) ? this.mats.selected : this.mats.mark,
-          overlays,
-        );
+          forkSurfaces(this.forks.get(r.id)?.edges ?? []),
+        ))
+          this.line(
+            path,
+            selected.has(r.id) ? this.mats.selected : this.mats.mark,
+            overlays,
+          );
       }
       const max = laneCount(r);
       for (let l = 1; l < max; l++) {
@@ -593,16 +642,22 @@ export class Scene {
           else this.line(pts, this.mats.centerline, details);
           continue;
         }
-        for (let j = 0; j < 100; j += 5) {
-          const pts: V[] = [];
-          for (let k = j; k <= j + 2; k++) {
-            const t = range.start + ((range.end - range.start) * k) / 100;
-            if (laneWidth(r, l, t) < 0.15 || laneWidth(r, l - 1, t) < 0.15)
-              continue;
-            pts.push(boundaryPoint(r, l, t));
-          }
-          if (pts.length > 1) this.line(pts, this.mats.mark, details);
+        let pts: V[] = [];
+        const samples = Math.min(
+          4096,
+          Math.max(100, Math.ceil(roadLength(r) / 2)),
+        );
+        const flush = () => {
+          if (pts.length > 1) this.line(pts, this.mats.dashedMark, details);
+          pts = [];
+        };
+        for (let k = 0; k <= samples; k++) {
+          const t = range.start + ((range.end - range.start) * k) / samples;
+          if (laneWidth(r, l, t) < 0.15 || laneWidth(r, l - 1, t) < 0.15)
+            flush();
+          else pts.push(boundaryPoint(r, l, t));
         }
+        flush();
       }
       for (let l = 0; l < max; l++) {
         if (settings.paths) {
@@ -745,57 +800,9 @@ export class Scene {
           this.line([ap, bp], this.mats.lane, this.overlays);
       }
     }
-    for (const ramp of p.roads.filter((r) => r.kind === "ramp")) {
-      const parent = cs.find((c) => c.to.road === ramp.id),
-        child = cs.find((c) => c.from.road === ramp.id),
-        incoming = !parent && !!child;
-      const main = parent
-        ? p.roads.find(
-            (r) =>
-              r.id !== ramp.id &&
-              cs.some(
-                (c) => c.from.road === parent.from.road && c.to.road === r.id,
-              ),
-          )
-        : child
-          ? p.roads.find(
-              (r) =>
-                r.id !== ramp.id &&
-                cs.some(
-                  (c) => c.to.road === child.to.road && c.from.road === r.id,
-                ),
-            )
-          : undefined;
-      if (main) {
-        const t0 = incoming ? 1 : 0,
-          delta = center(ramp, t0),
-          mp0 = center(main, t0),
-          n = normal(main, t0),
-          sign =
-            (delta.x - mp0.x) * n.x + (delta.z - mp0.z) * n.z >= 0 ? 1 : -1;
-        for (let i = 2; i < 26; i += 2) {
-          const t = incoming ? 1 - i / 100 : i / 100,
-            rp = add(
-              center(ramp, t),
-              mul(normal(ramp, t), (-sign * pavementWidth(ramp, t)) / 2),
-            ),
-            near = nearest(main, rp),
-            mp = add(
-              center(main, near.t),
-              mul(
-                normal(main, near.t),
-                (sign * pavementWidth(main, near.t)) / 2,
-              ),
-            );
-          if (
-            dist(mp, rp) > 0.6 &&
-            dist(mp, rp) < 12 &&
-            Math.abs(mp.y - rp.y) < 0.3
-          )
-            this.line([mp, rp], this.mats.mark, this.overlays);
-        }
-      }
-    }
+    // Fork edge clipping follows the shared pavement. Do not draw synthetic
+    // gore stripes across two independently sampled road cross-sections: they
+    // can cross live lanes or continue into the unpaved gap.
     for (const j of this.junctionList) {
       const signature = JSON.stringify([
         j,
@@ -912,7 +919,11 @@ export class Scene {
   batchLines(group: T.Group) {
     const batches = new Map<T.Material, number[]>();
     for (const obj of [...group.children])
-      if (obj instanceof T.Line && !(obj instanceof T.LineSegments)) {
+      if (
+        obj instanceof T.Line &&
+        !(obj instanceof T.LineSegments) &&
+        !(obj.material instanceof T.LineDashedMaterial)
+      ) {
         const material = obj.material as T.Material,
           positions = batches.get(material) || [],
           a = obj.geometry.getAttribute("position");
@@ -943,6 +954,8 @@ export class Scene {
         .get(id)
         ?.groups.forEach((group) => (group.visible = true));
     this.previewHiddenRoads.clear();
+    for (const object of this.previewHiddenJunctions) object.visible = true;
+    this.previewHiddenJunctions.clear();
     if (options?.replaceExisting)
       for (const road of roads) {
         const cached = this.roadRenderCache.get(road.id);
@@ -952,6 +965,45 @@ export class Scene {
         }
       }
     this.clear(this.preview);
+    if (options?.replaceExisting) {
+      const ids = new Set(roads.map((r) => r.id));
+      for (const junction of this.junctionList)
+        if (junction.arms.some((a) => ids.has(a.road))) {
+          for (const object of this.junctionRenderCache.get(junction.id)
+            ?.objects ?? []) {
+            object.visible = false;
+            this.previewHiddenJunctions.add(object);
+          }
+        }
+      for (const junction of options.junctions ?? [])
+        if (junction.arms.some((a) => ids.has(a.road))) {
+          const g = new T.BufferGeometry();
+          g.setAttribute(
+            "position",
+            new T.Float32BufferAttribute(
+              junction.polygon.flatMap((p) => [
+                p.x,
+                junction.position.y + 0.018,
+                p.z,
+              ]),
+              3,
+            ),
+          );
+          g.setIndex(
+            T.ShapeUtils.triangulateShape(
+              junction.polygon.map((p) => new T.Vector2(p.x, p.z)),
+              [],
+            ).flat(),
+          );
+          g.computeVertexNormals();
+          const mesh = new T.Mesh(
+            g,
+            invalid ? this.mats.invalid : this.mats.ghost,
+          );
+          mesh.userData.previewJunction = junction.id;
+          this.preview.add(mesh);
+        }
+    }
     for (const r of roads) {
       for (const p of this.currentProject?.roads.some((old) => old.id === r.id)
         ? []
@@ -973,7 +1025,9 @@ export class Scene {
         r,
         this.preview,
         invalid ? this.mats.invalid : this.mats.ghost,
-        { start: 0, end: 1 },
+        options?.replaceExisting
+          ? roadRange(r, [...(options.junctions ?? [])])
+          : { start: 0, end: 1 },
         options?.junctions,
         options?.project,
       );

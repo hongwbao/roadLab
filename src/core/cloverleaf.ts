@@ -24,7 +24,7 @@ export function cloverleafExample(makeRoad: RoadFactory): Project {
   const directions = ["东行", "南行", "西行", "北行"];
   const keys = ["east", "south", "west", "north"];
   const collectors: Road[][] = [];
-  const nodes = [-440, -380, -74, 74, 380, 440];
+  const nodes = [-440, -380, -82, 82, 380, 440];
   const height = (direction: number) => (direction % 2 ? 12 : 0);
   const rotate = (x: number, z: number, y: number, direction: number): V => {
     switch (direction % 4) {
@@ -141,30 +141,48 @@ export function cloverleafExample(makeRoad: RoadFactory): Project {
   const ramp = (direction: number, left: boolean) => {
     const target = (direction + (left ? 3 : 1)) % 4;
     const segments = left ? 3 : 1;
-    const radius = left ? 48 : 354;
-    const cx = left ? 74 : -380,
-      cz = left ? 74 : 380;
+    const radius = left ? 56 : 354;
+    const cx = left ? 82 : -380,
+      cz = left ? 82 : 380;
     const delta = height(target) - height(direction);
     const step = Math.PI / 2;
-    const handle = radius * (4 / 3) * Math.tan(step / 4);
-    const knots = Array.from({ length: segments + 1 }, (_, index) => {
-      const t = index / segments,
-        angle = -Math.PI / 2 + index * step;
+    // Stay level until the fork's full paved footprint has separated. Then
+    // ease into the grade, keeping both endpoint tangents horizontal.
+    const flat = (left ? 28 : 64) / (radius * step * segments);
+    const fractions = [
+      ...new Set([
+        0,
+        flat,
+        ...Array.from({ length: segments - 1 }, (_, i) => (i + 1) / segments),
+        1 - flat,
+        1,
+      ]),
+    ].sort((a, b) => a - b);
+    const knots = fractions.map((t, index) => {
+      const angle = -Math.PI / 2 + t * step * segments;
       const x = cx + radius * Math.cos(angle),
         z = cz + radius * Math.sin(angle);
-      const y = height(direction) + delta * t * t * (3 - 2 * t);
-      const rise = (delta * 6 * t * (1 - t)) / (3 * segments);
-      const dx = -Math.sin(angle) * handle,
-        dz = Math.cos(angle) * handle;
+      const q = Math.max(0, Math.min(1, (t - flat) / (1 - 2 * flat)));
+      const y = height(direction) + delta * q * q * (3 - 2 * q);
+      const dy = (delta * 6 * q * (1 - q)) / (1 - 2 * flat);
+      const control = (other: number, sign: number) => {
+        const dt = Math.abs(other - t),
+          handle = ((radius * 4) / 3) * Math.tan((dt * step * segments) / 4);
+        return rotate(
+          x - sign * Math.sin(angle) * handle,
+          z + sign * Math.cos(angle) * handle,
+          y + (sign * dy * dt) / 3,
+          direction,
+        );
+      };
       const p = rotate(x, z, y, direction);
       return {
         p,
-        incoming:
-          index === 0 ? { ...p } : rotate(x - dx, z - dz, y - rise, direction),
+        incoming: index ? control(fractions[index - 1], -1) : { ...p },
         outgoing:
-          index === segments
-            ? { ...p }
-            : rotate(x + dx, z + dz, y + rise, direction),
+          index < fractions.length - 1
+            ? control(fractions[index + 1], 1)
+            : { ...p },
         at: t,
       };
     });

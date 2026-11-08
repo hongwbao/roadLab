@@ -1818,3 +1818,14 @@ dialog dd {
   font-size: 13px;
   font-weight: 500;
 }
+
+.road-speed {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.road-speed input {
+  width: 64px;
+  padding: 5px 6px;
+  font-variant-numeric: tabular-nums;
+}

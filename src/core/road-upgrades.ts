@@ -1,4 +1,13 @@
-import { backwardStart, backwardEnd, laneCount } from "./math";
+import {
+  backwardStart,
+  backwardEnd,
+  laneCount,
+  laneDirection,
+  lanePoint,
+  center,
+  normal,
+  pavementWidth,
+} from "./math";
 import { setRoadMedian } from "./road-median";
 import type { RoadSide } from "./road-sections";
 import type { Project, Road, RoadSection } from "./types";
@@ -32,24 +41,101 @@ const section = (road: Road): RoadSection =>
     ),
   ) as RoadSection;
 
+/** Shared by the hover preview and the committed replacement. Offset is in metres. */
+export function replacementRoad(
+  road: Road,
+  options: Partial<Road>,
+  name: string,
+  offset = 0,
+) {
+  const next = structuredClone({
+    ...road,
+    ...options,
+    name,
+    transitionMode: "direct" as const,
+  });
+  delete next.backwardLanesStart;
+  delete next.backwardLanesEnd;
+  delete next.sectionOffset;
+  Object.assign(next, options);
+  if (offset || options.sectionOffset)
+    next.sectionOffset = (options.sectionOffset ?? 0) + offset;
+  delete next.profile;
+  delete next.widthOrigin;
+  delete next.autoTaper;
+  if (!next.twoWay) delete next.median;
+  return next;
+}
+
+export type ReplacementAlignment = {
+  key: string;
+  label: string;
+  offset: number;
+};
+export function replacementAlignments(
+  road: Road,
+  options: Partial<Road>,
+  name: string,
+  t = 0.5,
+): ReplacementAlignment[] {
+  const next = replacementRoad(road, options, name),
+    n = normal(road, t);
+  const delta = (a: { x: number; z: number }, b: { x: number; z: number }) =>
+    (a.x - b.x) * n.x + (a.z - b.z) * n.z;
+  const quantize = (v: number) => Math.round(v * 1e6) / 1e6;
+  const middle = quantize(delta(center(road, t), center(next, t)));
+  const choices: ReplacementAlignment[] = [
+    { key: "center", label: "中线", offset: middle },
+  ];
+  const add = (key: string, label: string, offset: number) => {
+    offset = quantize(offset);
+    if (!choices.some((c) => Math.abs(c.offset - offset) < 0.05))
+      choices.push({ key, label, offset });
+  };
+  // Enumerate contiguous retained groups with matching traffic direction. A
+  // two-to-one replacement therefore exposes both original physical lanes.
+  for (const direction of [1, -1]) {
+    const old = Array.from({ length: laneCount(road) }, (_, i) => i).filter(
+      (i) => laneDirection(road, i) === direction,
+    );
+    const fresh = Array.from({ length: laneCount(next) }, (_, i) => i).filter(
+      (i) => laneDirection(next, i) === direction,
+    );
+    const count = Math.min(old.length, fresh.length);
+    if (!count) continue;
+    for (let a = 0; a <= old.length - count; a++)
+      for (let b = 0; b <= fresh.length - count; b++) {
+        const offsets = Array.from({ length: count }, (_, i) =>
+          delta(
+            lanePoint(road, old[a + i], t),
+            lanePoint(next, fresh[b + i], t),
+          ),
+        );
+        if (offsets.every((v) => Math.abs(v - offsets[0]) < 0.1))
+          add(
+            `lanes-${old[a]}-${fresh[b]}`,
+            `原第 ${old[a] + 1}${count > 1 ? `–${old[a + count - 1] + 1}` : ""} 车道`,
+            offsets[0],
+          );
+      }
+  }
+  const halfChange = (pavementWidth(next, t) - pavementWidth(road, t)) / 2;
+  add("left", "左缘", middle + halfChange);
+  add("right", "右缘", middle - halfChange);
+  return choices;
+}
+
 export function replaceRoadSection(
   project: Project,
   id: string,
   options: Partial<Road>,
   name: string,
+  offset = 0,
 ) {
   const road = project.roads.find((r) => r.id === id);
   if (!road) throw new Error("道路已不存在。");
   const before = section(road),
-    next = { ...road, ...options, name, transitionMode: "direct" as const };
-  delete next.backwardLanesStart;
-  delete next.backwardLanesEnd;
-  delete next.sectionOffset;
-  Object.assign(next, options);
-  delete next.profile;
-  delete next.widthOrigin;
-  delete next.autoTaper;
-  if (!next.twoWay) delete next.median;
+    next = replacementRoad(road, options, name, offset);
   if (JSON.stringify(before) === JSON.stringify(section(next))) return;
   next.replacedSection = before;
   Object.assign(road, next);

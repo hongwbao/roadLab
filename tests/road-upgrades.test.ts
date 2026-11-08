@@ -120,3 +120,64 @@ it("rejects malformed or nested road-section restore records", () => {
     expect(() => parseProject(JSON.stringify(project))).toThrow();
   }
 });
+
+it("offers center and both retained lanes, and commits exactly the preview geometry on curves", async () => {
+  const { replacementRoad, replacementAlignments } =
+    await import("../src/core/road-upgrades");
+  const project = emptyProject();
+  const road = makeRoad(
+    v(),
+    v(80, 30),
+    { width: 4, lanesStart: 2, lanesEnd: 2 },
+    v(30, 0),
+    v(60, 30),
+  );
+  project.roads = [road];
+  const options = { lanesStart: 1, lanesEnd: 1, twoWay: false };
+  const candidates = replacementAlignments(road, options, "one");
+  expect(candidates.map((c) => c.offset).sort((a, b) => a - b)).toEqual([
+    -2, 0, 2,
+  ]);
+  const before = structuredClone(road);
+  for (const [oldLane, offset] of [
+    [0, -2],
+    [1, 2],
+  ]) {
+    const preview = replacementRoad(before, options, "one", offset);
+    for (const t of [0, 0.2, 0.5, 0.8, 1])
+      expect(
+        dist(lanePoint(before, oldLane, t), lanePoint(preview, 0, t)),
+      ).toBeLessThan(1e-8);
+    replaceRoadSection(project, road.id, options, "one", offset);
+    expect({ ...road, replacedSection: undefined }).toEqual({
+      ...preview,
+      replacedSection: undefined,
+    });
+    revertRoadUpgrade(project, road.id, "replace");
+    expect(road).toEqual(before);
+  }
+});
+
+it("accounts for an asymmetric section and median in replacement alignment", async () => {
+  const { replacementRoad, replacementAlignments } =
+    await import("../src/core/road-upgrades");
+  const road = makeRoad(v(), v(80, 0), {
+    width: 4,
+    lanesStart: 3,
+    lanesEnd: 3,
+    backwardLanesStart: 2,
+    backwardLanesEnd: 2,
+    twoWay: true,
+    median: { kind: "concrete", width: 4 },
+    sectionOffset: 2,
+  });
+  const options = { lanesStart: 2, lanesEnd: 2, twoWay: true };
+  const c = replacementAlignments(road, options, "2+2").find(
+    (c) => c.key === "center",
+  )!;
+  const preview = replacementRoad(road, options, "2+2", c.offset);
+  const { center } = await import("../src/core/math");
+  expect(dist(center(road, 0.5), center(preview, 0.5))).toBeLessThan(1e-8);
+  expect(preview.median?.width).toBe(4);
+  expect(road.sectionOffset).toBe(2);
+});

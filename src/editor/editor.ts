@@ -1,8 +1,14 @@
-import { buildJunctions } from "../core/junctions";
+import { buildJunctions, roadRange } from "../core/junctions";
 import { setRoadMedian, withRoadMedian } from "../core/road-median";
 import { getAsset } from "../core/assets";
 import { LANE_WIDTH, standardizeLaneWidths } from "../core/road-standards";
-import { replaceRoadSection, revertRoadUpgrade } from "../core/road-upgrades";
+import {
+  replaceRoadSection,
+  revertRoadUpgrade,
+  replacementRoad,
+  replacementAlignments,
+  type ReplacementAlignment,
+} from "../core/road-upgrades";
 import { updateAutomaticTransitions } from "../core/auto-transitions";
 import {
   addRoadsideLanes,
@@ -29,6 +35,7 @@ import {
   maxGrade,
   mul,
   nearest,
+  normal,
   nodePoint,
   point,
   roadLength,
@@ -124,6 +131,59 @@ export class Editor {
   private upgradePreviewKey = "";
   private medianTarget?: { road: string; next: Road };
   private medianPreviewError = "";
+  replacementChoice = "auto";
+  replacementTarget?: {
+    road: string;
+    next: Road;
+    choices: ReplacementAlignment[];
+    selected: ReplacementAlignment;
+  };
+  get replacing() {
+    return this.tool === "upgrade" && this.upgradeMode === "replace";
+  }
+  get replacementLabel() {
+    return this.replacementChoice === "auto"
+      ? "自动"
+      : (this.replacementTarget?.choices.find(
+          (c) => c.key === this.replacementChoice,
+        )?.label ?? "中线");
+  }
+  cycleReplacement(direction = 1) {
+    const keys = [
+      "auto",
+      ...(this.replacementTarget?.choices.map((c) => c.key) ?? ["center"]),
+    ];
+    this.replacementChoice =
+      keys[
+        (Math.max(0, keys.indexOf(this.replacementChoice)) +
+          direction +
+          keys.length) %
+          keys.length
+      ];
+    this.upgradePreviewKey = "";
+    if (this.pointer)
+      this.updateUpgradePreview(
+        this.pointer,
+        this.replacementTarget
+          ? { road: this.replacementTarget.road }
+          : undefined,
+      );
+    this.onChange();
+  }
+  setRoadSpeed(id: string, speed: number) {
+    if (!Number.isFinite(speed) || speed < 5 || speed > 160) {
+      this.onToast("最高限速为 5–160 km/h。");
+      this.onChange();
+      return;
+    }
+    this.edit(
+      () => {
+        const road = this.project.roads.find((r) => r.id === id);
+        if (road) road.speed = Math.round(speed);
+      },
+      `最高限速已设为 ${Math.round(speed)} km/h`,
+    );
+  }
   get isWidening() {
     return this.tool === "upgrade" && this.upgradeMode === "widen";
   }
@@ -302,6 +362,7 @@ export class Editor {
     this.widening = undefined;
     this.upgradePreviewKey = "";
     this.medianTarget = undefined;
+    this.replacementTarget = undefined;
     if (this.drag?.moved && !this.drag.box) {
       this.project = this.drag.snapshot;
       this.stopForEdit();
@@ -845,6 +906,10 @@ export class Editor {
     return p;
   }
   cycleAlignment() {
+    if (this.replacing) {
+      this.cycleReplacement();
+      return;
+    }
     const modes: Alignment[] = ["auto", "center", "left", "right"];
     this.alignment = modes[(modes.indexOf(this.alignment) + 1) % modes.length];
     this.onChange();
@@ -1365,11 +1430,15 @@ export class Editor {
   setUpgradeMode(mode: typeof this.upgradeMode) {
     this.upgradeMode = mode;
     this.setTool("upgrade");
-    if (mode === "median" && this.pointer)
+    if (["median", "replace"].includes(mode) && this.pointer)
       this.updateUpgradePreview(this.pointer);
   }
   updateUpgradePreview(raw: V, hit?: Hit) {
-    if (this.tool !== "upgrade" || this.upgradeMode !== "median") return;
+    if (
+      this.tool !== "upgrade" ||
+      !["median", "replace"].includes(this.upgradeMode)
+    )
+      return;
     this.pointer = raw;
     const candidate = hit?.road
       ? this.project.roads.find((r) => r.id === hit.road)
@@ -1382,6 +1451,7 @@ export class Editor {
           )
           .sort((a, b) => a.near.distance - b.near.distance)[0]?.r;
     if (!candidate) {
+      this.replacementTarget = undefined;
       this.medianPreviewError = "";
       this.medianTarget = undefined;
       this.upgradePreviewKey = "";
@@ -1389,8 +1459,32 @@ export class Editor {
       this.onStatus(this.instructions());
       return;
     }
+    const asset = getAsset(this.assetId);
+    let choice: ReplacementAlignment | undefined,
+      choices: ReplacementAlignment[] = [];
+    if (this.replacing) {
+      const near = nearest(candidate, raw),
+        n = normal(candidate, near.t);
+      choices = replacementAlignments(
+        candidate,
+        asset.options,
+        asset.name,
+        near.t,
+      );
+      const base = replacementRoad(candidate, asset.options, asset.name),
+        c = center(base, near.t);
+      const offset = (raw.x - c.x) * n.x + (raw.z - c.z) * n.z;
+      choice =
+        choices.find((c) => c.key === this.replacementChoice) ??
+        [...choices].sort(
+          (a, b) => Math.abs(a.offset - offset) - Math.abs(b.offset - offset),
+        )[0];
+    }
     const key = JSON.stringify([
       candidate,
+      this.upgradeMode,
+      this.assetId,
+      choice?.offset,
       this.medianAction,
       this.medianWidth,
     ]);
@@ -1400,11 +1494,20 @@ export class Editor {
     this.medianPreviewError = "";
     this.scene.setHover();
     try {
-      const next = withRoadMedian(
-        candidate,
-        this.medianAction === "remove" ? null : this.medianWidth,
-      );
-      this.medianTarget = { road: candidate.id, next };
+      const next = this.replacing
+        ? replacementRoad(candidate, asset.options, asset.name, choice!.offset)
+        : withRoadMedian(
+            candidate,
+            this.medianAction === "remove" ? null : this.medianWidth,
+          );
+      if (this.replacing)
+        this.replacementTarget = {
+          road: candidate.id,
+          next,
+          choices,
+          selected: choice!,
+        };
+      else this.medianTarget = { road: candidate.id, next };
       const preview = {
         ...this.project,
         roads: structuredClone(
@@ -1413,9 +1516,13 @@ export class Editor {
       };
       updateAutomaticTransitions(preview);
       const old = new Map(this.project.roads.map((r) => [r.id, r]));
+      const previewJunctions = buildJunctions(preview),
+        existingJunctions = buildJunctions(this.project);
       const changed = preview.roads.filter(
         (r) =>
           r.id === next.id ||
+          JSON.stringify(roadRange(r, previewJunctions)) !==
+            JSON.stringify(roadRange(old.get(r.id)!, existingJunctions)) ||
           JSON.stringify(r.autoTaper) !==
             JSON.stringify(old.get(r.id)?.autoTaper) ||
           (medianExtent(r) > 0 &&
@@ -1428,13 +1535,15 @@ export class Editor {
       );
       this.scene.showPreviews(changed, false, {
         replaceExisting: true,
-        junctions: buildJunctions(preview),
+        junctions: previewJunctions,
         project: preview,
       });
       this.onStatus(
-        this.medianAction === "remove"
-          ? "移除中央隔离带 · 点击确认"
-          : `中央实体隔离带 ${this.medianWidth} m · 左键添加 · 右键移除`,
+        this.replacing
+          ? `${asset.name} · ${choice!.label} · 偏移 ${choice!.offset.toFixed(1)} m · Tab 切换对齐 · 左键替换，右键恢复`
+          : this.medianAction === "remove"
+            ? "移除中央隔离带 · 点击确认"
+            : `中央实体隔离带 ${this.medianWidth} m · 左键添加 · 右键移除`,
       );
     } catch (error) {
       this.medianPreviewError = (error as Error).message;
@@ -1491,6 +1600,26 @@ export class Editor {
       );
       this.scene.showPreviews([]);
       this.scene.showLaneTarget();
+      return;
+    }
+    if (this.replacing) {
+      this.updateUpgradePreview(hit?.position ?? raw, hit);
+      const target = this.replacementTarget;
+      if (!target) return;
+      this.edit(() => {
+        const asset = getAsset(this.assetId);
+        replaceRoadSection(
+          this.project,
+          target.road,
+          asset.options,
+          asset.name,
+          target.selected.offset,
+        );
+        reconnectIntersections(this.project);
+      }, "道路已替换");
+      this.upgradePreviewKey = "";
+      this.replacementTarget = undefined;
+      this.scene.showPreviews([]);
       return;
     }
     if (this.tool === "upgrade" && this.upgradeMode === "median") {
@@ -1806,7 +1935,10 @@ export class Editor {
         canvas.style.cursor = "crosshair";
         return;
       }
-      if (this.tool === "upgrade" && this.upgradeMode === "median") {
+      if (
+        this.tool === "upgrade" &&
+        ["median", "replace"].includes(this.upgradeMode)
+      ) {
         const hit = this.scene.hit(e.clientX, e.clientY);
         this.updateUpgradePreview(hit?.position ?? raw, hit);
         canvas.style.cursor = "crosshair";
@@ -1925,6 +2057,7 @@ export class Editor {
       this.junctionLaneTool.clearHover();
       this.scene.showBuildMarker();
       this.scene.showPreviews([]);
+      this.upgradePreviewKey = "";
       this.snapInfo = undefined;
       this.updateSnapFeedback();
     });
@@ -1968,6 +2101,11 @@ export class Editor {
         this.scene.setCameraKey(e.code, true);
         if (e.code !== "ShiftLeft" && e.code !== "ShiftRight")
           e.preventDefault();
+        return;
+      }
+      if (e.key === "Tab" && this.replacing && target === this.scene.el) {
+        e.preventDefault();
+        this.cycleReplacement(e.shiftKey ? -1 : 1);
         return;
       }
       if (e.key === "Tab" && this.building && target === this.scene.el) {
