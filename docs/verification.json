@@ -1,32 +1,72 @@
 {
-  "recorded_at": "2026-11-08T08:03:18.941772+00:00",
-  "latest_change": "以内置同名改进版存档替换旧苜蓿叶生成地图；32段重建主线和8条四车道原路120km/h，其余100km/h；8个外端延长40米，68条原路按120米上限分为120段，最长111.23米。保留8米高架、8条自定义车道连接、8个出入口及交通需求。",
-  "record_type": "改进版地图快速交付记录；仅最小数据摘要、固定快照Vite构建及服务重启。未运行测试、类型检查、浏览器或部署后验证；此前304核心与85浏览器等历史结果不覆盖新版120段地图。",
+  "recorded_at": "2026-11-08T09:38:34.971445+00:00",
+  "latest_change": "统一发布已完成的道路节点编辑/吸附/预览与标线、相邻相位连续绿灯/车尾占用、普通分段接头连续变道及接收车道出口准入guard；应用源固定8c4ed4c。未包含尚在开发的最少车辆选道与变道无额外减速批次。",
+  "record_type": "精确已提交源码git archive的统一候选有界整合验收与不可变部署记录；历史专项计数不合并冒充整合验收。",
   "checks": [
     {
-      "command": "read generated cloverleaf data summary",
-      "scope": "Minimal data summary only, not a test suite: exact named save68 roads becomes120 segments;48 at120km/h,72 at100km/h;longest111.2332614160934m;8 lane rules and8 ports retained/remapped;8m upper level,global1,base50.",
-      "artifact": "/home/bhw/repos/interchange-lab/.cache/builds/cloverleaf-improved-20261108-074953/data-summary.json"
+      "command": "git archive 8c4ed4c303e9c9682f3dbd6fb9b2d96ac3626193",
+      "scope": "320 tracked files exactly match final receiving r2 manifest;44 tracked road whitelist hashes match;all WIP/untracked files excluded",
+      "source_manifest_sha256": "53a904bedf7e3f0c7220fc35c374f764aed0e284dc99d7525d76835aae74886a",
+      "artifact": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-completed-8c4ed4c-20261108/manifest.json"
     },
     {
-      "command": "npx vite build --outDir /home/bhw/repos/interchange-lab/.cache/deployments/cloverleaf-improved-20261108-074953/dist",
+      "command": "npm run build",
       "exit_code": 0,
-      "scope": "Frozen git archive1b18b31; production build only;no typecheck."
+      "scope": "same frozen candidate whole-project tsc and production Vite bundle; existing chunk-size warning only",
+      "artifact": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-completed-8c4ed4c-20261108/build.log"
     },
     {
-      "command": "systemctl --user daemon-reload;systemctl --user restart roadlab.service",
+      "command": "vitest run (26 explicitly listed affected files)",
       "exit_code": 0,
-      "scope": "Fixed improved-cloverleaf release;no post-deploy verification."
+      "passed": 531,
+      "failed": 0,
+      "skipped": 0,
+      "scope": "single candidate; road/model/nodes/snapping/markings + routing/ordinary seams + signal programs/body occupancy + receiving queue forecast; not full test suite or400%pressure acceptance",
+      "artifact": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-completed-8c4ed4c-20261108/core-results.json",
+      "file_manifest": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-completed-8c4ed4c-20261108/core-run.json"
     },
     {
-      "command": "git push origin 1b18b317f19d485fc4724e92a5a9369542fa6cd0:main",
+      "command": "Playwright against actual production dist on5194",
+      "unique_cases": 37,
+      "passed": 37,
+      "failed": 0,
+      "skipped": 0,
+      "initial": {
+        "passed": 30,
+        "fixture_module_import_failures": 7
+      },
+      "followup": {
+        "passed": 7,
+        "failed": 0
+      },
+      "scope": "Only7 initial /src fixture-import failures rerun using exact candidate helper modules;original test files/assertions unchanged;page HTML/JS/CSS remain originaldist;helper server not deployed",
+      "artifact": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-completed-8c4ed4c-20261108/browser-final-summary.json",
+      "initial_report": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-completed-8c4ed4c-20261108/browser-results.json",
+      "followup_report": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-completed-8c4ed4c-20261108/browser-followup-results.json"
+    },
+    {
+      "command": "SMOKE_URL=http://127.0.0.1:5194/ npm run test:smoke",
       "exit_code": 0,
-      "scope": "Application commit pushed; documentation-only delivery follows."
+      "scope": "actual built default5-road/2-route app,canvas,page errors and HTTP resources",
+      "artifact": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-completed-8c4ed4c-20261108/production-smoke.log"
+    },
+    {
+      "command": "bundled runtime ordinary-seam/receiving-lane live integration",
+      "scope": "100km/h single480m vs4x120m actual adjacent change,minimum27.77777m/s in common x110..150;static matched receiver180steps,no connector entry,then2cars recover;no whole-route/no-extra-braking claim",
+      "artifact": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-completed-8c4ed4c-20261108/live-integration.json"
+    },
+    {
+      "command": "postdeploy Environment + HTTP hashes + production smoke + LAN bundled runtime checks",
+      "passed": true,
+      "resource_hash_checks": 8,
+      "health_checks": 2,
+      "scope": "local+LAN index/JS/CSS/worker byte equality; actual systemdEnvironment;local smoke;LAN ordinary-seam and receiver release;console/pageerrors empty",
+      "artifact": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-completed-8c4ed4c-20261108/postdeploy.json"
     }
   ],
   "limitations": [
     "原式吸附实验入口仍使用兼容最终道路应用；完整CourseSplit/节点几何/节点车道与后处理尚未接线，部分端点与附件行为有已知差异。正常入口继续兼容吸附。",
-    "此前高压路段过渡与路口仍检出车身重叠；本次固定ID对照保留失败断言，未通过完整交通压力验收。",
+    "历史压力记录（本轮未重复）：此前高压路段过渡与路口仍检出车身重叠；本次固定ID对照保留失败断言，未通过完整交通压力验收。",
     "完整PersonalCarAI已接实际引擎；完整导航窗口独立模块仍未接engine。",
     "行人、真实停车、公交、货运、应急任务和其他交通方式未完整实现。",
     "普通无灯路口的部分减速经完整原式lane-speed oracle复现，不能按旧恒速假设删除让行行为。",
@@ -37,10 +77,11 @@
     "提前准备针对自定义车道连线的出口约束；目标车道无空隙时减速等待，不能消除超饱和拥堵。道路替换右键恢复只保留该路段最近一次断面记录。",
     "新版苜蓿叶竖曲线需从地图菜单重新载入示例；用户已有存档保留原控制点，不强行调整旧匝道坡度。",
     "限速5–160km/h；普通编辑事务会暂停测试。虚线3米/6米按实际三维距离绘制，路段端头允许截短。",
-    "偏移连接识别同层真实车道接触或有效吸附；纯直线双路段接缝不会自动开放。连线节点扩展不创建街道路口铺面、斑马线或自动信号灯。",
+    "J工具覆盖真实普通连接节点及偏移/分合流；编辑辅助曲线不增加物理铺面、斑马线、停车或自动信号。实际多对多完整导流图仍未实现。",
     "UI基准来自本机40段苜蓿叶、9次同步setTool调用；不代表首次载图、真实道路几何修改、开始测试时网络初始化或所有规模地图的帧率。",
-    "本次500米预判与提前让行不保证饱和路网不堵；固定时钟高压缩窄道路完成292→332，但重叠样本121→219，穿模问题未解决且样本增加。无灯路口压力结果与上一版一致。",
-    "新出车分布下高压360秒过渡/路口车身重叠采样219→425、2→39，汇流0→0但排队20触发旧<20断言；本次未声称修复碰撞或消除高流量拥堵。50是用户确认的可调测试基准，并非所有道路的物理饱和流率。"
+    "历史压力记录（本轮未重复）：本次500米预判与提前让行不保证饱和路网不堵；固定时钟高压缩窄道路完成292→332，但重叠样本121→219，穿模问题未解决且样本增加。无灯路口压力结果与上一版一致。",
+    "历史压力记录（本轮未重复）：新出车分布下高压360秒过渡/路口车身重叠采样219→425、2→39，汇流0→0但排队20触发旧<20断言；本次未声称修复碰撞或消除高流量拥堵。50是用户确认的可调测试基准，并非所有道路的物理饱和流率。",
+    "本轮只发布已完成版本；最少车辆选道和变道本身不额外减速尚未交付。531核心与37浏览器是同一候选的有界验收，不是全量压力通过。"
   ],
   "previous_verified_stable_snapshot": {
     "recorded_at": "2026-11-06T11:58:12.595591+00:00",
@@ -390,19 +431,48 @@
     "healthz": "ok"
   },
   "current_deployment": {
-    "version": "cloverleaf-improved-20261108-074953",
+    "version": "integrated-completed-8c4ed4c-20261108",
     "url": "http://192.168.31.167:5173/",
-    "source_commit": "1b18b317f19d485fc4724e92a5a9369542fa6cd0",
-    "source_snapshot": "/home/bhw/repos/interchange-lab/.cache/builds/cloverleaf-improved-20261108-074953/source",
-    "release_directory": "/home/bhw/repos/interchange-lab/.cache/deployments/cloverleaf-improved-20261108-074953",
-    "bundle": "index-ULyyj4oK.js",
+    "source_commit": "8c4ed4c303e9c9682f3dbd6fb9b2d96ac3626193",
+    "source_snapshot": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-completed-8c4ed4c-20261108/source",
+    "source_manifest_sha256": "53a904bedf7e3f0c7220fc35c374f764aed0e284dc99d7525d76835aae74886a",
+    "release_directory": "/home/bhw/repos/interchange-lab/.cache/deployments/integrated-completed-8c4ed4c-20261108",
+    "manifest": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-completed-8c4ed4c-20261108/manifest.json",
+    "bundle": "index-vVGgQoLK.js",
+    "css": "index-Iu-XULhB.css",
+    "dist_sha256": {
+      "assets/cs2-path-worker-DFcwOVUm.js": "98850414cebb8d678b7082ac85feaef178e9d67b2bf4f7cbb1707e248b3b074c",
+      "assets/index-Iu-XULhB.css": "cd61ad4b99cf784e94c5c3d6c0eebfba5ddc2784b8cad9e135d1a7bbcfab519c",
+      "assets/index-vVGgQoLK.js": "629e14561b6f0d7bc3d10a8c6909230e0bc2a01725088ac3470a3f29f58ae3e1",
+      "index.html": "ec03453850f21c0d35ddc16d6762238411333246fbe71b658172ec30822c8502"
+    },
     "service_restart_exit_code": 0,
-    "post_deploy_verification": "not_run",
-    "tests": "not_run_per_quick_delivery_request",
-    "typecheck": "not_run",
-    "browser_verification": "not_run",
-    "previous_service_unit_backup": "/home/bhw/repos/interchange-lab/.cache/builds/cloverleaf-improved-20261108-074953/previous-roadlab.service",
-    "previous_release_pointer_backup": "/home/bhw/repos/interchange-lab/.cache/builds/cloverleaf-improved-20261108-074953/previous-current-preview-release.json"
+    "post_deploy_verification": "passed;8resourcehash+2health+localproduction smoke+LAN limited runtime+emptyconsoleerrors",
+    "tests": {
+      "affected_core_files": 26,
+      "passed": 531,
+      "failed": 0,
+      "skipped": 0
+    },
+    "typecheck": "passed in same npm run build",
+    "browser_verification": {
+      "unique_passed": 37,
+      "first_attempt": {
+        "passed": 30,
+        "fixture_import_failures": 7
+      },
+      "followup_passed": 7,
+      "artifact": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-completed-8c4ed4c-20261108/browser-final-summary.json"
+    },
+    "previous_release": {
+      "id": "cloverleaf-improved-20261108-074953",
+      "commit": "1b18b317f19d485fc4724e92a5a9369542fa6cd0",
+      "source": "/home/bhw/repos/interchange-lab/.cache/builds/cloverleaf-improved-20261108-074953/source",
+      "release": "/home/bhw/repos/interchange-lab/.cache/deployments/cloverleaf-improved-20261108-074953"
+    },
+    "rollback_directory": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-completed-8c4ed4c-20261108/rollback",
+    "service_environment": "MainPID=1581410\nEnvironment=ROADLAB_PORT=5173 ROADLAB_DIST_DIR=/home/bhw/repos/interchange-lab/.cache/deployments/integrated-completed-8c4ed4c-20261108/dist\nActiveState=active\nSubState=running\n",
+    "postdeploy_artifact": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-completed-8c4ed4c-20261108/postdeploy.json"
   },
   "previous_cs2_preview_checks": [
     {
@@ -605,11 +675,17 @@
   "known_failing_checks": [
     {
       "test": "tests/traffic-lights.test.ts: continues serving traffic across multiple signal cycles without body overlap",
-      "status": "known failure in preceding release;not rerun in this release",
+      "status": "historical failure;exact unchanged signal case passed on8c4ed4c;general pressure acceptance remains incomplete",
       "last_observed_release": "junction-controls-20261107-093858",
       "baseline_observed_overlap_samples": 43,
       "last_observed_overlap_samples": 51,
-      "scope": "Retained prior protected-pressure assertion;not included in271 scoped passing checks and not rerun in this release;no full traffic pressure acceptance."
+      "scope": "Historical271-case delivery excluded this check; current531-case candidate explicitly reruns it unchanged and passes. Do not generalize to sustained-demand overlap/queue checks.",
+      "current_scoped_recheck": {
+        "source_commit": "8c4ed4c303e9c9682f3dbd6fb9b2d96ac3626193",
+        "status": "passed unchanged in the26-file531-case candidate run",
+        "artifact": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-completed-8c4ed4c-20261108/core-results.json",
+        "scope": "this exact signal test only;historical pressure observations retained;does not prove general overlap resolved"
+      }
     },
     {
       "test": "tests/traffic.test.ts: sustained transition/junction demand body separation",
@@ -701,8 +777,8 @@
   "github_sync": {
     "repository": "https://github.com/hongwbao/roadLab",
     "branch": "main",
-    "pushed_application_commit": "b035ef390bba2c260bc7991fc696b217483b7452",
-    "scope": "codepush succeeded;documentation follows"
+    "pushed_application_commit": "8c4ed4c303e9c9682f3dbd6fb9b2d96ac3626193",
+    "scope": "exact application8c plus only README/verification delivery record commit; explicit delivery SHA:main;GitHub Actions not accepted in this delivery"
   },
   "previous_road_expansion_deployment": {
     "version": "road-expansion-20261107-103432",
@@ -1717,6 +1793,96 @@
     "traffic_multiplier": 1,
     "authored_destination_shares": false,
     "existing_saves": "Unchanged;reload builtin cloverleaf example from map menu.",
-    "validation_scope": "Build and minimal generated-data summary only;historical checks do not validate this120-segment map."
+    "validation_scope": "Original1b18b31 quick delivery was build/data-summary only; current8c4ed4c has the bounded unified531core/37browser and postdeploy checks listed at top;no full400%pressure acceptance.",
+    "original_delivery_validation_scope": "Build and minimal generated-data summary only;historical checks do not validate this120-segment map."
+  },
+  "previous_completed_systems_delivery_record": {
+    "recorded_at": "2026-11-08T08:03:18.941772+00:00",
+    "latest_change": "以内置同名改进版存档替换旧苜蓿叶生成地图；32段重建主线和8条四车道原路120km/h，其余100km/h；8个外端延长40米，68条原路按120米上限分为120段，最长111.23米。保留8米高架、8条自定义车道连接、8个出入口及交通需求。",
+    "record_type": "改进版地图快速交付记录；仅最小数据摘要、固定快照Vite构建及服务重启。未运行测试、类型检查、浏览器或部署后验证；此前304核心与85浏览器等历史结果不覆盖新版120段地图。",
+    "checks": [
+      {
+        "command": "read generated cloverleaf data summary",
+        "scope": "Minimal data summary only, not a test suite: exact named save68 roads becomes120 segments;48 at120km/h,72 at100km/h;longest111.2332614160934m;8 lane rules and8 ports retained/remapped;8m upper level,global1,base50.",
+        "artifact": "/home/bhw/repos/interchange-lab/.cache/builds/cloverleaf-improved-20261108-074953/data-summary.json"
+      },
+      {
+        "command": "npx vite build --outDir /home/bhw/repos/interchange-lab/.cache/deployments/cloverleaf-improved-20261108-074953/dist",
+        "exit_code": 0,
+        "scope": "Frozen git archive1b18b31; production build only;no typecheck."
+      },
+      {
+        "command": "systemctl --user daemon-reload;systemctl --user restart roadlab.service",
+        "exit_code": 0,
+        "scope": "Fixed improved-cloverleaf release;no post-deploy verification."
+      },
+      {
+        "command": "git push origin 1b18b317f19d485fc4724e92a5a9369542fa6cd0:main",
+        "exit_code": 0,
+        "scope": "Application commit pushed; documentation-only delivery follows."
+      }
+    ],
+    "current_deployment": {
+      "version": "cloverleaf-improved-20261108-074953",
+      "url": "http://192.168.31.167:5173/",
+      "source_commit": "1b18b317f19d485fc4724e92a5a9369542fa6cd0",
+      "source_snapshot": "/home/bhw/repos/interchange-lab/.cache/builds/cloverleaf-improved-20261108-074953/source",
+      "release_directory": "/home/bhw/repos/interchange-lab/.cache/deployments/cloverleaf-improved-20261108-074953",
+      "bundle": "index-ULyyj4oK.js",
+      "service_restart_exit_code": 0,
+      "post_deploy_verification": "not_run",
+      "tests": "not_run_per_quick_delivery_request",
+      "typecheck": "not_run",
+      "browser_verification": "not_run",
+      "previous_service_unit_backup": "/home/bhw/repos/interchange-lab/.cache/builds/cloverleaf-improved-20261108-074953/previous-roadlab.service",
+      "previous_release_pointer_backup": "/home/bhw/repos/interchange-lab/.cache/builds/cloverleaf-improved-20261108-074953/previous-current-preview-release.json"
+    },
+    "github_sync": {
+      "repository": "https://github.com/hongwbao/roadLab",
+      "branch": "main",
+      "pushed_application_commit": "b035ef390bba2c260bc7991fc696b217483b7452",
+      "scope": "codepush succeeded;documentation follows"
+    },
+    "known_failing_checks": [
+      {
+        "test": "tests/traffic-lights.test.ts: continues serving traffic across multiple signal cycles without body overlap",
+        "status": "known failure in preceding release;not rerun in this release",
+        "last_observed_release": "junction-controls-20261107-093858",
+        "baseline_observed_overlap_samples": 43,
+        "last_observed_overlap_samples": 51,
+        "scope": "Retained prior protected-pressure assertion;not included in271 scoped passing checks and not rerun in this release;no full traffic pressure acceptance."
+      },
+      {
+        "test": "tests/traffic.test.ts: sustained transition/junction demand body separation",
+        "status": "failed;controlled fixed-ID metrics identical to preceding cloverleaf release",
+        "baseline_overlap_samples": {
+          "transition": 121,
+          "junction": 2
+        },
+        "current_overlap_samples": {
+          "transition": 121,
+          "junction": 2
+        },
+        "scope": "assertions retained;merge pressure0overlap andpassed;no full pressure acceptance"
+      }
+    ]
+  },
+  "completed_systems_release": {
+    "included_commits": [
+      "273c762",
+      "3f7be60",
+      "384785c",
+      "4b52814",
+      "55acc5ee",
+      "f01a582",
+      "8c4ed4c"
+    ],
+    "excluded_work": [
+      "least occupied route-compatible lane selection",
+      "no lane-change-only braking"
+    ],
+    "preserved_untracked": "src/simulation/cs2-node-connect-positions.ts",
+    "validation_boundary": "all current passing counts originate from this exact source;previous feature snapshots remain historical only",
+    "historical_pressure": "General sustained-demand overlap/queue failures retained;no repeat400%stress andno claim collision bugs solved;normal congestion is permitted."
   }
 }
