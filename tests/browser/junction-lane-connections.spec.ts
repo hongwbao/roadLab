@@ -40,6 +40,294 @@ const project = (page: Page) =>
 const point = (page: Page, p: { x: number; y: number; z: number }) =>
   page.evaluate((p) => (window as any).lab.worldToScreen(p), p);
 
+test("a lateral and graded seam stays selectable after all exits close, then restores and saves a real untrimmed connection", async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.goto("/");
+  await page.waitForFunction(() => !!(window as any).lab);
+  const position = await page.evaluate(() => {
+    const e = (window as any).lab.editor,
+      road = (id: string, x0: number, x1: number, z: number, y: number) => ({
+        id,
+        name: id,
+        width: 4,
+        speed: 60,
+        kind: "road",
+        align: "center",
+        lanesStart: 2,
+        lanesEnd: 2,
+        twoWay: false,
+        transitionStart: 0,
+        transitionEnd: 1,
+        transitionMode: "direct",
+        knots: [
+          {
+            p: { x: x0, y, z },
+            incoming: { x: x0, y, z },
+            outgoing: { x: x0 + (x1 - x0) / 3, y, z },
+            at: 0,
+          },
+          {
+            p: { x: x1, y, z },
+            incoming: { x: x1 - (x1 - x0) / 3, y, z },
+            outgoing: { x: x1, y, z },
+            at: 1,
+          },
+        ],
+      });
+    e.edit(() => {
+      e.project.roads = [
+        road("offset-a", -80, 0, 0, 0),
+        road("offset-b", 0, 80, 1, 0.49),
+      ];
+      e.project.ports = [];
+      delete e.project.junctionLaneConnections;
+      delete e.project.signals;
+    });
+    e.scene.fit(e.project.roads);
+    e.scene.top();
+    const nodes = e.junctionLaneTool.nodes;
+    if (nodes.length !== 1 || nodes[0].kind !== "continuation")
+      throw new Error("Expected one actual offset seam");
+    return nodes[0].position;
+  });
+  const selectNode = async () => {
+    await page.locator('[data-tool="turn"]').click();
+    const p = await point(page, position);
+    await page.mouse.click(p.x, p.y);
+    await expect(page.locator("#turn-panel")).toContainText(
+      "道路接头（2 条道路）",
+    );
+    if (
+      (await page.locator(".junction-lane-keyboard").getAttribute("open")) ===
+      null
+    )
+      await page.locator(".junction-lane-keyboard summary").click();
+  };
+  await selectNode();
+  const sources = await page
+    .locator('[data-junction-lane-action="choose-source"]')
+    .evaluateAll((buttons) =>
+      buttons.map((button) => (button as HTMLElement).dataset.junctionLaneKey!),
+    );
+  expect(sources).toHaveLength(2);
+  for (const key of sources) {
+    await page
+      .locator(
+        `[data-junction-lane-action="choose-source"][data-junction-lane-key="${key}"]`,
+      )
+      .click();
+    await page.locator('[data-junction-lane-action="ban-lane"]').click();
+  }
+  expect(
+    (await project(page)).junctionLaneConnections.every(
+      (rule: any) => rule.to.length === 0,
+    ),
+  ).toBe(true);
+  await prepare(page);
+  expect(
+    await page.evaluate(() => [
+      ...(
+        window as any
+      ).lab.editor.simulation.sourceEngine.network.connectionLaneIds.keys(),
+    ]),
+  ).toEqual([]);
+  await page.locator('[data-tool="select"]').click();
+  await selectNode();
+  await page
+    .locator(
+      '[data-junction-lane-action="choose-source"][data-junction-lane-key="offset-a:1:0"]',
+    )
+    .click();
+  await page.locator('[data-junction-lane-action="restore-lane"]').click();
+  await prepare(page);
+  expect(
+    await page.evaluate(() => [
+      ...(
+        window as any
+      ).lab.editor.simulation.sourceEngine.network.connectionLaneIds.keys(),
+    ]),
+  ).toEqual(["offset-a:0>offset-b:0"]);
+  const link = await page.evaluate(() =>
+    (window as any).lab.editor.junctionLaneTool.layout.candidates.find(
+      (l: any) => l.id === "offset-a:0>offset-b:1",
+    ),
+  );
+  expect(link).toBeTruthy();
+  const from = await point(page, link.from.position),
+    to = await point(page, link.to.position);
+  await page.mouse.move(from.x, from.y);
+  await page.mouse.down();
+  await page.mouse.move(to.x, to.y, { steps: 8 });
+  await page.mouse.up();
+  await page.locator("#viewport").focus();
+  await page.keyboard.press("Control+s");
+  const saved = (await project(page)).junctionLaneConnections;
+  await page.reload();
+  await page.waitForFunction(() => !!(window as any).lab);
+  expect((await project(page)).junctionLaneConnections).toEqual(saved);
+  await prepare(page);
+  const actual = await page.evaluate(() => {
+    const e = (window as any).lab.editor,
+      engine = e.simulation.sourceEngine;
+    return {
+      links: [...engine.network.connectionLaneIds.keys()],
+      trims: [...engine.trims.values()],
+      junctions: engine.junctions.length,
+      nodes: e.junctionLaneTool.nodes.length,
+    };
+  });
+  expect(actual.links.sort()).toEqual([
+    "offset-a:0>offset-b:0",
+    "offset-a:0>offset-b:1",
+  ]);
+  expect(actual.trims).toEqual([
+    { start: 0, end: 0 },
+    { start: 0, end: 0 },
+  ]);
+  expect(actual.junctions).toBe(0);
+  expect(actual.nodes).toBe(1);
+  expect(errors).toEqual([]);
+});
+
+test("ordinary bidirectional seams support real drag, reject invalid drops and preserve camera, history and save", async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.goto("/");
+  await page.waitForFunction(() => !!(window as any).lab);
+  await page.evaluate(() => {
+    const e = (window as any).lab.editor,
+      road = (id: string, x0: number, x1: number) => ({
+        id,
+        name: id,
+        width: 4,
+        speed: 60,
+        kind: "road",
+        align: "center",
+        lanesStart: 3,
+        lanesEnd: 3,
+        backwardLanesStart: 2,
+        backwardLanesEnd: 2,
+        twoWay: true,
+        median: { kind: "concrete", width: 2 },
+        sectionOffset: 1,
+        transitionStart: 0,
+        transitionEnd: 1,
+        transitionMode: "direct",
+        knots: [
+          {
+            p: { x: x0, y: 0, z: 0 },
+            incoming: { x: x0, y: 0, z: 0 },
+            outgoing: { x: x0 + (x1 - x0) / 3, y: 0, z: 0 },
+            at: 0,
+          },
+          {
+            p: { x: x1, y: 0, z: 0 },
+            incoming: { x: x1 - (x1 - x0) / 3, y: 0, z: 0 },
+            outgoing: { x: x1, y: 0, z: 0 },
+            at: 1,
+          },
+        ],
+      });
+    e.edit(() => {
+      e.project.roads = [road("seam-a", -100, 0), road("seam-b", 0, 100)];
+      e.project.ports = [];
+      delete e.project.junctionLaneConnections;
+      delete e.project.signals;
+    });
+    e.scene.fit(e.project.roads);
+    e.scene.top();
+  });
+  await page.locator('[data-tool="turn"]').click();
+  const node = await point(page, { x: 0, y: 0, z: 0 });
+  await page.mouse.click(node.x, node.y);
+  await expect(page.locator("#turn-panel")).toContainText(
+    "道路接头（2 条道路）",
+  );
+  const link = await page.evaluate(() => {
+    const t = (window as any).lab.editor.junctionLaneTool;
+    return t.layout.candidates.find((l: any) => l.id === "seam-a:2>seam-b:4");
+  });
+  expect(link).toBeTruthy();
+  const source = await point(page, link.from.position),
+    target = await point(page, link.to.position),
+    camera = () =>
+      page.evaluate(() => {
+        const s = (window as any).lab.editor.scene;
+        return {
+          p: s.camera.position.toArray(),
+          target: s.controls.target.toArray(),
+          enabled: s.controls.enabled,
+        };
+      }),
+    before = await camera();
+  await page.mouse.move(source.x, source.y);
+  await page.mouse.down();
+  await page.mouse.move(target.x, target.y, { steps: 10 });
+  await page.mouse.up();
+  expect(await camera()).toEqual(before);
+  const rules = () => project(page).then((p) => p.junctionLaneConnections);
+  expect(await rules()).toEqual([
+    {
+      from: { road: "seam-a", lane: 2, end: 1 },
+      to: [
+        { road: "seam-b", lane: 2, end: 0 },
+        { road: "seam-b", lane: 4, end: 0 },
+      ],
+    },
+  ]);
+  await prepare(page);
+  expect(
+    await page.evaluate(
+      (id) =>
+        (
+          window as any
+        ).lab.editor.simulation.sourceEngine.network.connectionLaneIds.has(id),
+      link.id,
+    ),
+  ).toBe(true);
+  const afterDrag = await rules();
+  // Incoming targets and blank terrain never create rules or move the camera.
+  const invalid = await page.evaluate(() =>
+    (window as any).lab.editor.junctionLaneTool.ports.find(
+      (p: any) => p.road === "seam-b" && p.kind === "in",
+    ),
+  );
+  const invalidPoint = await point(page, invalid.position);
+  for (const end of [invalidPoint, { x: target.x + 90, y: target.y + 70 }]) {
+    await page.mouse.move(source.x, source.y);
+    await page.mouse.down();
+    await page.mouse.move(end.x, end.y, { steps: 6 });
+    await page.mouse.up();
+    expect(await rules()).toEqual(afterDrag);
+    expect(await camera()).toEqual(before);
+  }
+  // Dragging an existing connection remains idempotent; a target click removes it.
+  await page.mouse.move(source.x, source.y);
+  await page.mouse.down();
+  await page.mouse.move(target.x, target.y, { steps: 6 });
+  await page.mouse.up();
+  expect(await rules()).toEqual(afterDrag);
+  await page.mouse.click(target.x, target.y);
+  expect((await rules())[0].to).toEqual([{ road: "seam-b", lane: 2, end: 0 }]);
+  await page.locator('[data-action="undo"]').click();
+  expect(await rules()).toEqual(afterDrag);
+  await page.locator('[data-action="undo"]').click();
+  expect(await rules()).toBeUndefined();
+  await page.locator('[data-action="redo"]').click();
+  expect(await rules()).toEqual(afterDrag);
+  await page.locator("#viewport").focus();
+  await page.keyboard.press("Control+s");
+  await page.reload();
+  await page.waitForFunction(() => !!(window as any).lab);
+  expect(await rules()).toEqual(afterDrag);
+  expect(errors).toEqual([]);
+});
+
 test("junction dots add a previously unavailable destination, remove it, save a closed lane and restore auto", async ({
   page,
 }) => {

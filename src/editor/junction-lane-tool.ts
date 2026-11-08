@@ -1,4 +1,7 @@
-import { buildLaneJunctions } from "../core/lane-junctions";
+import {
+  buildLaneJunctions,
+  isLaneJunctionEditable,
+} from "../core/lane-junctions";
 import { connections } from "../core/model";
 import {
   junctionLaneKey,
@@ -24,15 +27,17 @@ export class JunctionLaneTool {
   layout?: JunctionLaneLayout;
   private signature = "";
   private hover?: JunctionLaneHit;
+  private drag?: { from: JunctionLaneEndpoint; x: number; y: number };
   constructor(private editor: Editor) {
     editor.scene.scene.add(this.overlay.group);
   }
-  get junction() {
-    return buildLaneJunctions(this.editor.project).find(
-      (j) =>
-        j.id === this.selected &&
-        (j.arms.length >= 3 || j.kind === "attachment"),
+  get nodes() {
+    return buildLaneJunctions(this.editor.project).filter(
+      isLaneJunctionEditable,
     );
+  }
+  get junction() {
+    return this.nodes.find((j) => j.id === this.selected);
   }
   get ports() {
     return this.layout?.ports ?? [];
@@ -60,6 +65,7 @@ export class JunctionLaneTool {
   }
   sync() {
     if (this.editor.tool !== "turn") {
+      this.cancelDrag();
       this.overlay.group.visible = false;
       this.hover = undefined;
       return;
@@ -111,8 +117,7 @@ export class JunctionLaneTool {
     );
   }
   private junctionHit(x: number, y: number) {
-    return buildLaneJunctions(this.editor.project)
-      .filter((j) => j.arms.length >= 3 || j.kind === "attachment")
+    return this.nodes
       .map((j) => {
         const p = this.editor.scene.project(j.position),
           edge = this.editor.scene.project({
@@ -197,7 +202,8 @@ export class JunctionLaneTool {
       this.overlay.setState();
       this.overlay.previewTo();
       this.editor.onChange();
-    } else this.editor.onToast("请点击路口或偏移吸附接头，显示车道连线。");
+    } else
+      this.editor.onToast("请点击两条道路相连的接头或路口，显示车道连线。");
   }
   move(x: number, y: number) {
     this.hover = this.overlay.hit(x, y, (p) => this.editor.scene.project(p));
@@ -231,7 +237,54 @@ export class JunctionLaneTool {
       this.selectedConnection,
     );
   }
+  /** Return true only for an incoming dot, so camera drags elsewhere still work. */
+  beginDrag(x: number, y: number) {
+    if (this.editor.tool !== "turn") return false;
+    const hit = this.overlay.hit(x, y, (p) => this.editor.scene.project(p));
+    if (hit?.kind !== "port" || hit.port.kind !== "in") return false;
+    const from = {
+      road: hit.port.road,
+      lane: hit.port.lane,
+      end: hit.port.end,
+    };
+    this.drag = { from, x, y };
+    this.selectedFrom = from;
+    this.selectedConnection = undefined;
+    this.hover = hit;
+    this.overlay.setState(from, hit);
+    this.overlay.previewTo();
+    this.editor.onChange();
+    return true;
+  }
+  /** A drag adds a destination once. A click on an incoming dot only selects it. */
+  endDrag(x: number, y: number) {
+    const drag = this.drag;
+    if (!drag) return false;
+    this.drag = undefined;
+    this.overlay.previewTo();
+    if (Math.hypot(x - drag.x, y - drag.y) < 5) return true;
+    const hit = this.overlay.hit(x, y, (p) => this.editor.scene.project(p));
+    if (hit?.kind !== "port" || hit.port.kind !== "out") return true;
+    const candidate = this.layout?.candidates.find(
+      (link) =>
+        link.from.key === junctionLaneKey(drag.from) &&
+        link.to.key === hit.port.key,
+    );
+    if (!candidate) {
+      this.editor.onToast("这两个车道不能连接，请选择同层节点的合法出口。");
+      return true;
+    }
+    this.selectedFrom = drag.from;
+    if (!this.destinations.some((link) => link.id === candidate.id))
+      this.setDestination(hit.port, true);
+    return true;
+  }
+  cancelDrag() {
+    this.drag = undefined;
+    this.overlay.previewTo();
+  }
   rightClick(x: number, y: number) {
+    this.cancelDrag();
     const hit = this.overlay.hit(x, y, (p) => this.editor.scene.project(p));
     if (hit?.kind === "link") {
       this.selectedFrom = {

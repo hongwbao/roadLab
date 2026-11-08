@@ -1,4 +1,7 @@
-import { buildLaneJunctions } from "./core/lane-junctions";
+import {
+  buildLaneJunctions,
+  isLaneJunctionEditable,
+} from "./core/lane-junctions";
 import { bindTrafficDemandPanel } from "./ui/traffic-demand-panel";
 import {
   sourceDemandRate,
@@ -276,7 +279,7 @@ function render() {
     lookahead.value = String(editor.project.laneLookahead ?? 500);
   document.querySelector("#scene-name")!.textContent = editor.project.name;
   document.querySelector("#scene-summary")!.textContent =
-    `${editor.project.roads.length} 段道路 · ${buildLaneJunctions(editor.project).filter((j) => j.arms.length >= 3 || j.kind === "attachment").length} 处路口`;
+    `${editor.project.roads.length} 段道路 · ${buildLaneJunctions(editor.project).filter(isLaneJunctionEditable).length} 处连接节点`;
   document.querySelector<HTMLElement>("#road-dock")!.hidden =
     !dockOpen ||
     editor.tool === "boundary" ||
@@ -394,8 +397,6 @@ function render() {
       ["smooth", "direct"].includes(editor.upgradeMode));
   document.querySelector<HTMLElement>(".build-height")!.hidden = sectionMode;
   document.querySelector<HTMLElement>("#snap-toggle")!.hidden = sectionMode;
-  document.querySelector<HTMLElement>("#alignment-mode")!.hidden =
-    sectionMode || editor.draw.twoWay;
   document.querySelector<HTMLElement>("#median-upgrade-options")!.hidden =
     !medianMode;
   document.querySelector<HTMLElement>("#median-widths")!.hidden =
@@ -451,15 +452,13 @@ function render() {
   play.innerHTML = `${icon(editor.simulation.running ? "pause" : "play")}<span>${editor.simulation.running ? "暂停测试" : "开始测试"}</span>`;
   const alignment =
     document.querySelector<HTMLButtonElement>("#alignment-mode")!;
-  alignment.hidden = editor.draw.twoWay && !editor.replacing;
+  alignment.hidden = sectionMode;
   alignment.title = editor.replacing
     ? "鼠标位置自动对齐车道；Tab 或点击此处固定对齐方式"
     : "切换道路建造对齐方式";
   alignment.textContent = editor.replacing
     ? `替换对齐：${editor.replacementLabel}`
     : `对齐：${{ auto: "自动", center: "中线", left: "左缘", right: "右缘" }[editor.alignment]}`;
-  if (sectionMode)
-    document.querySelector<HTMLElement>("#alignment-mode")!.hidden = true;
   document.querySelector("#build-height-label")!.textContent =
     editor.draw.endHeight === 0 ? "地面" : `${editor.draw.endHeight} m`;
   document.querySelector("#asset-description")!.textContent = medianMode

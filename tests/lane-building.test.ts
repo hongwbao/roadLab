@@ -1,6 +1,19 @@
 import { describe, expect, it } from "vitest";
-import { dist, lanePoint, tangent, v } from "../src/core/math";
-import { attachLanes, endpointLaneGroups } from "../src/core/lane-rules";
+import {
+  add,
+  dist,
+  laneCount,
+  laneDirection,
+  lanePoint,
+  mul,
+  tangent,
+  v,
+} from "../src/core/math";
+import {
+  attachmentAllows,
+  attachLanes,
+  endpointLaneGroups,
+} from "../src/core/lane-rules";
 import { laneAnchors } from "../src/core/snapping";
 import {
   connections,
@@ -12,6 +25,9 @@ import {
   splitRoad,
 } from "../src/core/model";
 import { Simulation } from "../src/simulation/simulation";
+import { setJunctionLaneRule } from "../src/core/junction-lane-connections";
+import { Editor } from "../src/editor/editor";
+import type { Road, V } from "../src/core/types";
 
 const options = (lanes: number) => ({
   lanesStart: lanes,
@@ -223,3 +239,353 @@ it("permits a new explicit lane attachment to a road that already has another in
   ).toEqual([2]);
   expect(connections(parseProject(JSON.stringify(p)))).toEqual(links);
 });
+
+it("keeps the spare lane in a 2+1 → 3 join available without letting a third road steal the chosen group", () => {
+  const p = emptyProject(),
+    reference = makeRoad(v(-70, 0), v(), { ...options(2), width: 4 }),
+    target = makeRoad(v(), v(70, 0), { ...options(3), width: 4 });
+  attachLanes(target, 0, reference, 1, [0, 1], [0, 1]);
+  const spare = lanePoint(target, 2, 0),
+    chosen = lanePoint(target, 0, 0),
+    branch = makeRoad(add(spare, v(-70, 25)), spare, {
+      ...options(1),
+      width: 4,
+    }),
+    thief = makeRoad(add(chosen, v(-60, -20)), chosen, {
+      ...options(1),
+      width: 4,
+    });
+  p.roads = [reference, target, branch, thief];
+  const links = connections(p);
+  expect(
+    links
+      .filter((c) => c.from.road === reference.id && c.to.road === target.id)
+      .map((c) => [c.from.lane, c.to.lane]),
+  ).toEqual([
+    [0, 0],
+    [1, 1],
+  ]);
+  expect(
+    links
+      .filter((c) => c.from.road === branch.id && c.to.road === target.id)
+      .map((c) => c.to.lane),
+  ).toEqual([2]);
+  expect(
+    links.filter((c) => c.from.road === thief.id && c.to.road === target.id),
+  ).toEqual([]);
+  expect(attachmentAllows(target.attachments?.start, 2, reference, 1, 1)).toBe(
+    false,
+  );
+  expect(attachmentAllows(target.attachments?.start, 2, branch, 1, 0)).toBe(
+    false,
+  );
+  expect(attachmentAllows(target.attachments?.start, 2, reference, 0, 1)).toBe(
+    false,
+  );
+  expect(target.autoTaper).toBeUndefined();
+  expect(connections(parseProject(JSON.stringify(p)))).toEqual(links);
+  setJunctionLaneRule(p, { road: branch.id, lane: 0, end: 1 }, []);
+  expect(connections(p).filter((c) => c.from.road === branch.id)).toEqual([]);
+  expect(
+    connections(parseProject(JSON.stringify(p))).filter(
+      (c) => c.from.road === branch.id,
+    ),
+  ).toEqual([]);
+});
+
+it.each([1, -1] as const)(
+  "persists both aligned carriageways when direction %i is selected",
+  (direction) => {
+    const p = emptyProject(),
+      reference = makeRoad(v(-70, 0), v(), {
+        ...options(2),
+        twoWay: true,
+        width: 4,
+        median: { kind: "concrete", width: 2 },
+      }),
+      own = makeRoad(v(), v(70, 0), {
+        ...options(2),
+        twoWay: true,
+        width: 4,
+        median: { kind: "concrete", width: 2 },
+      }),
+      group = endpointLaneGroups(reference, 1, own, 0).find(
+        (a) => laneDirection(own, a.ownLanes[0]) === direction,
+      )!;
+    attachLanes(own, 0, reference, 1, group.lanes, group.ownLanes);
+    p.roads = [reference, own];
+    expect(own.attachments?.start?.ownLanes).toHaveLength(4);
+    expect(
+      new Set(
+        own.attachments?.start?.ownLanes.map((lane) =>
+          laneDirection(own, lane),
+        ),
+      ).size,
+    ).toBe(2);
+    const links = connections(p);
+    expect(links.filter((c) => c.from.road === reference.id)).toHaveLength(2);
+    expect(links.filter((c) => c.from.road === own.id)).toHaveLength(2);
+    expect(tangent(own, 0).x).toBeCloseTo(1);
+    expect(connections(parseProject(JSON.stringify(p)))).toEqual(links);
+  },
+);
+
+it("leaves an unaligned return direction free for valid geometric links to the target and a third road", () => {
+  const p = emptyProject(),
+    reference = makeRoad(v(-70, 0), v(), {
+      ...options(2),
+      twoWay: true,
+      width: 4,
+      median: { kind: "concrete", width: 2 },
+    }),
+    own = makeRoad(v(), v(70, 0), {
+      ...options(2),
+      twoWay: true,
+      width: 4,
+      backwardLanesStart: 3,
+      backwardLanesEnd: 3,
+      median: { kind: "concrete", width: 1 },
+    }),
+    group = endpointLaneGroups(reference, 1, own, 0).find(
+      (a) => laneDirection(own, a.ownLanes[0]) === 1,
+    )!;
+  attachLanes(own, 0, reference, 1, group.lanes, group.ownLanes);
+  const returnPoint = lanePoint(own, 0, 0),
+    third = makeRoad(returnPoint, add(returnPoint, v(-60, -20)), {
+      ...options(1),
+      width: 4,
+    });
+  p.roads = [reference, own, third];
+  expect(
+    own.attachments?.start?.ownLanes.every(
+      (lane) => laneDirection(own, lane) === 1,
+    ),
+  ).toBe(true);
+  const links = connections(p);
+  expect(
+    links.some(
+      (c) =>
+        c.from.road === own.id &&
+        c.to.road === reference.id &&
+        laneDirection(own, c.from.lane) === -1,
+    ),
+  ).toBe(true);
+  expect(
+    links.some(
+      (c) =>
+        c.from.road === own.id && c.from.lane === 0 && c.to.road === third.id,
+    ),
+  ).toBe(true);
+  expect(connections(parseProject(JSON.stringify(p)))).toEqual(links);
+});
+
+/** Drive the real editor snap → draft → finish transaction with a projection-only scene. */
+function constructionEditor(
+  reference: Road,
+  draw: Partial<Road>,
+  model: "source" | "compatible",
+) {
+  const editor = Object.create(Editor.prototype) as Editor,
+    previews: Road[][] = [],
+    p = emptyProject();
+  p.roads = [reference];
+  Object.assign(editor, {
+    project: p,
+    tool: "line",
+    draw: { ...options(2), width: 4, ...draw, height: 0, endHeight: 0 },
+    drawPoints: [],
+    drawControlPoints: [],
+    laneSnapping: true,
+    alignment: "auto",
+    laneCandidate: 0,
+    laneCandidateKey: "",
+    laneCandidateCount: 0,
+    laneCandidateOrder: [],
+    roadConstructionModel: model,
+    assetId: draw.twoWay ? "two-2" : "one-2",
+    settings: { snap: true, grid: false },
+    continuous: false,
+    selected: new Set<string>(),
+    onChange: () => {},
+    onStatus: () => {},
+    onToast: () => {},
+    updateSnapFeedback: () => {},
+    edit: (fn: () => void) => fn(),
+    scene: {
+      project: (p: V) => ({ x: p.x * 3, y: p.z * 3 }),
+      hit: () => undefined,
+      showPreviews: (roads: Road[]) => previews.push(structuredClone(roads)),
+      showBuildMarker: () => {},
+      showLaneTarget: () => {},
+      setHover: () => {},
+    },
+  });
+  return { editor, previews };
+}
+
+it.each(["compatible", "source"] as const)(
+  "%s editor keeps a selected reverse group stable under Tab and commits the exact endpoint preview",
+  (model) => {
+    const reference = makeRoad(v(-75, -20), v(), {
+        twoWay: true,
+        lanesStart: 3,
+        lanesEnd: 3,
+        backwardLanesStart: 2,
+        backwardLanesEnd: 2,
+        width: 4,
+        sectionOffset: 2,
+        median: { kind: "concrete", width: 2 },
+      }),
+      { editor, previews } = constructionEditor(
+        reference,
+        {
+          twoWay: true,
+          backwardLanesStart: 1,
+          backwardLanesEnd: 1,
+          sectionOffset: -3,
+          median: { kind: "concrete", width: 2 },
+        },
+        model,
+      ),
+      raw = lanePoint(reference, 0, 1);
+    editor.updatePlacement(raw);
+    expect(editor.snapInfo?.kind).toBe("lane");
+    const count = editor["laneCandidateCount"];
+    expect(count).toBeGreaterThan(1);
+    for (
+      let i = 0;
+      i < count && laneDirection(reference, editor.snapInfo!.lanes![0]) !== -1;
+      i++
+    )
+      editor.cycleLane();
+    expect(editor.snapInfo?.text).toContain("反向");
+    const selected = structuredClone(editor.snapInfo!),
+      start = { ...selected.position };
+    editor.updatePlacement(add(raw, v(0.05, 0.03)));
+    expect(editor.snapInfo?.lanes).toEqual(selected.lanes);
+    expect(editor.snapInfo?.ownLanes).toEqual(selected.ownLanes);
+    const previewStart = previews.at(-1)![0];
+    for (let i = 0; i < selected.lanes!.length; i++)
+      expect(
+        dist(
+          lanePoint(previewStart, selected.ownLanes![i], 0),
+          lanePoint(reference, selected.lanes![i], 1),
+        ),
+      ).toBeLessThan(1e-5);
+    Object.assign(editor, {
+      drawStartSnap: selected,
+      drawPoints: [start],
+      drawControlPoints: [editor["placementControlPoint"]],
+    });
+    const end = add(start, mul(tangent(reference, 1), 65));
+    editor.updatePlacement(end, true);
+    const preview = previews.at(-1)![0];
+    editor.drawPoints.push(editor["placementControlPoint"]!.position);
+    editor["drawControlPoints"].push(
+      structuredClone(editor["placementControlPoint"]!),
+    );
+    editor["finishDraw"]();
+    const committed = editor.project.roads.find((r) => r.id !== reference.id)!;
+    for (const t of [0, 1])
+      for (let lane = 0; lane < laneCount(committed); lane++)
+        expect(
+          dist(lanePoint(committed, lane, t), lanePoint(preview, lane, t)),
+        ).toBeLessThan(1e-5);
+    expect(committed.autoTaper).toBeUndefined();
+  },
+);
+
+it.each(["compatible", "source"] as const)(
+  "%s editor ignores lanes on another elevation and never offers a wrong-side destination",
+  (model) => {
+    const reference = makeRoad(v(-70, 0), v(), {
+        ...options(2),
+        twoWay: true,
+        width: 4,
+      }),
+      { editor } = constructionEditor(reference, { twoWay: true }, model);
+    editor.updatePlacement(v(0, 0, 8));
+    expect(editor.snapInfo?.kind).not.toBe("lane");
+    Object.assign(editor, { drawPoints: [v(-60, 0)], drawControlPoints: [] });
+    editor.updatePlacement(v());
+    expect(editor.snapInfo?.kind).not.toBe("lane");
+  },
+);
+
+it.each(
+  (["compatible", "source"] as const).flatMap((model) =>
+    ([0, 1] as const).map((referenceEnd) => ({ model, referenceEnd })),
+  ),
+)(
+  "$model editor commits the exact curved reverse-lane destination preview at reference end $referenceEnd",
+  ({ model, referenceEnd }) => {
+    const reference = makeRoad(
+        v(-40, -65),
+        v(10, 5),
+        {
+          twoWay: true,
+          lanesStart: 3,
+          lanesEnd: 3,
+          backwardLanesStart: 2,
+          backwardLanesEnd: 2,
+          width: 4,
+          sectionOffset: 3,
+          median: { kind: "concrete", width: 2 },
+        },
+        v(-52, -38),
+        v(-8, -4),
+      ),
+      { editor, previews } = constructionEditor(
+        reference,
+        {
+          twoWay: true,
+          backwardLanesStart: 1,
+          backwardLanesEnd: 1,
+          sectionOffset: -2,
+          median: { kind: "concrete", width: 1 },
+        },
+        model,
+      ),
+      anchor = reference.knots[referenceEnd === 0 ? 0 : 1].p,
+      outward = mul(
+        tangent(reference, referenceEnd),
+        referenceEnd === 0 ? -1 : 1,
+      ),
+      start = add(anchor, mul(outward, 70)),
+      control = add(add(anchor, mul(outward, 35)), v(6, -4)),
+      raw = lanePoint(reference, 0, referenceEnd);
+    Object.assign(editor, { tool: "curve", drawPoints: [start, control] });
+    editor.updatePlacement(raw);
+    expect(editor.snapInfo?.kind).toBe("lane");
+    for (
+      let i = 0;
+      i < editor["laneCandidateCount"] &&
+      laneDirection(reference, editor.snapInfo!.lanes![0]) !== -1;
+      i++
+    )
+      editor.cycleLane();
+    const selected = structuredClone(editor.snapInfo!),
+      preview = previews.at(-1)![0];
+    expect(laneDirection(reference, selected.lanes![0])).toBe(-1);
+    for (let i = 0; i < selected.lanes!.length; i++)
+      expect(
+        dist(
+          lanePoint(preview, selected.ownLanes![i], 1),
+          lanePoint(reference, selected.lanes![i], referenceEnd),
+        ),
+      ).toBeLessThan(1e-5);
+    editor.drawPoints.push(editor["placementControlPoint"]!.position);
+    editor["drawControlPoints"].push(
+      structuredClone(editor["placementControlPoint"]!),
+    );
+    editor["finishDraw"]();
+    const committed = editor.project.roads.find((r) => r.id !== reference.id)!;
+    for (const t of [0, 1])
+      for (let lane = 0; lane < laneCount(committed); lane++)
+        expect(
+          dist(lanePoint(committed, lane, t), lanePoint(preview, lane, t)),
+        ).toBeLessThan(1e-5);
+    expect(committed.attachments?.end?.end).toBe(referenceEnd);
+    expect(committed.autoTaper).toBeUndefined();
+  },
+);

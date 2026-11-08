@@ -29,6 +29,7 @@ import {
   dist,
   laneCount,
   laneDirection,
+  lanePoint,
   pavementWidth,
   medianExtent,
   backwardStart,
@@ -98,7 +99,7 @@ import {
 import { cloneTrafficSignals } from "../core/traffic-signals";
 import {
   cloneJunctionLaneRules,
-  removeJunctionLaneRulesForRoads,
+  remapReverseJunctionLaneRules,
 } from "../core/junction-lane-connections";
 export type SnapInfo = {
   kind: "endpoint" | "offset" | "road" | "angle" | "grid" | "lane";
@@ -208,6 +209,7 @@ export class Editor {
   private laneCandidate = 0;
   private laneCandidateKey = "";
   private laneCandidateCount = 0;
+  private laneCandidateOrder: string[] = [];
   settings: Settings = {
     grid: true,
     snap: true,
@@ -262,6 +264,7 @@ export class Editor {
     y: number;
     moved: boolean;
   };
+  private junctionLaneDrag?: number;
   private saveTimer?: ReturnType<typeof setTimeout>;
   get chosen() {
     return [...this.selected]
@@ -380,6 +383,8 @@ export class Editor {
     this.refresh();
   }
   cancel() {
+    this.junctionLaneTool.cancelDrag();
+    this.junctionLaneDrag = undefined;
     this.pointerPress = undefined;
     this.widening = undefined;
     this.upgradePreviewKey = "";
@@ -487,6 +492,43 @@ export class Editor {
     el.style.top = `${Math.max(68, Math.min(rect.height - 230, p.y - rect.top - 52))}px`;
     el.hidden = false;
   }
+  private selectLaneCandidate<
+    T extends {
+      anchor: ReturnType<typeof laneAnchors>[number];
+      distance: number;
+    },
+  >(candidates: T[], road: Road, t: number, ownEnd: 0 | 1): T {
+    const identity = (candidate: T) =>
+        JSON.stringify([candidate.anchor.lanes, candidate.anchor.ownLanes]),
+      key = `${road.id}:${t.toFixed(4)}:${ownEnd}:${candidates.map(identity).sort().join(";")}`;
+    if (key !== this.laneCandidateKey) {
+      candidates.sort((a, b) => a.distance - b.distance);
+      this.laneCandidateOrder = candidates.map(identity);
+      this.laneCandidate = 0;
+      this.laneCandidateKey = key;
+    } else
+      candidates.sort(
+        (a, b) =>
+          this.laneCandidateOrder.indexOf(identity(a)) -
+          this.laneCandidateOrder.indexOf(identity(b)),
+      );
+    this.laneCandidateCount = candidates.length;
+    return candidates[
+      ((this.laneCandidate % candidates.length) + candidates.length) %
+        candidates.length
+    ];
+  }
+  private laneSnapText(road: Road, t: number, lanes: number[], count: number) {
+    const numbers = lanes.map((lane) => laneNumber(road, lane, t)),
+      direction = road.twoWay
+        ? `${laneDirection(road, lanes[0]) === 1 ? "正向" : "反向"} · `
+        : "",
+      contact = mul(
+        lanes.reduce((sum, lane) => add(sum, lanePoint(road, lane, t)), v()),
+        1 / lanes.length,
+      );
+    return `车道吸附：${direction}${numbers.length === 1 ? `第 ${numbers[0]} 车道` : `第 ${numbers[0]}–${numbers.at(-1)} 车道`} · ${dist(contact, center(road, t)).toFixed(2)} m${count > 1 ? " · Tab 切换" : ""}`;
+  }
   private snappedForBuild(p: V, exclude?: string, disabled = false): V {
     this.snapInfo = undefined;
     const ownEnd = this.drawPoints.length ? 1 : 0,
@@ -527,23 +569,21 @@ export class Editor {
       if (
         this.laneSnapping &&
         this.alignment === "auto" &&
-        !this.draw.twoWay &&
+        Math.abs(center(road, t).y - p.y) <= 1.5 &&
         (trueEnd ||
           (this.draw.kind === "ramp" &&
             !road.twoWay &&
+            !this.draw.twoWay &&
             road.lanesStart === road.lanesEnd &&
             !road.profile &&
             t > 0.04 &&
             t < 0.96))
       ) {
-        const toward = this.drawPoints.length
-            ? sub(p, this.drawPoints[0])
-            : direction,
-          length = Math.hypot(toward.x, toward.z),
+        const toward = tangent(template, ownEnd),
           parallel =
-            length <= 4 ||
-            Math.abs(toward.x * direction.x + toward.z * direction.z) /
-              length >=
+            !this.drawPoints.length ||
+            (toward.x * direction.x + toward.z * direction.z) *
+              (ownEnd === 0 ? 1 : -1) >=
               0.7,
           candidates = parallel
             ? laneAnchors(road, t, template, ownEnd)
@@ -563,19 +603,12 @@ export class Editor {
                 .sort((a, b) => a.distance - b.distance)
             : [];
         if (candidates.length) {
-          const key = `${road.id}:${t.toFixed(4)}:${ownEnd}`;
-          if (key !== this.laneCandidateKey) {
-            this.laneCandidate = 0;
-            this.laneCandidateKey = key;
-          }
-          this.laneCandidateCount = candidates.length;
-          const { anchor } =
-              candidates[
-                ((this.laneCandidate % candidates.length) + candidates.length) %
-                  candidates.length
-              ],
-            numbers = anchor.lanes.map((lane) => laneNumber(road, lane, t)),
-            offset = dist(anchor.contact, center(road, t));
+          const { anchor } = this.selectLaneCandidate(
+            candidates,
+            road,
+            t,
+            ownEnd,
+          );
           result.position = copy(anchor.position);
           result.source.position = copy(anchor.contact);
           this.snapInfo = {
@@ -589,7 +622,7 @@ export class Editor {
             lanes: anchor.lanes,
             ownLanes: anchor.ownLanes,
             interior: !trueEnd,
-            text: `车道吸附：${numbers.length === 1 ? `第 ${numbers[0]} 车道` : `第 ${numbers[0]}–${numbers.at(-1)} 车道`} · ${offset.toFixed(2)} m${candidates.length > 1 ? " · Tab 切换" : ""}`,
+            text: this.laneSnapText(road, t, anchor.lanes, candidates.length),
           };
           return result.position;
         }
@@ -687,13 +720,10 @@ export class Editor {
     const previous = this.snapInfo;
     this.snapInfo = undefined;
     if (!this.settings.snap || disabled) return p;
-    const screen = this.scene.project(p);
-    if (
-      this.building &&
-      this.laneSnapping &&
-      this.alignment === "auto" &&
-      !this.draw.twoWay
-    ) {
+    const screen = this.scene.project(p),
+      proposedDraft =
+        this.building && this.drawPoints.length ? this.draft(p) : undefined;
+    if (this.building && this.laneSnapping && this.alignment === "auto") {
       const ownEnd = this.drawPoints.length ? 1 : 0;
       const candidates: {
         road: Road;
@@ -708,6 +738,7 @@ export class Editor {
         const ts = [0, 1];
         if (
           this.draw.kind === "ramp" &&
+          !this.draw.twoWay &&
           !road.twoWay &&
           road.lanesStart === road.lanesEnd &&
           !road.profile &&
@@ -717,19 +748,35 @@ export class Editor {
           ts.push(near.t);
         for (const t of ts) {
           if (Math.abs(center(road, t).y - p.y) > 1.5) continue;
+          const left = this.scene.project(lanePoint(road, 0, t)),
+            right = this.scene.project(lanePoint(road, laneCount(road) - 1, t)),
+            dx = right.x - left.x,
+            dy = right.y - left.y,
+            u = Math.max(
+              0,
+              Math.min(
+                1,
+                ((screen.x - left.x) * dx + (screen.y - left.y) * dy) /
+                  (dx * dx + dy * dy || 1),
+              ),
+            );
+          // Every group centre lies on this section. Reject distant sections
+          // before cloning/aligning candidates, while retaining every Tab choice
+          // once a road endpoint is within the snap radius.
+          if (
+            Math.hypot(
+              screen.x - left.x - dx * u,
+              screen.y - left.y - dy * u,
+            ) >= 24
+          )
+            continue;
           const direction = mul(tangent(road, t), t === 0 ? -1 : 1);
-          const proposed = this.drawPoints.length
-            ? this.draft(p)
-            : makeRoad(p, add(p, mul(direction, 32)), { ...this.draw });
+          const proposed =
+            proposedDraft ??
+            makeRoad(p, add(p, mul(direction, 32)), { ...this.draw });
           if (ownEnd === 1) {
-            const toward = sub(p, this.drawPoints[0]),
-              length = Math.hypot(toward.x, toward.z);
-            if (
-              length > 4 &&
-              Math.abs(toward.x * direction.x + toward.z * direction.z) /
-                length <
-                0.7
-            )
+            const toward = tangent(proposed, ownEnd);
+            if (-(toward.x * direction.x + toward.z * direction.z) < 0.7)
               continue;
           }
           for (const anchor of laneAnchors(road, t, proposed, ownEnd)) {
@@ -744,38 +791,31 @@ export class Editor {
                 screen.x - projected.x,
                 screen.y - projected.y,
               );
-            if (distance < 24)
-              candidates.push({
-                road,
-                t,
-                anchor,
-                distance,
-                interior: t !== 0 && t !== 1,
-              });
+            candidates.push({
+              road,
+              t,
+              anchor,
+              distance,
+              interior: t !== 0 && t !== 1,
+            });
           }
         }
       }
       candidates.sort((a, b) => a.distance - b.distance);
-      if (candidates.length) {
+      if (candidates.length && candidates[0].distance < 24) {
         const nearestCandidate = candidates[0],
           same = candidates.filter(
             (c) =>
               c.road.id === nearestCandidate.road.id &&
               Math.abs(c.t - nearestCandidate.t) < 0.001,
           );
-        const key = `${nearestCandidate.road.id}:${nearestCandidate.t.toFixed(4)}:${ownEnd}`;
-        if (key !== this.laneCandidateKey) {
-          this.laneCandidate = 0;
-          this.laneCandidateKey = key;
-        }
-        this.laneCandidateCount = same.length;
-        const selected =
-            same[
-              ((this.laneCandidate % same.length) + same.length) % same.length
-            ],
+        const selected = this.selectLaneCandidate(
+            same,
+            nearestCandidate.road,
+            nearestCandidate.t,
+            ownEnd,
+          ),
           { anchor, road, t } = selected;
-        const numbers = anchor.lanes.map((lane) => laneNumber(road, lane, t));
-        const offset = dist(anchor.contact, center(road, t));
         this.snapInfo = {
           kind: "lane",
           position: anchor.position,
@@ -786,7 +826,7 @@ export class Editor {
           lanes: anchor.lanes,
           ownLanes: anchor.ownLanes,
           interior: selected.interior,
-          text: `车道吸附：${numbers.length === 1 ? `第 ${numbers[0]} 车道` : `第 ${numbers[0]}–${numbers.at(-1)} 车道`} · ${offset.toFixed(2)} m${same.length > 1 ? " · Tab 切换" : ""}`,
+          text: this.laneSnapText(road, t, anchor.lanes, same.length),
         };
         return anchor.position;
       }
@@ -810,11 +850,11 @@ export class Editor {
       for (const t of [0, 1] as const) {
         const q = center(r, t);
         if (Math.abs(q.y - p.y) > 1.5) continue;
-        const proposed = this.drawPoints.length
-          ? this.draft(p)
-          : makeRoad(p, add(p, mul(tangent(r, t), t === 0 ? -32 : 32)), {
-              ...this.draw,
-            });
+        const proposed =
+          proposedDraft ??
+          makeRoad(p, add(p, mul(tangent(r, t), t === 0 ? -32 : 32)), {
+            ...this.draw,
+          });
         const anchors = this.building
           ? endpointAnchors(
               r,
@@ -1109,6 +1149,7 @@ export class Editor {
     }
     if (
       endSnap?.contact &&
+      endSnap.kind !== "lane" &&
       (this.roadConstructionModel === "compatible" || endSnap.custom)
     ) {
       const correction = sub(endSnap.contact, center(r, 1)),
@@ -1840,6 +1881,13 @@ export class Editor {
       "pointerdown",
       (e) => {
         if (![0, 1, 2].includes(e.button)) return;
+        if (e.button !== 0 && this.junctionLaneDrag !== undefined) {
+          this.junctionLaneTool.cancelDrag();
+          this.junctionLaneDrag = undefined;
+          this.scene.controls.enabled = true;
+          if (canvas.hasPointerCapture(e.pointerId))
+            canvas.releasePointerCapture(e.pointerId);
+        }
         this.pointerPress = {
           button: e.button,
           pointerId: e.pointerId,
@@ -1848,6 +1896,18 @@ export class Editor {
           moved: false,
         };
         if (e.button === 1) e.preventDefault();
+        if (
+          e.button === 0 &&
+          this.tool === "turn" &&
+          this.junctionLaneTool.beginDrag(e.clientX, e.clientY)
+        ) {
+          this.junctionLaneDrag = e.pointerId;
+          this.scene.controls.enabled = false;
+          canvas.setPointerCapture(e.pointerId);
+          e.preventDefault();
+          e.stopImmediatePropagation();
+          return;
+        }
         if (e.button !== 0 || this.building || this.tool !== "select") return;
         const hit = this.scene.hit(e.clientX, e.clientY),
           raw = this.scene.groundPoint(e.clientX, e.clientY);
@@ -2038,6 +2098,14 @@ export class Editor {
     canvas.addEventListener("pointerup", (e) => {
       const press = this.pointerPress;
       this.pointerPress = undefined;
+      if (this.junctionLaneDrag === e.pointerId) {
+        this.junctionLaneDrag = undefined;
+        this.scene.controls.enabled = true;
+        if (canvas.hasPointerCapture(e.pointerId))
+          canvas.releasePointerCapture(e.pointerId);
+        this.junctionLaneTool.endDrag(e.clientX, e.clientY);
+        return;
+      }
       if (!this.drag) {
         if (!press || press.pointerId !== e.pointerId) return;
         const moved =
@@ -2078,6 +2146,11 @@ export class Editor {
     });
     canvas.addEventListener("pointercancel", () => {
       this.pointerPress = undefined;
+      if (this.junctionLaneDrag !== undefined) {
+        this.junctionLaneDrag = undefined;
+        this.junctionLaneTool.cancelDrag();
+        this.scene.controls.enabled = true;
+      }
       if (this.drag) {
         this.cancel();
         this.refresh();
@@ -2361,7 +2434,7 @@ export class Editor {
     }
     if (name === "reverse") {
       this.edit(() => {
-        removeJunctionLaneRulesForRoads(this.project, this.selected);
+        remapReverseJunctionLaneRules(this.project, this.chosen);
         for (const road of this.project.roads)
           for (const end of ["start", "end"] as const)
             if (

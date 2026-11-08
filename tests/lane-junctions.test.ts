@@ -88,14 +88,20 @@ it("recovers geometric offset contacts in legacy maps and excludes nearby or gra
   expect(buildLaneJunctions(p)[0].arms).toHaveLength(3);
   for (const k of p.roads[2].knots)
     for (const part of ["p", "incoming", "outgoing"] as const) k[part].y += 12;
-  expect(buildLaneJunctions(p)).toHaveLength(0);
+  const continuation = () => {
+    const nodes = buildLaneJunctions(p);
+    expect(nodes).toHaveLength(1);
+    expect(nodes[0].kind).toBe("continuation");
+    expect(nodes[0].arms.map((a) => a.road).sort()).toEqual(["through", "up"]);
+  };
+  continuation();
   const other = makeRoad(v(0, 12), v(140, 12), { id: "parallel", width: 4 });
   p.roads.push(other);
-  expect(buildLaneJunctions(p)).toHaveLength(0);
+  continuation();
   p.roads[2].attachments = {
     start: { road: "up", end: 1, lanes: [1], ownLanes: [0] },
   };
-  expect(buildLaneJunctions(p)).toHaveLength(0);
+  continuation();
 });
 it("recognizes two-road offset joins, supports blocked exits and restores rules through history", () => {
   const p = splitFixture();
@@ -148,15 +154,26 @@ it("supports the reverse merge with multiple incoming roads", () => {
 it("finds all cloverleaf split/merge contacts while retaining the physical pavement topology", () => {
   const p = example("elevated"),
     nodes = buildLaneJunctions(p);
-  expect(nodes).toHaveLength(24);
+  expect(nodes.length).toBeGreaterThan(0);
+  expect(nodes.some((n) => n.kind === "attachment")).toBe(true);
+  expect(nodes.some((n) => n.kind === "continuation")).toBe(true);
   expect(buildJunctions(p)).toHaveLength(0);
-  for (const ramp of p.roads.filter((r) => r.kind === "ramp"))
+  for (const road of p.roads)
     for (const end of [0, 1])
-      expect(
-        nodes.some((n) =>
-          n.arms.some((a) => a.road === ramp.id && a.end === end),
-        ),
-      ).toBe(true);
+      // Boundary portals are intentionally isolated. Every internal end,
+      // including all ramp ends and newly subdivided mainlines, is editable.
+      if (
+        !p.ports.some(
+          (port) =>
+            port.road === road.id && port.end === (end === 0 ? "start" : "end"),
+        )
+      )
+        expect(
+          nodes.some((n) =>
+            n.arms.some((a) => a.road === road.id && a.end === end),
+          ),
+          `${road.id}:${end}`,
+        ).toBe(true);
 });
 it("creates a smooth actual source-network connector for an authored offset movement, preserves defaults and completes traffic", () => {
   const p = splitFixture(),

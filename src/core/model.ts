@@ -270,7 +270,11 @@ export function connections(p: Project): Connection[] {
           (directB && !attachmentAllows(bAttachment, b.l, a.r, a.t, a.l))
         )
           continue;
-      } else if (aAttachment || bAttachment) continue;
+      } else if (
+        aAttachment?.ownLanes.includes(a.l) ||
+        bAttachment?.ownLanes.includes(b.l)
+      )
+        continue;
       const ac = nodePoint(a.r, a.t),
         bc = nodePoint(b.r, b.t),
         shared = dist(ac, bc) < 0.65,

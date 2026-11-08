@@ -110,21 +110,48 @@ test("cloverleaf offset fork allows point-to-point lane edits, real routing, und
   await page.locator('[data-action="menu"]').click();
   await page.locator('[data-action="example-elevated"]').click();
   await page.locator("#confirm-yes").click();
-  await page.evaluate(() => {
-    const s = (window as any).lab.editor.scene;
-    s.controls.target.set(-350, 0, 28);
-    s.camera.position.set(-350, 125, 115);
+  const node = await page.evaluate(() => {
+    const e = (window as any).lab.editor,
+      n = e.junctionLaneTool.nodes.find(
+        (n: any) =>
+          n.kind === "attachment" &&
+          n.arms.length === 3 &&
+          n.arms.some((a: any) => /-right$/.test(a.road)),
+      );
+    if (!n)
+      throw new Error(
+        "The current map must contain an editable three-road right-ramp fork",
+      );
+    const s = e.scene;
+    s.controls.target.set(n.position.x, n.position.y, n.position.z);
+    s.camera.position.set(n.position.x, n.position.y + 110, n.position.z + 60);
     s.controls.update();
+    return { position: n.position, count: e.junctionLaneTool.nodes.length };
   });
   await page.locator('[data-tool="turn"]').click();
-  await clickWorld(page, { x: -380, y: 0, z: 24.7 });
+  await clickWorld(page, node.position);
   await expect(page.locator("#turn-panel")).toContainText(
     "偏移连接路口（3 条道路）",
   );
-  await expect(page.locator("#scene-summary")).toContainText("24 处路口");
-  const from = "cloverleaf-east-collector-0",
-    to = "cloverleaf-east-right";
-  const link = await chooseLink(page, from, 0, to, 0);
+  await expect(page.locator("#scene-summary")).toContainText(
+    `${node.count} 处连接节点`,
+  );
+  const movement = await page.evaluate(() => {
+    const e = (window as any).lab.editor,
+      layout = e.junctionLaneTool.layout,
+      existing = new Set(layout.links.map((l: any) => l.id));
+    const candidate = layout.candidates.find(
+      (l: any) =>
+        l.from.lane === 0 && /-right$/.test(l.to.road) && !existing.has(l.id),
+    );
+    if (!candidate)
+      throw new Error(
+        "Fork must allow a real non-default lane-to-ramp connection",
+      );
+    return { from: candidate.from.road, to: candidate.to.road };
+  });
+  const { from, to } = movement,
+    link = await chooseLink(page, from, 0, to, 0);
   const rule = () =>
     page.evaluate(
       ({ from, to }) => {
@@ -161,14 +188,14 @@ test("cloverleaf offset fork allows point-to-point lane edits, real routing, und
   await page.reload();
   await page.waitForFunction(() => !!(window as any).lab);
   expect(await rule()).toBe(true);
-  await page.evaluate(() => {
+  await page.evaluate((position) => {
     const s = (window as any).lab.editor.scene;
-    s.controls.target.set(-350, 0, 28);
-    s.camera.position.set(-350, 125, 115);
+    s.controls.target.set(position.x, position.y, position.z);
+    s.camera.position.set(position.x, position.y + 110, position.z + 60);
     s.controls.update();
-  });
+  }, node.position);
   await page.locator('[data-tool="turn"]').click();
-  await clickWorld(page, { x: -380, y: 0, z: 24.7 });
+  await clickWorld(page, node.position);
   await page.locator('[data-junction-lane-action="restore-junction"]').click();
   expect(await rule()).toBeUndefined();
   expect(errors).toEqual([]);

@@ -13,7 +13,7 @@ const pavement = () => {
   });
   return out;
 };
-test("switching tools and opening UI reuses all forty road meshes and avoids long synchronous handlers", async ({
+test("switching tools and opening UI reuses every road mesh and avoids long synchronous handlers", async ({
   page,
 }) => {
   await cloverleaf(page);
@@ -105,6 +105,8 @@ test("a real lane edit still invalidates its pavement and fork neighbours after 
 }) => {
   await cloverleaf(page);
   const before = await page.evaluate(pavement);
+  const unaffected = "cloverleaf-west-in";
+  expect(before[unaffected]).toBeTruthy();
   await page.evaluate(() => {
     const e = (window as any).lab.editor;
     e.edit(() => {
@@ -121,7 +123,8 @@ test("a real lane edit still invalidates its pavement and fork neighbours after 
   expect(after["cloverleaf-east-right"]).not.toBe(
     before["cloverleaf-east-right"],
   );
-  expect(after["cloverleaf-west-main"]).toBe(before["cloverleaf-west-main"]);
+  expect(after[unaffected]).toBeTruthy();
+  expect(after[unaffected]).toBe(before[unaffected]);
 });
 
 test("immediate world picking after compact-to-desktop resize uses the current viewport", async ({

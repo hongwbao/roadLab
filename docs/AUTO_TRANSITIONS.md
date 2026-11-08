@@ -44,3 +44,15 @@ automaticTransitionPreview(project: Project, incoming: Road[]): {
 `tests/browser/auto-transitions.spec.ts` 使用普通道路资产和真实鼠标验证默认直接建造、手动升级、保存重载、删除恢复、撤销、双向道路和窄屏布局。
 
 自动过渡不改动红绿灯、局部预测让行或其他驾驶策略。
+
+## 车道连线与过渡标线
+
+`src/core/transition-markings.ts` 的 `transitionMarkings(project, connections, physicalJunctions)` 消费 `connections(project)` 的最终合法映射（包括 `junctionLaneConnections`），返回按道路和车道边界索引组织的端点局部标线计划。`separatorPaths(road, index, range, plan)` 输出沿真实 `boundaryPoint` 的路径；不会修改 `lanePoint`、控制点、过渡设置或交通路线。J工具的虚拟端口 inset 不属于物理车道几何，不用作标线起终点。
+
+只有独占、相邻且横向保序的车道分区，且两侧实际车道中心与分界在接缝各相差小于0.1m时，分隔线才连续。多出、多入、交叉、关闭的有效车道、非对齐横向跳接无法支持分隔线时，在该端实际平滑领口内留白；没有派生领口的平滑接头使用最多24m、单端不超过42%路长的局部范围。物理消失的车道仍按实际宽度收线，不虚构出口。所有保留采样点严格等于真实边界点；不会取两端中点把分隔线挪到实际行驶轨迹上。
+
+合法映射变化可保留几何匹配的边界并撤去关闭邻车道的边界。对于同宽三车道的0→1、1→2横向跳接，即使两条连接本身保序，普通接头没有真实纵向连接段，也不能绘制移位边界，因此局部留白。真实交叉路口继续用 `roadRange` 裁掉普通标线，保留既有斑马线；中央隔离带和双向中心分界仅依物理几何。直接模式不因连线编辑开启平滑，右键取消后不残留局部标线计划。
+
+渲染签名包含最终车道规则，但每条道路只依赖自己的局部计划；无关道路继续复用缓存路面。建造/替换预览只对附近道路计算接缝计划，不在鼠标移动时重新路由整张路网。虚线材质维持世界距离3m实线/6m间隔，不按道路长度缩放。
+
+`tests/transition-markings.test.ts` 覆盖17项几何/映射反例及预览弧长分布；`tests/browser/road-construction-all-nodes.spec.ts` 验证真实连线消费、局部缓存失效、撤销/重载、右键取消、直接模式、清理与双向按车道吸附落地。

@@ -122,10 +122,9 @@ export function junctionLanePorts(
         kind,
         position: lanePoint(road, lane, t),
         direction: mul(tangent(road, t), laneDirection(road, lane)),
-        name:
-          junction.kind === "attachment"
-            ? `${kind === "in" ? "入口" : "出口"}${armIndex + 1} · ${road.name} · ${number} 车道`
-            : `${sideName(arm.direction)} · ${kind === "in" ? "入" : "出"} ${number} 车道`,
+        name: junction.kind
+          ? `${kind === "in" ? "入口" : "出口"}${armIndex + 1} · ${road.name} · ${number} 车道`
+          : `${sideName(arm.direction)} · ${kind === "in" ? "入" : "出"} ${number} 车道`,
         roadName: road.name,
         number,
       });
@@ -141,6 +140,7 @@ function pairAllowed(
 ) {
   if (from.kind !== "in" || to.kind !== "out" || from.road === to.road)
     return false;
+  if (!validRef(from, roads, "in") || !validRef(to, roads, "out")) return false;
   const a = roads.get(from.road)!,
     b = roads.get(to.road)!;
   // A logical junction joins road centres; the trim points may lie at different heights on a grade.
@@ -150,7 +150,7 @@ function pairAllowed(
   if (da.x * db.x + da.z * db.z < -0.75) return false;
   // Attachments fix road placement. Authored links may choose any compatible
   // lane within this connected offset node, independently of its original pair.
-  if (junction.kind === "attachment") return true;
+  if (junction.kind) return true;
   const aa = attachmentAt(a, from.end),
     ba = attachmentAt(b, to.end),
     directA = aa?.road === b.id && aa.end === to.end,
@@ -160,7 +160,7 @@ function pairAllowed(
       (!directA || attachmentAllows(aa, from.lane, b, to.end, to.lane)) &&
       (!directB || attachmentAllows(ba, to.lane, a, from.end, from.lane))
     );
-  return !aa && !ba;
+  return !aa?.ownLanes.includes(from.lane) && !ba?.ownLanes.includes(to.lane);
 }
 /** Uses the same trimmed endpoints and 0.45-span tangent handles as the live simulation. */
 export function junctionLaneLink(
@@ -456,4 +456,26 @@ export function mirrorJunctionLaneRules(
       const road = selected.get(ref.road);
       if (road) ref.lane = laneCount(road) - 1 - ref.lane;
     }
+}
+
+/** Call before reversing geometry. Two-way roads retain the same physical
+ * driving lanes; one-way reversal invalidates their former travel direction. */
+export function remapReverseJunctionLaneRules(
+  project: JunctionLaneProject,
+  roads: readonly Road[],
+): void {
+  const selected = new Map(roads.map((road) => [road.id, road]));
+  const remap = (ref: JunctionLaneEndpoint) => {
+    const road = selected.get(ref.road);
+    if (!road) return true;
+    if (!road.twoWay) return false;
+    ref.end = ref.end === 0 ? 1 : 0;
+    ref.lane = laneCount(road) - 1 - ref.lane;
+    return true;
+  };
+  project.junctionLaneConnections = project.junctionLaneConnections
+    ?.filter((rule) => remap(rule.from))
+    .map((rule) => ({ ...rule, to: rule.to.filter(remap) }));
+  if (!project.junctionLaneConnections?.length)
+    delete project.junctionLaneConnections;
 }

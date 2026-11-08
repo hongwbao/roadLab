@@ -213,28 +213,146 @@ test("the cloverleaf renderer has no overlapping shared asphalt or legacy transv
   await page.locator('[data-action="menu"]').click();
   await page.locator('[data-action="example-elevated"]').click();
   await page.locator("#confirm-yes").click();
-  const info = await page.evaluate(() => {
-    const s = (window as any).lab.editor.scene;
-    let mesh: any;
-    s.roads.traverse((o: any) => {
-      if (o.userData.road === "cloverleaf-east-right" && o.isMesh) mesh = o;
-    });
-    const a = mesh.geometry.attributes.position.array;
-    let clipped = true;
-    for (let i = 0; i < a.length; i += 9) {
-      const x = (a[i] + a[i + 3] + a[i + 6]) / 3,
-        z = (a[i + 2] + a[i + 5] + a[i + 8]) / 3;
-      if (x > -380.01 && x < -340 && z > 19.66 && z < 28.34) clipped = false;
-    }
-    return {
-      clipped,
-      indexed: !!mesh.geometry.index,
-      legacyStripes: s.overlays.children.some((o: any) => o.isLineSegments),
-    };
-  });
-  expect(info.clipped).toBe(true);
+  const read = async (targetId: string) =>
+    page.evaluate(async (targetId) => {
+      const forkModule = "/src/core/road-forks.ts",
+        surfaceModule = "/src/core/junction-crosswalks.ts",
+        { roadForks, forkSurfaces } = await import(forkModule),
+        { roadSurfaceTriangles } = await import(surfaceModule),
+        e = (window as any).lab.editor,
+        s = e.scene,
+        groups = roadForks(e.project.roads),
+        meshes = new Map<string, any>();
+      s.roads.traverse((o: any) => {
+        if (o.isMesh && o.userData.road && !o.userData.median)
+          meshes.set(o.userData.road, o);
+      });
+      const centroid = (a: any, i = 0) => ({
+        x: (a[i] + a[i + 3] + a[i + 6]) / 3,
+        y: (a[i + 1] + a[i + 4] + a[i + 7]) / 3,
+        z: (a[i + 2] + a[i + 5] + a[i + 8]) / 3,
+      });
+      // Independent barycentric containment and interpolated height check.
+      // A previous fixed rectangle described the obsolete 40-road map.
+      const inside = (q: any, piece: any) => {
+        if (
+          q.x < piece.minX ||
+          q.x > piece.maxX ||
+          q.z < piece.minZ ||
+          q.z > piece.maxZ
+        )
+          return false;
+        const [a, b, c] = piece.polygon,
+          area = (b.x - a.x) * (c.z - a.z) - (b.z - a.z) * (c.x - a.x),
+          u = ((q.x - a.x) * (c.z - a.z) - (q.z - a.z) * (c.x - a.x)) / area,
+          v = ((b.x - a.x) * (q.z - a.z) - (b.z - a.z) * (q.x - a.x)) / area;
+        return (
+          u > 1e-5 &&
+          v > 1e-5 &&
+          u + v < 1 - 1e-5 &&
+          Math.abs(q.y - (a.y + u * (b.y - a.y) + v * (c.y - a.y))) < 0.014
+        );
+      };
+      let testedForks = 0,
+        triangles = 0,
+        rawSharedSamples = 0,
+        overlaps = 0,
+        indexed = false;
+      let target:
+        | { triangles: number; obstacles: number; rawSharedSamples: number }
+        | undefined;
+      for (const [id, group] of groups as Map<string, { pavement: any[] }>) {
+        if (!group.pavement.length) continue;
+        const mesh = meshes.get(id),
+          road = e.project.roads.find((r: any) => r.id === id);
+        if (!mesh) throw new Error(`Missing actual fork mesh: ${id}`);
+        const positions = mesh.geometry.attributes.position.array,
+          obstacles = forkSurfaces(group.pavement),
+          raw = roadSurfaceTriangles(road, { start: 0, end: 1 });
+        const shared = raw.filter((t: any) =>
+          obstacles.some((piece: any) =>
+            inside(
+              centroid(t.polygon.flatMap((p: any) => [p.x, p.y, p.z])),
+              piece,
+            ),
+          ),
+        ).length;
+        testedForks++;
+        rawSharedSamples += shared;
+        triangles += positions.length / 9;
+        indexed ||= !!mesh.geometry.index;
+        for (let i = 0; i < positions.length; i += 9)
+          if (
+            obstacles.some((piece: any) =>
+              inside(centroid(positions, i), piece),
+            )
+          )
+            overlaps++;
+        if (id === targetId)
+          target = {
+            triangles: positions.length / 9,
+            obstacles: obstacles.length,
+            rawSharedSamples: shared,
+          };
+      }
+      return {
+        testedForks,
+        triangles,
+        rawSharedSamples,
+        overlaps,
+        indexed,
+        target,
+        legacyStripes: s.overlays.children.some((o: any) => o.isLineSegments),
+      };
+    }, targetId);
+  const info = await read("cloverleaf-east-right");
+  expect(info.target).toBeTruthy();
+  expect(info.target!.triangles).toBeGreaterThan(0);
+  expect(info.target!.obstacles).toBeGreaterThan(0);
+  expect(info.testedForks).toBeGreaterThanOrEqual(16);
+  expect(info.triangles).toBeGreaterThan(0);
+  expect(info.overlaps).toBe(0);
   expect(info.indexed).toBe(false);
   expect(info.legacyStripes).toBe(false);
+  // The improved map's forks now meet at their ends without positive raw
+  // shared centroid samples. Exercise real subtraction on a bounded scene
+  // whose ramp deliberately shares a level collar with the continuing trunk.
+  await page.evaluate(async () => {
+    const path = "/src/core/model.ts",
+      { makeRoad } = await import(path),
+      e = (window as any).lab.editor,
+      p = (x: number, z = 0) => ({ x, y: 0, z });
+    e.edit(() => {
+      e.project.roads = [
+        makeRoad(p(0), p(100), { id: "trunk" }),
+        makeRoad(p(-40), p(0), { id: "ref" }),
+        makeRoad(
+          p(0, 2),
+          p(100, 25),
+          {
+            id: "branch",
+            lanesStart: 1,
+            lanesEnd: 1,
+            attachments: {
+              start: { road: "ref", end: 1, lanes: [1], ownLanes: [0] },
+            },
+          },
+          p(35, 2),
+          p(70, 8),
+        ),
+      ];
+      e.project.junctionLaneConnections = [];
+    });
+  });
+  const bounded = await read("branch");
+  expect(bounded.target).toBeTruthy();
+  expect(bounded.target!.triangles).toBeGreaterThan(0);
+  expect(bounded.target!.obstacles).toBeGreaterThan(0);
+  expect(bounded.target!.rawSharedSamples).toBeGreaterThan(0);
+  expect(bounded.rawSharedSamples).toBeGreaterThan(0);
+  expect(bounded.overlaps).toBe(0);
+  expect(bounded.indexed).toBe(false);
+  expect(bounded.legacyStripes).toBe(false);
 });
 
 test("recognizes a five-arm junction for lane links and replaces its old pavement in upgrade previews", async ({

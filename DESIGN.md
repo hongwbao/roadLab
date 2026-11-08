@@ -262,7 +262,7 @@ components:
 
 ### Alignment Control
 
-建造时，单向资产显示“对齐：自动 / 中线 / 左缘 / 右缘”按钮，双向资产隐藏。地图画布聚焦时，Tab循环建造的车道候选或对齐方式。成功吸附仍使用琥珀提示及偏移米数。
+建造时，单向和双向资产都显示“对齐：自动 / 中线 / 左缘 / 右缘”按钮。地图画布聚焦时，Tab循环建造的车道候选或对齐方式。成功吸附仍使用琥珀提示及偏移米数。
 
 道路升级替换时，单向、双向均显示“替换对齐”按钮。自动模式按鼠标横向位置在中线、同向连续旧车道组及边缘方案之间选择；Tab／Shift＋Tab或按钮固定／循环当前可用方案。两车道换单车道可保留原第1或第2车道的物理位置。计算包括非对称道路及中央隔离带宽度。按钮仍用紧凑透明底与label字号，保持现有HUD。
 
@@ -301,3 +301,7 @@ components:
 I通行口工具扩展为“车流测试”上下文面板，桌面位于左侧工具栏右边，复用暗色面板和青色焦点。入口使用两列按钮，显示各入口百分比；下面显示当前入口比例、总需求、每车道需求和出口分配列表。出口名称、比例与实际辆/分同属一行组，活动行使用既有raised底色。悬停或键盘聚焦显示青色虚线、方向箭头及琥珀目标环，面板文字同步入口／出口编号。100%基准与通行口增删操作收进details。长面板内部滚动，标题与关闭按钮保持可见；窄屏沿用工具栏右侧浮动面板，保留页脚车流控制。
 
 OD guide finish: screen-space blue stroke with dark contrast outline,approximately13px/8px dashes,visible directional arrow andblueorigin/ambertarget rings withminimum11px radius;uniforms andmarker scale update oncamera changes withoutroad/line rebuilds. Entry→exit identification stays in sticky panelheading.
+
+道路建造预览沿用 preview-surface / preview-line：半透明蓝色路面，清晰外缘和真实车道分隔线；中央实体隔离带以同色较实的抬高形体呈现。方向箭头比边界更淡，按曲线弧长约42m稀疏重复，短路段至少显示一个；不再用车道中心线模拟道路边界。无效预览沿用暖红标识，吸附继续使用琥珀。工具退出清理全部临时几何。
+
+平滑接头的普通分隔线只在真实车道几何与最终车道连线共同支持时延续。多目标、汇入、交叉或横向跳接的矛盾分隔线在局部过渡范围留白，不将J辅助线画成道路标线；实体隔离带及双向中心分界仍由物理断面决定。直接连接不因编辑连线而自动开启过渡。

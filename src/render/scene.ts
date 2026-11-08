@@ -15,6 +15,7 @@ import {
   mul,
   nearest,
   normal,
+  nodePoint,
   point,
   roadLength,
   smooth,
@@ -27,6 +28,12 @@ import { connections } from "../core/model";
 import { allowedTurns } from "../core/lane-rules";
 import { renderRoadMedian } from "./road-median";
 import { roadMedianRange } from "../core/road-median";
+import {
+  separatorPaths,
+  transitionMarkings,
+  type TransitionMarkings,
+} from "../core/transition-markings";
+import { previewRoadMarkings } from "./road-markings";
 import { roadCrosswalkQuads } from "../core/junction-crosswalks";
 import {
   roadForks,
@@ -76,6 +83,10 @@ export class Scene {
   private topologySignature = "";
   private signalRenderSignature = "";
   private roadNodesSignature = "";
+  private markingSignature = "";
+  private transitionPaint = new Map<string, TransitionMarkings>();
+  private previewMarkingSignature = "";
+  private previewTransitionPaint = new Map<string, TransitionMarkings>();
   private junctionRenderCache = new Map<
     string,
     { signature: string; objects: T.Object3D[] }
@@ -126,6 +137,12 @@ export class Scene {
       color: 0x63baf1,
       transparent: true,
       opacity: 0.45,
+      side: T.DoubleSide,
+    }),
+    ghostMedian: new T.MeshStandardMaterial({
+      color: 0x63baf1,
+      transparent: true,
+      opacity: 0.8,
       side: T.DoubleSide,
     }),
     invalid: new T.MeshStandardMaterial({
@@ -400,9 +417,11 @@ export class Scene {
         r,
         medianJunctions,
         group,
-        material === this.mats.asphalt || material === this.mats.ghost
+        material === this.mats.asphalt
           ? this.mats.side
-          : material,
+          : material === this.mats.ghost
+            ? this.mats.ghostMedian
+            : material,
       );
     if (material !== this.mats.asphalt) return;
     // A thin deck gives elevated roads a readable edge; columns are visual only.
@@ -535,7 +554,7 @@ export class Scene {
       [...selected],
       settings,
       showHandles,
-      settings.paths ? p.junctionLaneConnections : undefined,
+      p.junctionLaneConnections,
     ]);
     if (signature === this.rebuildSignature) return;
     this.rebuildSignature = signature;
@@ -543,6 +562,18 @@ export class Scene {
       this.junctionList = buildJunctions(p);
       this.forks = roadForks(p.roads);
       this.topologySignature = topologySignature;
+    }
+    const markingSignature = JSON.stringify([
+      topologySignature,
+      p.junctionLaneConnections,
+    ]);
+    if (markingSignature !== this.markingSignature) {
+      this.transitionPaint = p.roads.some(
+        (r) => r.transitionMode === "smooth" || r.autoTaper,
+      )
+        ? transitionMarkings(p, connections(p), this.junctionList)
+        : new Map();
+      this.markingSignature = markingSignature;
     }
     const signalSignature = JSON.stringify([topologySignature, p.signals]);
     if (signalSignature !== this.signalRenderSignature) {
@@ -623,6 +654,7 @@ export class Scene {
         hidden,
         settings.paths,
         settings.arrows,
+        this.transitionPaint.get(r.id),
       ]);
       const cached = this.roadRenderCache.get(r.id);
       if (cached?.signature === roadSignature) {
@@ -722,22 +754,15 @@ export class Scene {
           else this.line(pts, this.mats.centerline, details);
           continue;
         }
-        let pts: V[] = [];
-        const samples = Math.min(
-          4096,
-          Math.max(100, Math.ceil(roadLength(r) / 2)),
-        );
-        const flush = () => {
-          if (pts.length > 1) this.line(pts, this.mats.dashedMark, details);
-          pts = [];
-        };
-        for (let k = 0; k <= samples; k++) {
-          const t = range.start + ((range.end - range.start) * k) / samples;
-          if (laneWidth(r, l, t) < 0.15 || laneWidth(r, l - 1, t) < 0.15)
-            flush();
-          else pts.push(boundaryPoint(r, l, t));
+        for (const path of separatorPaths(
+          r,
+          l,
+          range,
+          this.transitionPaint.get(r.id),
+        )) {
+          const line = this.line(path, this.mats.dashedMark, details);
+          line.userData = { road: r.id, markingBoundary: l };
         }
-        flush();
       }
       for (let l = 0; l < max; l++) {
         if (settings.paths) {
@@ -1013,6 +1038,50 @@ export class Scene {
         }
       }
     this.clear(this.preview);
+    if (!roads.length) {
+      this.previewMarkingSignature = "";
+      this.previewTransitionPaint.clear();
+      return;
+    }
+    // Placement only touches nearby seam geometry. Do not route or rebuild the
+    // entire map on pointer movement, even for a replacement with a full draft.
+    const nextRoads = new Map(
+      (options?.project?.roads ?? this.currentProject?.roads ?? []).map((r) => [
+        r.id,
+        r,
+      ]),
+    );
+    roads.forEach((r) => nextRoads.set(r.id, r));
+    const nearby = [...nextRoads.values()].filter((other) =>
+      roads.some(
+        (road) =>
+          road.id === other.id ||
+          ([0, 1] as const).some((end) =>
+            ([0, 1] as const).some(
+              (at) =>
+                dist(nodePoint(road, end), nodePoint(other, at)) <
+                (pavementWidth(road, end) + pavementWidth(other, at)) / 2 + 1,
+            ),
+          ),
+      ),
+    );
+    const draft = { ...this.currentProject, roads: nearby } as Project;
+    const markingSignature = JSON.stringify([
+      nearby,
+      draft.junctionLaneConnections,
+    ]);
+    if (this.previewMarkingSignature !== markingSignature) {
+      this.previewTransitionPaint = nearby.some(
+        (r) => r.transitionMode === "smooth" || r.autoTaper,
+      )
+        ? transitionMarkings(
+            draft,
+            connections(draft),
+            options?.junctions ?? this.junctionList,
+          )
+        : new Map();
+      this.previewMarkingSignature = markingSignature;
+    }
     if (options?.replaceExisting) {
       const ids = new Set(roads.map((r) => r.id));
       for (const junction of this.junctionList)
@@ -1079,44 +1148,45 @@ export class Scene {
         options?.junctions,
         options?.project,
       );
-      const color = new T.LineBasicMaterial({
+      const boundary = new T.LineBasicMaterial({
         color: invalid ? 0xff7765 : 0x9de2ff,
+        transparent: true,
+        opacity: 0.95,
         depthTest: false,
       });
-      for (const side of [-1, 1]) {
-        const points: V[] = [];
-        for (let i = 0; i <= 50; i++) {
-          const t = i / 50;
-          points.push(
-            add(
-              center(r, t),
-              mul(normal(r, t), (side * pavementWidth(r, t)) / 2),
-            ),
-          );
+      const direction = new T.LineBasicMaterial({
+        color: invalid ? 0xff7765 : 0x9de2ff,
+        transparent: true,
+        opacity: 0.48,
+        depthTest: false,
+      });
+      const range = options?.replaceExisting
+        ? roadRange(r, [...(options.junctions ?? [])])
+        : { start: 0, end: 1 };
+      const geometry = previewRoadMarkings(
+        r,
+        range,
+        this.previewTransitionPaint.get(r.id),
+      );
+      for (const [kind, paths] of [
+        ["edge", geometry.edges],
+        ["lane-boundary", geometry.lanes],
+        ["median", geometry.median],
+      ] as const)
+        for (const path of paths) {
+          const line = this.line(path, boundary, this.preview);
+          line.userData = { previewMarking: kind, road: r.id };
+          line.renderOrder = 31;
         }
-        this.line(points, color, this.preview);
-      }
-      for (let l = 0; l < laneCount(r); l++) {
-        if (laneWidth(r, l, 0.5) < r.width * 0.8) continue;
-        const path: V[] = [];
-        for (let i = 0; i <= 50; i++)
-          if (laneWidth(r, l, i / 50) > r.width * 0.7)
-            path.push(lanePoint(r, l, i / 50));
-        if (path.length > 1) this.line(path, color, this.preview);
-        const c = lanePoint(r, l, 0.5),
-          d = mul(tangent(r, 0.5), laneDirection(r, l)),
-          n = normal(r, 0.5);
-        this.line(
-          [
-            add(c, mul(d, -3)),
-            add(c, mul(d, 3)),
-            add(add(c, mul(d, 1)), mul(n, 1)),
-            add(c, mul(d, 3)),
-            add(add(c, mul(d, 1)), mul(n, -1)),
-          ],
-          color,
-          this.preview,
-        );
+      for (const arrow of geometry.arrows) {
+        const line = this.line(arrow.path, direction, this.preview);
+        line.userData = {
+          previewMarking: "direction",
+          road: r.id,
+          lane: arrow.lane,
+          at: arrow.t,
+        };
+        line.renderOrder = 32;
       }
     }
   }

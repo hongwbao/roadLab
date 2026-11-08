@@ -17,9 +17,14 @@ import {
 } from "./math";
 import type { Project, Road } from "./types";
 import { signalForJunction, signalStopOffset } from "./traffic-signals";
+import { attachmentAllows, attachmentAt } from "./lane-rules";
 
-/** A lane-editing node can be an offset attachment without a paved intersection. */
-export type LaneJunction = Junction & { kind?: "attachment" };
+/** Logical editing nodes do not add intersection pavement or traffic controls. */
+export type LaneJunction = Junction & {
+  kind?: "attachment" | "continuation";
+};
+export const isLaneJunctionEditable = (node: LaneJunction) =>
+  new Set(node.arms.map((arm) => arm.road)).size >= 2;
 type LaneProject = Pick<
   Project,
   "roads" | "junctionLaneConnections" | "signals"
@@ -36,7 +41,6 @@ export function buildLaneJunctions(
   const signature = JSON.stringify(project.roads),
     saved = cache.get(project);
   if (saved?.signature === signature) return saved.nodes;
-  const physical = buildJunctions(project as Project);
   const ends: End[] = project.roads.flatMap((road) =>
     ([0, 1] as const).map((end) => ({ road, end, key: key(road.id, end) })),
   );
@@ -62,7 +66,12 @@ export function buildLaneJunctions(
     for (let x = cx - 1; x <= cx + 1; x++)
       for (let z = cz - 1; z <= cz + 1; z++)
         for (const j of nodes.get(`${x}:${z}`) ?? [])
-          if (dist(p, nodePoint(ends[j].road, ends[j].end)) < 0.65) join(i, j);
+          if (
+            ends[i].road.id !== ends[j].road.id &&
+            Math.abs(p.y - nodePoint(ends[j].road, ends[j].end).y) <= 0.5 &&
+            dist(p, nodePoint(ends[j].road, ends[j].end)) < 0.65
+          )
+            join(i, j);
     const cell = `${cx}:${cz}`,
       list = nodes.get(cell) ?? [];
     list.push(i);
@@ -71,9 +80,12 @@ export function buildLaneJunctions(
   // Physical lane contacts also recover older maps which predate attachment
   // metadata. Merely parallel or grade-separated roads are not contacts.
   const contacts = new Map<
-    string,
-    { index: number; lane: number; inbound: boolean }[]
-  >();
+      string,
+      { index: number; lane: number; inbound: boolean }[]
+    >(),
+    contactRadius = Math.ceil(
+      Math.max(0, ...project.roads.map((r) => r.width)) * 0.7,
+    );
   for (let i = 0; i < ends.length; i++) {
     const { road, end } = ends[i];
     for (let lane = 0; lane < laneCount(road); lane++) {
@@ -82,8 +94,8 @@ export function buildLaneJunctions(
         cx = Math.floor(p.x),
         cz = Math.floor(p.z),
         inbound = laneExitT(road, lane) === end;
-      for (let x = cx - 1; x <= cx + 1; x++)
-        for (let z = cz - 1; z <= cz + 1; z++)
+      for (let x = cx - contactRadius; x <= cx + contactRadius; x++)
+        for (let z = cz - contactRadius; z <= cz + contactRadius; z++)
           for (const other of contacts.get(`${x}:${z}`) ?? []) {
             const b = ends[other.index];
             if (other.inbound === inbound || b.road.id === road.id) continue;
@@ -95,15 +107,54 @@ export function buildLaneJunctions(
               tangent(b.road, b.end),
               other.inbound ? (b.end === 1 ? 1 : -1) : b.end === 0 ? 1 : -1,
             );
-            if (
-              aDir.x * bDir.x + aDir.z * bDir.z < 0.94 ||
-              dist(p, lanePoint(b.road, other.lane, b.end)) > 0.35
-            )
-              continue;
+            if (aDir.x * bDir.x + aDir.z * bDir.z < 0.94) continue;
+            const q = lanePoint(b.road, other.lane, b.end),
+              distance = dist(p, q),
+              legacyContact = distance <= 0.35;
+            if (!legacyContact) {
+              const dx = q.x - p.x,
+                dz = q.z - p.z,
+                aLength = Math.hypot(aDir.x, aDir.z),
+                bLength = Math.hypot(bDir.x, bDir.z),
+                halfWidths =
+                  (laneWidth(road, lane, end) +
+                    laneWidth(b.road, other.lane, b.end)) /
+                  2;
+              // Recover the live model's close lane ends, while requiring a
+              // real longitudinal seam and overlapping lateral lane surfaces.
+              // Parallel road interiors, gaps and opposite travel stay apart.
+              if (
+                Math.abs(p.y - q.y) > 0.5 ||
+                distance >= Math.max(road.width, b.road.width) * 0.7 ||
+                Math.abs(dx * aDir.x + dz * aDir.z) / aLength > 0.65 ||
+                Math.abs(dx * bDir.x + dz * bDir.z) / bLength > 0.65 ||
+                Math.abs(dx * aDir.z - dz * aDir.x) / aLength > halfWidths ||
+                Math.abs(dx * bDir.z - dz * bDir.x) / bLength > halfWidths
+              )
+                continue;
+              const aa = attachmentAt(road, end),
+                ba = attachmentAt(b.road, b.end),
+                directA = aa?.road === b.road.id && aa.end === b.end,
+                directB = ba?.road === road.id && ba.end === end;
+              if (directA || directB) {
+                if (
+                  (directA &&
+                    !attachmentAllows(aa, lane, b.road, b.end, other.lane)) ||
+                  (directB &&
+                    !attachmentAllows(ba, other.lane, road, end, lane))
+                )
+                  continue;
+              } else if (
+                aa?.ownLanes.includes(lane) ||
+                ba?.ownLanes.includes(other.lane)
+              )
+                continue;
+            }
             join(
               i,
               other.index,
-              dist(nodePoint(road, end), nodePoint(b.road, b.end)) >= 0.65,
+              legacyContact &&
+                dist(nodePoint(road, end), nodePoint(b.road, b.end)) >= 0.65,
             );
           }
       const cell = `${cx}:${cz}`,
@@ -137,23 +188,46 @@ export function buildLaneJunctions(
   }
   const marked = new Set([...special].map(root)),
     groups = new Map<number, End[]>();
-  for (let i = 0; i < ends.length; i++)
-    if (marked.has(root(i))) {
-      const list = groups.get(root(i)) ?? [];
-      list.push(ends[i]);
-      groups.set(root(i), list);
+  for (let i = 0; i < ends.length; i++) {
+    const list = groups.get(root(i)) ?? [];
+    list.push(ends[i]);
+    groups.set(root(i), list);
+  }
+  // Physical pavement uses a broader 0.65m 3D tolerance. Editing follows the
+  // actual endpoint topology and its 0.5m height contract instead; a pavement
+  // polygon must not join otherwise disconnected decks into one editor node.
+  const physical = buildJunctions(project as Project).flatMap((node) => {
+    const parts = new Map<number, typeof node.arms>();
+    for (const arm of node.arms) {
+      const i = index.get(key(arm.road, arm.end));
+      if (i === undefined) continue;
+      const arms = parts.get(root(i)) ?? [];
+      arms.push(arm);
+      parts.set(root(i), arms);
     }
+    return [...parts.values()]
+      .filter((arms) => new Set(arms.map((a) => a.road)).size >= 2)
+      .map((arms) => ({
+        ...node,
+        arms,
+        id:
+          arms.length === node.arms.length
+            ? node.id
+            : `${node.id}:${JSON.stringify(arms.map((a) => key(a.road, a.end)).sort())}`,
+      }));
+  });
   const consumed = new Set<string>(),
     offsets: LaneJunction[] = [];
-  for (const group of groups.values()) {
-    if (group.length < 2) continue;
+  for (const [groupRoot, group] of groups) {
+    if (new Set(group.map((a) => a.road.id)).size < 2) continue;
     group.sort((a, b) => a.key.localeCompare(b.key));
     const keys = new Set(group.map((a) => a.key)),
       existing = physical.filter((j) =>
         j.arms.some((a) => keys.has(key(a.road, a.end))),
-      );
-    // An attachment wholly inside an existing physical intersection does not
-    // create a second node or override that intersection's attachment policy.
+      ),
+      attachment = marked.has(groupRoot);
+    // A logical component wholly inside a physical intersection keeps the
+    // original pavement, trims, identity and attachment policy.
     if (
       existing.length === 1 &&
       existing[0].arms.length === group.length &&
@@ -167,8 +241,8 @@ export function buildLaneJunctions(
       const old = existing
         .flatMap((j) => j.arms)
         .find((a) => a.road === road.id && a.end === end);
-      // Stagger close parallel branches along their real lane curves, so two
-      // outgoing dots do not coincide inside the shared fork pavement.
+      // These are editing insets for continuations; laneJunctionTrims never
+      // applies them to ordinary road geometry. They separate coincident dots.
       const trim = Math.min(
         length * 0.32,
         Math.max(old?.trim ?? 0, 14 + i * 8),
@@ -203,8 +277,9 @@ export function buildLaneJunctions(
     );
     offsets.push({
       id:
-        existing[0]?.id ?? `offset:${JSON.stringify(group.map((a) => a.key))}`,
-      kind: "attachment",
+        existing[0]?.id ??
+        `${attachment ? "offset" : "node"}:${JSON.stringify(group.map((a) => a.key))}`,
+      kind: attachment ? "attachment" : "continuation",
       position,
       arms,
       radius: Math.max(

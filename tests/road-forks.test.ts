@@ -1,6 +1,14 @@
 import { expect, it } from "vitest";
-import { example, makeRoad } from "../src/core/model";
-import { center, v } from "../src/core/math";
+import { connections, example, makeRoad } from "../src/core/model";
+import {
+  arcParameter,
+  arcTable,
+  center,
+  dist,
+  lanePoint,
+  tangent,
+  v,
+} from "../src/core/math";
 import {
   roadForks,
   forkPavement,
@@ -59,16 +67,62 @@ it("removes duplicate coplanar fork pavement and internal edge paint without cut
 });
 it("gives each cloverleaf ramp level shared-surface collars while retaining separated through roads", () => {
   const p = example("elevated"),
-    groups = roadForks(p.roads);
-  for (const ramp of p.roads.filter((r) => r.kind === "ramp")) {
-    expect(groups.get(ramp.id)?.pavement.length).toBeGreaterThan(0);
-    const start = center(ramp, 0),
-      end = center(ramp, 1);
-    const flat = ramp.id.endsWith("right") ? 0.105 : 0.095;
-    expect(center(ramp, flat).y).toBeCloseTo(start.y, 8);
-    expect(center(ramp, 1 - flat).y).toBeCloseTo(end.y, 8);
+    groups = roadForks(p.roads),
+    links = connections(p),
+    roads = new Map(p.roads.map((r) => [r.id, r])),
+    ramps = p.roads.filter((r) => r.kind === "ramp");
+  expect(ramps).toHaveLength(56);
+  let collars = 0,
+    internalEnds = 0;
+  for (const ramp of ramps) {
+    for (const end of [0, 1] as const) {
+      const attachment = ramp.attachments?.[end === 0 ? "start" : "end"];
+      if (attachment) {
+        collars++;
+        // Only the family's outer ends share pavement with a wider collector.
+        expect(groups.get(ramp.id)?.pavement.length).toBeGreaterThan(0);
+        expect(roads.get(attachment.road)!.name).toContain("辅道");
+        const flat = ramp.name.includes("右转") ? 0.105 : 0.095,
+          table = arcTable(ramp),
+          length = table.at(-1)!.s,
+          t = arcParameter(table, end === 0 ? 12 : length - 12);
+        expect(center(ramp, end === 0 ? flat : 1 - flat).y).toBeCloseTo(
+          center(ramp, end).y,
+          8,
+        );
+        expect(center(ramp, t).y).toBeCloseTo(center(ramp, end).y, 8);
+        expect(tangent(ramp, end).y).toBeCloseTo(0, 8);
+      } else {
+        internalEnds++;
+        // An automatic piece boundary follows the ramp's actual grade and
+        // needs a smooth continuation, rather than another horizontal collar.
+        const touching = links
+          .filter((link) =>
+            end === 0 ? link.to.road === ramp.id : link.from.road === ramp.id,
+          )
+          .filter((link) => {
+            const ref = end === 0 ? link.from : link.to,
+              next = roads.get(ref.road)!,
+              at = end === 0 ? 1 : 0,
+              a = tangent(ramp, end),
+              b = tangent(next, at);
+            return (
+              dist(lanePoint(ramp, 0, end), lanePoint(next, ref.lane, at)) <
+                1e-7 && a.x * b.x + a.y * b.y + a.z * b.z > 1 - 1e-7
+            );
+          });
+        expect(
+          touching.length,
+          `${ramp.id}:${end} continuation`,
+        ).toBeGreaterThan(0);
+      }
+    }
   }
-  for (const road of p.roads.filter((r) => r.id.endsWith("main")))
+  expect(collars).toBe(16);
+  expect(internalEnds).toBe(96);
+  const main = p.roads.filter((r) => r.name.startsWith("单向两车道"));
+  expect(main).toHaveLength(32);
+  for (const road of main)
     expect(
       groups.get(road.id)?.pavement.some((r) => r.kind === "ramp") ?? false,
     ).toBe(false);
