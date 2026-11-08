@@ -1,60 +1,69 @@
 {
-  "recorded_at": "2026-11-08T10:47:36.017299+00:00",
-  "latest_change": "发布拥堵感知最少车辆选道与变道无额外减速4590，以及必须联合的smooth端口道路3ce和消费2b；修复3→4平滑后第四出口消失并支持真实b:3通车。旧版本已保存to=[]不猜恢复，须手动重连。",
-  "record_type": "精确2b619311 git archive统一候选有界验收及不可变部署；440/28为本候选计数，不与前阶段379/283或8c531/37相加。",
+  "recorded_at": "2026-11-08T15:56:32.547293+00:00",
+  "latest_change": "合并用户56b7417非对称道路替换/滚动出口与本地56bd节点视觉解耦；发布双父merge b6767d15。仅显示平滑保持逻辑/活动车辆/时钟；另修正20km道路内侧trim误判外部sink的端点资格。",
+  "record_type": "精确333文件merge archive生产包发布；按版本保留owner独立证据，不相加326/153/176/9或旧UI数量。代码已优先推送GitHub，文档随后单独交付。",
   "checks": [
     {
-      "command": "git archive 2b6193117af42ec5967861af3d5e1bba612baf7e",
-      "scope": "all326 tracked files exactly match final smooth-consumer manifest;4590/3ce/2b ancestor commits included;protected draft excluded",
-      "delivered_manifest_sha256": "255d868073a0a6c907a8181a8faba86ed84b2527718018af137fe353b6a696a2",
-      "source_manifest_sha256": "680fb47863ee4e3b90066612dbd63d8e180ec387b11099d772b47ec52b184d0f",
-      "artifact": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-smooth-lanes-2b619311-20261108/manifest.json"
+      "command": "git merge origin/main --no-commit then owner resolution and explicit8-file merge commit",
+      "app_commit": "b6767d15161744038dc73ed96ea3676c902a53c8",
+      "parents": [
+        "56bd8553d22042d80838104c76cea5b5794bf189",
+        "56b7417669d0478e2cb48dcd314e0c879d049df8"
+      ],
+      "scope": "user commit preserved as ancestor;road3/traffic5 hashes verified before staging latest host;protected draft excluded",
+      "artifact": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-user-visual-smooth-20261108/manifest.json"
     },
     {
       "command": "npm run build",
       "exit_code": 0,
-      "scope": "same candidate whole-project tsc and production Vite;dist hashes identical to delivered consumer build;existing chunk-size warning only",
-      "artifact": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-smooth-lanes-2b619311-20261108/build.log"
+      "scope": "exact merge333-file archive whole-project tsc and Vite;existing900kB chunk warning",
+      "artifact": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-user-visual-smooth-20261108/build.log"
     },
     {
-      "command": "vitest run (20 explicitly listed affected files)",
-      "exit_code": 0,
-      "passed": 440,
-      "failed": 0,
-      "skipped": 0,
-      "scope": "single candidate;congestion/cross-seam gaps/cruise control,manual smooth endpoints/rules/runtime pavement envelope,routes/network/snapshots,signals/body-tail and receiving storage",
-      "artifact": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-smooth-lanes-2b619311-20261108/core-results.json",
-      "file_manifest": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-smooth-lanes-2b619311-20261108/core-run.json"
+      "command": "reuse exact delivered road3 files and traffic5 files",
+      "scope": "road9UI belongs its isolated snapshot with prior host;traffic176/15suites belongs isolated traffic source with56bd UI;matching files verified but neither count relabeled whole-merge results",
+      "road_artifact": "/home/bhw/repos/interchange-lab/.cache/builds/user-remote-road-merge-20261108/validation.json",
+      "traffic_artifact": "/home/bhw/repos/interchange-lab/.cache/builds/rolling-exit-merge-r3-20261108/traffic-validation.json"
     },
     {
-      "command": "Playwright against production dist with candidate fixture module routes on5194",
-      "unique_cases": 28,
-      "passed": 28,
+      "command": "actual production-bundle Playwright integration on5194",
+      "unique_cases": 6,
+      "passed": 6,
       "failed": 0,
       "skipped": 0,
-      "scope": "first attempt all28 passed;includes four new smooth cases,existing auto/node/history/save,preview/asymmetric snap,route settings and continuous green;original assertions unchanged;helper modules not deployed",
-      "artifact": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-smooth-lanes-2b619311-20261108/browser-final-summary.json",
-      "reporter": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-smooth-lanes-2b619311-20261108/browser-results.json"
+      "scope": "real replacement UI2;real3to5/fifth target/common ports/full graph equality;continuous fixed-dt active car/controller/stats;normal live/visual history orders and structural negative control;rolling positive/reverse external/internal20km/red/blocked",
+      "artifact": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-user-visual-smooth-20261108/bundle-final-summary.json",
+      "initial_report": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-user-visual-smooth-20261108/bundle-results.json",
+      "followup_reports": [
+        "/home/bhw/repos/interchange-lab/.cache/builds/integrated-user-visual-smooth-20261108/bundle-followup-results.json",
+        "/home/bhw/repos/interchange-lab/.cache/builds/integrated-user-visual-smooth-20261108/bundle-final-targeted-results.json"
+      ],
+      "fixture_notes": "initial multi-exit actor legally chose another exit;real UI then established sole fifth target. Optional missingroadVisuals meansdirect. Original failed supplemental attempts retained;no product/original-test assertion edits."
     },
     {
       "command": "SMOKE_URL=http://127.0.0.1:5194/ npm run test:smoke",
       "exit_code": 0,
-      "artifact": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-smooth-lanes-2b619311-20261108/production-smoke.log"
+      "artifact": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-user-visual-smooth-20261108/production-smoke.log"
     },
     {
-      "command": "actual production bundle lane-choice/cruise/fourth-lane integration",
-      "passed": true,
-      "scope": "compiled runtime chooses lane3 via1,2,3;single/two adjacent100km/h changes match holding controls within4.37e-6m/s;explicit actuala:2>b:3 traversed/entered/completed1,failed0;no source-runtime imports",
-      "artifact": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-smooth-lanes-2b619311-20261108/live-integration.json",
-      "fixture_note": "Initial synchronous automatic-demand fixture did not establish the required completed traversal;original failed supplemental log retained. Final explicit-route actor is the accepted bounded check;no product or original test assertion changes."
-    },
-    {
-      "command": "postdeploy Environment/HTTP/production smoke/LAN actual bundle checks",
+      "command": "postdeploy Environment/pointer/HTTP/production smoke/LAN bundle tests",
       "passed": true,
       "resource_hash_checks": 8,
       "health_checks": 2,
-      "scope": "local+LAN index/JS/CSS/worker match originaldist;actual serviceEnvironment andpointer;production smoke and new three bundle behaviors rechecked;console errors empty",
-      "artifact": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-smooth-lanes-2b619311-20261108/postdeploy.json"
+      "unique_bundle_cases": 6,
+      "first_attempt_passed": 6,
+      "failed": 0,
+      "skipped": 0,
+      "scope": "both address resources match original immutable dist;LAN complete6-case suite first attempt passes;page/console errors empty",
+      "artifact": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-user-visual-smooth-20261108/postdeploy.json",
+      "reporter": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-user-visual-smooth-20261108/postdeploy-bundle-results.json"
+    },
+    {
+      "command": "git push origin b6767d15161744038dc73ed96ea3676c902a53c8:refs/heads/main",
+      "exit_code": 0,
+      "remote_main_verified": "b6767d15161744038dc73ed96ea3676c902a53c8",
+      "scope": "fast-forward from user56b7417;no force;application pushed before documentation per user priority",
+      "artifact": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-user-visual-smooth-20261108/app-sync.json"
     }
   ],
   "limitations": [
@@ -70,12 +79,13 @@
     "提前准备保持既定道路路线和合法连线；普通择道无安全空隙时延后变道，不人为减速制造空隙；真实跟车和必需路线准备的安全保护仍可减速，不能消除超饱和拥堵。",
     "新版苜蓿叶竖曲线需从地图菜单重新载入示例；用户已有存档保留原控制点，不强行调整旧匝道坡度。",
     "限速5–160km/h；普通编辑事务会暂停测试。虚线3米/6米按实际三维距离绘制，路段端头允许截短。",
-    "J工具覆盖真实普通连接节点及偏移/分合流；编辑辅助曲线不增加物理铺面、斑马线、停车或自动信号。实际多对多完整导流图仍未实现。",
     "UI基准来自本机40段苜蓿叶、9次同步setTool调用；不代表首次载图、真实道路几何修改、开始测试时网络初始化或所有规模地图的帧率。",
     "历史压力记录（本轮未重复）：本次500米预判与提前让行不保证饱和路网不堵；固定时钟高压缩窄道路完成292→332，但重叠样本121→219，穿模问题未解决且样本增加。无灯路口压力结果与上一版一致。",
     "历史压力记录（本轮未重复）：新出车分布下高压360秒过渡/路口车身重叠采样219→425、2→39，汇流0→0但排队20触发旧<20断言；本次未声称修复碰撞或消除高流量拥堵。50是用户确认的可调测试基准，并非所有道路的物理饱和流率。",
-    "本轮已包含最少车辆选道与变道无额外减速；真实跟车、红灯、弯道、限速和接收空间保护保留。440核心/28浏览器是有界验收，不是完整高压通过。",
-    "旧版本已清空并保存的to=[]无法区分于用户主动禁行，升级不会自动恢复第四出口；需手动重新连线或恢复原目标历史/存档。"
+    "旧版本已清空并保存的to=[]无法区分于用户主动禁行，升级不会自动恢复第四出口；需手动重新连线或恢复原目标历史/存档。",
+    "节点平滑只改变显示；真实profile、median、offset、方向及结构升级仍影响逻辑。正常历史顺序保留，纯视觉/live参数历史不重置，真正结构编辑仍重配。",
+    "本轮只完成focused视觉解耦与用户远端更新；整体重构和独立非对称交叉节点识别bug暂缓。",
+    "120段冷hover原样例约100ms，0基础mesh重建不等于零延迟；无全局FPS或高压零重叠保证。"
   ],
   "previous_verified_stable_snapshot": {
     "recorded_at": "2026-11-06T11:58:12.595591+00:00",
@@ -425,47 +435,45 @@
     "healthz": "ok"
   },
   "current_deployment": {
-    "version": "integrated-smooth-lanes-2b619311-20261108",
+    "version": "integrated-user-visual-smooth-20261108",
     "url": "http://192.168.31.167:5173/",
-    "source_commit": "2b6193117af42ec5967861af3d5e1bba612baf7e",
-    "source_snapshot": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-smooth-lanes-2b619311-20261108/source",
-    "source_manifest_sha256": "680fb47863ee4e3b90066612dbd63d8e180ec387b11099d772b47ec52b184d0f",
-    "delivered_manifest_sha256": "255d868073a0a6c907a8181a8faba86ed84b2527718018af137fe353b6a696a2",
-    "release_directory": "/home/bhw/repos/interchange-lab/.cache/deployments/integrated-smooth-lanes-2b619311-20261108",
-    "manifest": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-smooth-lanes-2b619311-20261108/manifest.json",
-    "bundle": "index-7SzFZpaY.js",
+    "source_commit": "b6767d15161744038dc73ed96ea3676c902a53c8",
+    "source_snapshot": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-user-visual-smooth-20261108/source",
+    "parents": [
+      "56bd8553d22042d80838104c76cea5b5794bf189",
+      "56b7417669d0478e2cb48dcd314e0c879d049df8"
+    ],
+    "source_files": 333,
+    "source_manifest_sha256": "dcf7008403e721c8189ae011986bfbbc01a1feca26d6f023b8b84a40c4424383",
+    "release_directory": "/home/bhw/repos/interchange-lab/.cache/deployments/integrated-user-visual-smooth-20261108",
+    "manifest": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-user-visual-smooth-20261108/manifest.json",
+    "bundle": "index-DGSCxmwq.js",
     "css": "index-Iu-XULhB.css",
     "dist_sha256": {
       "assets/cs2-path-worker-DFcwOVUm.js": "98850414cebb8d678b7082ac85feaef178e9d67b2bf4f7cbb1707e248b3b074c",
-      "assets/index-7SzFZpaY.js": "82b7a10bc7c517ebb4248628b1db0268997b006c7cdbd25bab974f50076556a2",
+      "assets/index-DGSCxmwq.js": "3eaa0092de1cd8eeb477ae2b396683f33f9a6fb8494c905103929ac76244c47c",
       "assets/index-Iu-XULhB.css": "cd61ad4b99cf784e94c5c3d6c0eebfba5ddc2784b8cad9e135d1a7bbcfab519c",
-      "index.html": "ad32d59ccfed79243b54b3e23f8a5bc7acd59a702628aa90cdbedb90482bb026"
+      "index.html": "b71da037c05581ba799943031cf7db3e4e0444dfcda9d423990ab66953725971"
     },
     "service_restart_exit_code": 0,
-    "post_deploy_verification": "passed;8resourcehashes,2health,local smoke,LAN lane-choice/cruise/fourth-target actualruntime;emptyconsoleerrors",
-    "tests": {
-      "affected_core_files": 20,
-      "passed": 440,
-      "failed": 0,
-      "skipped": 0
-    },
-    "typecheck": "passed in same build",
+    "post_deploy_verification": "passed;8resourcehashes,2health,production smoke andLAN actual bundle6/6,0skip,0flaky",
+    "typecheck": "passed on exact merged source",
     "browser_verification": {
-      "unique_passed": 28,
-      "first_attempt": true,
-      "failed": 0,
-      "skipped": 0,
-      "artifact": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-smooth-lanes-2b619311-20261108/browser-final-summary.json"
+      "unique_cases": 6,
+      "passed": 6,
+      "postdeploy_first_attempt_passed": 6,
+      "artifact": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-user-visual-smooth-20261108/bundle-final-summary.json",
+      "postdeploy_report": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-user-visual-smooth-20261108/postdeploy-bundle-results.json"
     },
     "previous_release": {
-      "id": "integrated-completed-8c4ed4c-20261108",
-      "commit": "8c4ed4c303e9c9682f3dbd6fb9b2d96ac3626193",
-      "source": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-completed-8c4ed4c-20261108/source",
-      "release": "/home/bhw/repos/interchange-lab/.cache/deployments/integrated-completed-8c4ed4c-20261108"
+      "id": "integrated-smooth-lanes-2b619311-20261108",
+      "commit": "2b6193117af42ec5967861af3d5e1bba612baf7e",
+      "source": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-smooth-lanes-2b619311-20261108/source",
+      "release": "/home/bhw/repos/interchange-lab/.cache/deployments/integrated-smooth-lanes-2b619311-20261108"
     },
-    "rollback_directory": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-smooth-lanes-2b619311-20261108/rollback",
-    "service_environment": "MainPID=1724879\nEnvironment=ROADLAB_PORT=5173 ROADLAB_DIST_DIR=/home/bhw/repos/interchange-lab/.cache/deployments/integrated-smooth-lanes-2b619311-20261108/dist\nActiveState=active\nSubState=running\n",
-    "postdeploy_artifact": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-smooth-lanes-2b619311-20261108/postdeploy.json"
+    "rollback_directory": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-user-visual-smooth-20261108/rollback",
+    "service_environment": "MainPID=1989863\nEnvironment=ROADLAB_PORT=5173 ROADLAB_DIST_DIR=/home/bhw/repos/interchange-lab/.cache/deployments/integrated-user-visual-smooth-20261108/dist\nActiveState=active\nSubState=running\n",
+    "postdeploy_artifact": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-user-visual-smooth-20261108/postdeploy.json"
   },
   "previous_cs2_preview_checks": [
     {
@@ -673,12 +681,13 @@
       "baseline_observed_overlap_samples": 43,
       "last_observed_overlap_samples": 51,
       "scope": "Historical observations retained;current440-case candidate reruns this exact check unchanged and passes. Do not generalize to sustained-demand overlap/queue checks.",
-      "current_scoped_recheck": {
+      "previous_scoped_recheck": {
         "source_commit": "2b6193117af42ec5967861af3d5e1bba612baf7e",
         "status": "unchanged exact signal test passed within20-file440-case run",
         "artifact": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-smooth-lanes-2b619311-20261108/core-results.json",
         "scope": "does not certify general high-pressure collision quality"
-      }
+      },
+      "current_release_pressure_status": "not rerun;targeted bundle integration does not certify general pressure overlap quality"
     },
     {
       "test": "tests/traffic.test.ts: sustained transition/junction demand body separation",
@@ -691,7 +700,8 @@
         "transition": 121,
         "junction": 2
       },
-      "scope": "assertions retained;merge pressure0overlap andpassed;no full pressure acceptance"
+      "scope": "assertions retained;merge pressure0overlap andpassed;no full pressure acceptance",
+      "current_release_pressure_status": "not rerun;targeted bundle integration does not certify general pressure overlap quality"
     }
   ],
   "previous_junction_controls_deployment": {
@@ -770,8 +780,9 @@
   "github_sync": {
     "repository": "https://github.com/hongwbao/roadLab",
     "branch": "main",
-    "pushed_application_commit": "2b6193117af42ec5967861af3d5e1bba612baf7e",
-    "scope": "exact application2b plus README/verification-only delivery commit;explicit delivery SHA:main;GitHub Actions not accepted in this delivery"
+    "pushed_application_commit": "b6767d15161744038dc73ed96ea3676c902a53c8",
+    "application_push_verified_at": "2026-11-08T15:54:36.083613+00:00",
+    "scope": "exact application merge pushed first;README/verification-only documentation commit follows;GitHub Actions not accepted in this delivery"
   },
   "previous_road_expansion_deployment": {
     "version": "road-expansion-20261107-103432",
@@ -1786,7 +1797,7 @@
     "traffic_multiplier": 1,
     "authored_destination_shares": false,
     "existing_saves": "Unchanged;reload builtin cloverleaf example from map menu.",
-    "validation_scope": "Current2b440core/28browser and postdeploy checks are bounded unified validation;original1b18b31 quick-delivery boundary retained separately;prior4590 load observation is labeled by version;no full400%pressure acceptance.",
+    "validation_scope": "Current merged sourcebuild plus targeted6 production-bundle and postdeploy checks;prior2b/56bd/4590 results retain explicit source boundaries;no full pressure acceptance.",
     "original_delivery_validation_scope": "Build and minimal generated-data summary only;historical checks do not validate this120-segment map."
   },
   "previous_completed_systems_delivery_record": {
@@ -1861,16 +1872,28 @@
     ]
   },
   "completed_systems_release": {
-    "included_commits": [
-      "4590f180d91fc28867f37135a45921199f8fa397",
-      "3ce0ca7cadb97ada2259194be9479c6852afd6c7",
-      "2b6193117af42ec5967861af3d5e1bba612baf7e"
+    "app_commit": "b6767d15161744038dc73ed96ea3676c902a53c8",
+    "user_commit": "56b7417669d0478e2cb48dcd314e0c879d049df8",
+    "local_visual_commit": "56bd8553d22042d80838104c76cea5b5794bf189",
+    "focused_scope": [
+      "node-only visual smoothing decoupled from logical geometry/traffic",
+      "user forward/backward replacement counts shared by preview and commit",
+      "user rolling external exits",
+      "strict canonical0/1 endpoint check for real external sink"
     ],
-    "prior_release_retained": "8c4ed4c303e9c9682f3dbd6fb9b2d96ac3626193",
-    "protected_draft_excluded": "src/simulation/cs2-node-connect-positions.ts",
-    "smooth_semantics": "semantic lanes preserved through autoTaper;physical endpoints meet default.8x4m=3.2m and actual trim;no loosening default/profile/direction checks",
-    "saved_empty_rules": "Old savedto=[] is indistinguishable from intentional closure;manual relink or restore prior saved targets required;no inferred recovery",
-    "validation_boundary": "all current440/28 results from exact326-file2b source;older379/283/531/37 remain version-scoped historical records"
+    "deferred": [
+      "overallProject/schema/completeCS2 reconstruction",
+      "independent asymmetric crossing shared-node bug"
+    ],
+    "preserved": [
+      "least-occupied legal lane choice",
+      "no lane-change-only braking",
+      "signal tail/continuous green",
+      "receiving storage",
+      "real profiles/median/offset/direction"
+    ],
+    "saved_empty_rules": "no guessed restoration;manual relink or prior save required",
+    "protected_draft": "untouched/untracked/excluded"
   },
   "previous_8c_integrated_release_record": {
     "recorded_at": "2026-11-08T09:38:34.971445+00:00",
@@ -2075,11 +2098,233 @@
     "artifact_sha256": "2d662a5bc003ec6254f09999773af748054633b2e8d078ecd78b1aca924efe24"
   },
   "smooth_physical_evidence": {
-    "source_manifest_sha256": "255d868073a0a6c907a8181a8faba86ed84b2527718018af137fe353b6a696a2",
-    "poses": 1606,
-    "boundary_points": 134904,
-    "outside_pavement": 0,
-    "scope": "same exact source four flat fixture conservative3.8x1.76m body/wheel envelope;not arbitrary shapes or maps",
-    "artifact": "/home/bhw/repos/interchange-lab/.cache/builds/smooth-join-consumer-20261108/traffic-validation.json"
+    "source": "owner final rolling traffic overlay matches merge5files",
+    "poses": 9434,
+    "boundary_points": 792456,
+    "outside": 0,
+    "variants": 12,
+    "scope": "six direct/style bounded3.8x1.76m envelope fixtures;does not certify arbitrary extreme maps",
+    "artifact": "/home/bhw/repos/interchange-lab/.cache/builds/rolling-exit-merge-r3-20261108/traffic-validation.json"
+  },
+  "previous_2b_integrated_release_record": {
+    "recorded_at": "2026-11-08T10:47:36.017299+00:00",
+    "latest_change": "发布拥堵感知最少车辆选道与变道无额外减速4590，以及必须联合的smooth端口道路3ce和消费2b；修复3→4平滑后第四出口消失并支持真实b:3通车。旧版本已保存to=[]不猜恢复，须手动重连。",
+    "record_type": "精确2b619311 git archive统一候选有界验收及不可变部署；440/28为本候选计数，不与前阶段379/283或8c531/37相加。",
+    "checks": [
+      {
+        "command": "git archive 2b6193117af42ec5967861af3d5e1bba612baf7e",
+        "scope": "all326 tracked files exactly match final smooth-consumer manifest;4590/3ce/2b ancestor commits included;protected draft excluded",
+        "delivered_manifest_sha256": "255d868073a0a6c907a8181a8faba86ed84b2527718018af137fe353b6a696a2",
+        "source_manifest_sha256": "680fb47863ee4e3b90066612dbd63d8e180ec387b11099d772b47ec52b184d0f",
+        "artifact": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-smooth-lanes-2b619311-20261108/manifest.json"
+      },
+      {
+        "command": "npm run build",
+        "exit_code": 0,
+        "scope": "same candidate whole-project tsc and production Vite;dist hashes identical to delivered consumer build;existing chunk-size warning only",
+        "artifact": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-smooth-lanes-2b619311-20261108/build.log"
+      },
+      {
+        "command": "vitest run (20 explicitly listed affected files)",
+        "exit_code": 0,
+        "passed": 440,
+        "failed": 0,
+        "skipped": 0,
+        "scope": "single candidate;congestion/cross-seam gaps/cruise control,manual smooth endpoints/rules/runtime pavement envelope,routes/network/snapshots,signals/body-tail and receiving storage",
+        "artifact": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-smooth-lanes-2b619311-20261108/core-results.json",
+        "file_manifest": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-smooth-lanes-2b619311-20261108/core-run.json"
+      },
+      {
+        "command": "Playwright against production dist with candidate fixture module routes on5194",
+        "unique_cases": 28,
+        "passed": 28,
+        "failed": 0,
+        "skipped": 0,
+        "scope": "first attempt all28 passed;includes four new smooth cases,existing auto/node/history/save,preview/asymmetric snap,route settings and continuous green;original assertions unchanged;helper modules not deployed",
+        "artifact": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-smooth-lanes-2b619311-20261108/browser-final-summary.json",
+        "reporter": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-smooth-lanes-2b619311-20261108/browser-results.json"
+      },
+      {
+        "command": "SMOKE_URL=http://127.0.0.1:5194/ npm run test:smoke",
+        "exit_code": 0,
+        "artifact": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-smooth-lanes-2b619311-20261108/production-smoke.log"
+      },
+      {
+        "command": "actual production bundle lane-choice/cruise/fourth-lane integration",
+        "passed": true,
+        "scope": "compiled runtime chooses lane3 via1,2,3;single/two adjacent100km/h changes match holding controls within4.37e-6m/s;explicit actuala:2>b:3 traversed/entered/completed1,failed0;no source-runtime imports",
+        "artifact": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-smooth-lanes-2b619311-20261108/live-integration.json",
+        "fixture_note": "Initial synchronous automatic-demand fixture did not establish the required completed traversal;original failed supplemental log retained. Final explicit-route actor is the accepted bounded check;no product or original test assertion changes."
+      },
+      {
+        "command": "postdeploy Environment/HTTP/production smoke/LAN actual bundle checks",
+        "passed": true,
+        "resource_hash_checks": 8,
+        "health_checks": 2,
+        "scope": "local+LAN index/JS/CSS/worker match originaldist;actual serviceEnvironment andpointer;production smoke and new three bundle behaviors rechecked;console errors empty",
+        "artifact": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-smooth-lanes-2b619311-20261108/postdeploy.json"
+      }
+    ],
+    "current_deployment": {
+      "version": "integrated-smooth-lanes-2b619311-20261108",
+      "url": "http://192.168.31.167:5173/",
+      "source_commit": "2b6193117af42ec5967861af3d5e1bba612baf7e",
+      "source_snapshot": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-smooth-lanes-2b619311-20261108/source",
+      "source_manifest_sha256": "680fb47863ee4e3b90066612dbd63d8e180ec387b11099d772b47ec52b184d0f",
+      "delivered_manifest_sha256": "255d868073a0a6c907a8181a8faba86ed84b2527718018af137fe353b6a696a2",
+      "release_directory": "/home/bhw/repos/interchange-lab/.cache/deployments/integrated-smooth-lanes-2b619311-20261108",
+      "manifest": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-smooth-lanes-2b619311-20261108/manifest.json",
+      "bundle": "index-7SzFZpaY.js",
+      "css": "index-Iu-XULhB.css",
+      "dist_sha256": {
+        "assets/cs2-path-worker-DFcwOVUm.js": "98850414cebb8d678b7082ac85feaef178e9d67b2bf4f7cbb1707e248b3b074c",
+        "assets/index-7SzFZpaY.js": "82b7a10bc7c517ebb4248628b1db0268997b006c7cdbd25bab974f50076556a2",
+        "assets/index-Iu-XULhB.css": "cd61ad4b99cf784e94c5c3d6c0eebfba5ddc2784b8cad9e135d1a7bbcfab519c",
+        "index.html": "ad32d59ccfed79243b54b3e23f8a5bc7acd59a702628aa90cdbedb90482bb026"
+      },
+      "service_restart_exit_code": 0,
+      "post_deploy_verification": "passed;8resourcehashes,2health,local smoke,LAN lane-choice/cruise/fourth-target actualruntime;emptyconsoleerrors",
+      "tests": {
+        "affected_core_files": 20,
+        "passed": 440,
+        "failed": 0,
+        "skipped": 0
+      },
+      "typecheck": "passed in same build",
+      "browser_verification": {
+        "unique_passed": 28,
+        "first_attempt": true,
+        "failed": 0,
+        "skipped": 0,
+        "artifact": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-smooth-lanes-2b619311-20261108/browser-final-summary.json"
+      },
+      "previous_release": {
+        "id": "integrated-completed-8c4ed4c-20261108",
+        "commit": "8c4ed4c303e9c9682f3dbd6fb9b2d96ac3626193",
+        "source": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-completed-8c4ed4c-20261108/source",
+        "release": "/home/bhw/repos/interchange-lab/.cache/deployments/integrated-completed-8c4ed4c-20261108"
+      },
+      "rollback_directory": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-smooth-lanes-2b619311-20261108/rollback",
+      "service_environment": "MainPID=1724879\nEnvironment=ROADLAB_PORT=5173 ROADLAB_DIST_DIR=/home/bhw/repos/interchange-lab/.cache/deployments/integrated-smooth-lanes-2b619311-20261108/dist\nActiveState=active\nSubState=running\n",
+      "postdeploy_artifact": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-smooth-lanes-2b619311-20261108/postdeploy.json"
+    },
+    "github_sync": {
+      "repository": "https://github.com/hongwbao/roadLab",
+      "branch": "main",
+      "pushed_application_commit": "2b6193117af42ec5967861af3d5e1bba612baf7e",
+      "scope": "exact application2b plus README/verification-only delivery commit;explicit delivery SHA:main;GitHub Actions not accepted in this delivery"
+    },
+    "completed_systems_release": {
+      "included_commits": [
+        "4590f180d91fc28867f37135a45921199f8fa397",
+        "3ce0ca7cadb97ada2259194be9479c6852afd6c7",
+        "2b6193117af42ec5967861af3d5e1bba612baf7e"
+      ],
+      "prior_release_retained": "8c4ed4c303e9c9682f3dbd6fb9b2d96ac3626193",
+      "protected_draft_excluded": "src/simulation/cs2-node-connect-positions.ts",
+      "smooth_semantics": "semantic lanes preserved through autoTaper;physical endpoints meet default.8x4m=3.2m and actual trim;no loosening default/profile/direction checks",
+      "saved_empty_rules": "Old savedto=[] is indistinguishable from intentional closure;manual relink or restore prior saved targets required;no inferred recovery",
+      "validation_boundary": "all current440/28 results from exact326-file2b source;older379/283/531/37 remain version-scoped historical records"
+    },
+    "known_failing_checks": [
+      {
+        "test": "tests/traffic-lights.test.ts: continues serving traffic across multiple signal cycles without body overlap",
+        "status": "historical failure;exact unchanged signal case passed on2b619311;general pressure acceptance remains incomplete",
+        "last_observed_release": "junction-controls-20261107-093858",
+        "baseline_observed_overlap_samples": 43,
+        "last_observed_overlap_samples": 51,
+        "scope": "Historical observations retained;current440-case candidate reruns this exact check unchanged and passes. Do not generalize to sustained-demand overlap/queue checks.",
+        "current_scoped_recheck": {
+          "source_commit": "2b6193117af42ec5967861af3d5e1bba612baf7e",
+          "status": "unchanged exact signal test passed within20-file440-case run",
+          "artifact": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-smooth-lanes-2b619311-20261108/core-results.json",
+          "scope": "does not certify general high-pressure collision quality"
+        }
+      },
+      {
+        "test": "tests/traffic.test.ts: sustained transition/junction demand body separation",
+        "status": "failed;controlled fixed-ID metrics identical to preceding cloverleaf release",
+        "baseline_overlap_samples": {
+          "transition": 121,
+          "junction": 2
+        },
+        "current_overlap_samples": {
+          "transition": 121,
+          "junction": 2
+        },
+        "scope": "assertions retained;merge pressure0overlap andpassed;no full pressure acceptance"
+      }
+    ],
+    "limitations": [
+      "原式吸附实验入口仍使用兼容最终道路应用；完整CourseSplit/节点几何/节点车道与后处理尚未接线，部分端点与附件行为有已知差异。正常入口继续兼容吸附。",
+      "历史压力记录（本轮未重复）：此前高压路段过渡与路口仍检出车身重叠；本次固定ID对照保留失败断言，未通过完整交通压力验收。",
+      "完整PersonalCarAI已接实际引擎；完整导航窗口独立模块仍未接engine。",
+      "行人、真实停车、公交、货运、应急任务和其他交通方式未完整实现。",
+      "普通无灯路口的部分减速经完整原式lane-speed oracle复现，不能按旧恒速假设删除让行行为。",
+      "构建与测试记录来自本机固定版本验证；GitHub Actions 结果未在本次同步中验收。",
+      "命名信号方案库保存在当前浏览器；跨浏览器或设备须导出/导入JSON。紧凑布局保留键盘/名称辅助，不代表完整触屏编辑。",
+      "编辑性能数据为本机64段道路/16路口场景的编辑事务耗时，不代表任意规模城市帧率；车辆运行网络在开始测试时初始化。",
+      "中央隔离带目前仅支持双向道路的实体混凝土形式；锐角进口需要更长的路口缩进，极短进口无安全净空间时不绘制斑马线。",
+      "提前准备保持既定道路路线和合法连线；普通择道无安全空隙时延后变道，不人为减速制造空隙；真实跟车和必需路线准备的安全保护仍可减速，不能消除超饱和拥堵。",
+      "新版苜蓿叶竖曲线需从地图菜单重新载入示例；用户已有存档保留原控制点，不强行调整旧匝道坡度。",
+      "限速5–160km/h；普通编辑事务会暂停测试。虚线3米/6米按实际三维距离绘制，路段端头允许截短。",
+      "J工具覆盖真实普通连接节点及偏移/分合流；编辑辅助曲线不增加物理铺面、斑马线、停车或自动信号。实际多对多完整导流图仍未实现。",
+      "UI基准来自本机40段苜蓿叶、9次同步setTool调用；不代表首次载图、真实道路几何修改、开始测试时网络初始化或所有规模地图的帧率。",
+      "历史压力记录（本轮未重复）：本次500米预判与提前让行不保证饱和路网不堵；固定时钟高压缩窄道路完成292→332，但重叠样本121→219，穿模问题未解决且样本增加。无灯路口压力结果与上一版一致。",
+      "历史压力记录（本轮未重复）：新出车分布下高压360秒过渡/路口车身重叠采样219→425、2→39，汇流0→0但排队20触发旧<20断言；本次未声称修复碰撞或消除高流量拥堵。50是用户确认的可调测试基准，并非所有道路的物理饱和流率。",
+      "本轮已包含最少车辆选道与变道无额外减速；真实跟车、红灯、弯道、限速和接收空间保护保留。440核心/28浏览器是有界验收，不是完整高压通过。",
+      "旧版本已清空并保存的to=[]无法区分于用户主动禁行，升级不会自动恢复第四出口；需手动重新连线或恢复原目标历史/存档。"
+    ],
+    "smooth_physical_evidence": {
+      "source_manifest_sha256": "255d868073a0a6c907a8181a8faba86ed84b2527718018af137fe353b6a696a2",
+      "poses": 1606,
+      "boundary_points": 134904,
+      "outside_pavement": 0,
+      "scope": "same exact source four flat fixture conservative3.8x1.76m body/wheel envelope;not arbitrary shapes or maps",
+      "artifact": "/home/bhw/repos/interchange-lab/.cache/builds/smooth-join-consumer-20261108/traffic-validation.json"
+    }
+  },
+  "continuous_bundle_evidence": {
+    "frames": 3121,
+    "simulation_seconds": 52.016666666666666,
+    "matched_fixed_dt": 0.016666666666666666,
+    "ui_phases": ["apply", "undo", "redo", "right-cancel"],
+    "active_cars_each_phase": [1, 1, 1, 1],
+    "configure_calls": 0,
+    "completed_actual_control": [1, 1],
+    "failed": 0,
+    "scope": "automatic RAF isolated, saved actual facade.update invoked continuously;render cars,signals,plans,occupancy,clock,stats compared each matched sample;normal chronologicalparameter undo and reverse parameter-before-style order checked;true roadedit/undo structurally resets",
+    "artifact": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-user-visual-smooth-20261108/bundle-final-summary.json"
+  },
+  "new_direct_reference": {
+    "baseline_commit": "56b7417669d0478e2cb48dcd314e0c879d049df8",
+    "smooth": "all off",
+    "sha256": "0ff435a5728a191eb2a91fe0146cb993e8a38eb461274376748ba56f533a5d0c",
+    "merged_sha256": "0ff435a5728a191eb2a91fe0146cb993e8a38eb461274376748ba56f533a5d0c",
+    "cases": 6,
+    "real_trajectory_samples": 709,
+    "scope": "owner traffic exact5-file source matches;strict complete logical/trajectory equality for six fixtures.20km internal-sink correction intentionally differs and is separately tested;oldad27/750 SHA is historical only",
+    "artifact": "/home/bhw/repos/interchange-lab/.cache/builds/rolling-exit-merge-r3-20261108/traffic-validation.json"
+  },
+  "unpublished_56bd_candidate": {
+    "source_commit": "56bd8553d22042d80838104c76cea5b5794bf189",
+    "status": "built and checked;never deployed;superseded after userGitHub update",
+    "product_source_sha256": "8414c7fee1cef8e7f55be57b2e95f0d67354191611d2e46d3a14810f6c331030",
+    "owner_road_core": 326,
+    "owner_traffic": 153,
+    "owner_unique_UI": 26,
+    "scope": "independent source-scoped historical evidence only;not summed into final merged-source counts",
+    "artifact": "/home/bhw/repos/interchange-lab/.cache/builds/visual-only-smooth-r3/validation.json"
+  },
+  "node_visual_performance": {
+    "source_commit": "56bd8553d22042d80838104c76cea5b5794bf189",
+    "roads": 120,
+    "cold_hover_ms": [109.3, 108.8],
+    "apply_ms": 88.6,
+    "cancel_ms": 18.2,
+    "base_mesh_rebuilds": 0,
+    "configure_calls": 0,
+    "scope": "prior frozen node-visual sample;not warm hover benchmark orcurrent merge FPS promise;cold path remains about100ms",
+    "artifact": "/home/bhw/repos/interchange-lab/.cache/builds/visual-only-smooth-r3/node-visual-performance.json"
   }
 }
