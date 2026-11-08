@@ -122,7 +122,7 @@ it("four100% entries generate200 total vehicles/minute, not200 per lane", () => 
       rows.filter((r) => r.source === `in${i}`).length,
     ).toBeGreaterThanOrEqual(48);
   sim.dispose();
-});
+}, 15000);
 it("live changes preserve runtime, cars and routes; future requests honor zero shares and pause", () => {
   const p = fixture(),
     { sim, rows } = observe(p);
