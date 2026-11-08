@@ -123,3 +123,33 @@ test("a real lane edit still invalidates its pavement and fork neighbours after 
   );
   expect(after["cloverleaf-west-main"]).toBe(before["cloverleaf-west-main"]);
 });
+
+test("immediate world picking after compact-to-desktop resize uses the current viewport", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.waitForFunction(() => !!(window as any).lab);
+  await page.locator('[data-action="menu"]').click();
+  await page.locator('[data-action="new"]').click();
+  await page.locator("#confirm-yes").click();
+  await page.locator('[data-action="top"]').click();
+  await page.locator('[data-asset="city-5-asymmetric"]').click();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const a = await page.evaluate(() => {
+    const s = (window as any).lab.editor.scene,
+      p = (window as any).lab.worldToScreen({ x: -50, y: 0, z: 0 }),
+      r = s.el.getBoundingClientRect();
+    return { p, aspect: s.camera.aspect, expected: r.width / r.height };
+  });
+  expect(a.aspect).toBeCloseTo(a.expected, 6);
+  await page.mouse.click(a.p.x, a.p.y);
+  const b = await page.evaluate(() =>
+    (window as any).lab.worldToScreen({ x: 50, y: 0, z: 0 }),
+  );
+  await page.mouse.click(b.x, b.y);
+  await page.mouse.click(900, 230, { button: "right" });
+  expect(
+    await page.evaluate(() => (window as any).lab.editor.project.roads.length),
+  ).toBe(1);
+});

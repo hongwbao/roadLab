@@ -244,6 +244,16 @@ export class Scene {
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
   }
+  private syncViewport(rect: { width: number; height: number }) {
+    // Pointer/API events can arrive before ResizeObserver after a fast resize.
+    // Keep projection and canvas dimensions consistent with the current view.
+    if (
+      rect.width > 0 &&
+      rect.height > 0 &&
+      Math.abs(this.camera.aspect - rect.width / rect.height) > 1e-6
+    )
+      this.resize();
+  }
   setCameraKey(code: string, pressed: boolean) {
     if (pressed) this.cameraKeys.add(code);
     else this.cameraKeys.delete(code);
@@ -1283,7 +1293,8 @@ export class Scene {
       : undefined;
   }
   setRay(x: number, y: number) {
-    const b = this.renderer.domElement.getBoundingClientRect();
+    const b = this.el.getBoundingClientRect();
+    this.syncViewport(b);
     this.mouse.set(
       ((x - b.left) / b.width) * 2 - 1,
       (-(y - b.top) / b.height) * 2 + 1,
@@ -1298,8 +1309,9 @@ export class Scene {
       return { x: p.x, y: p.y, z: p.z };
   }
   project(p: V) {
-    const q = vec(p).project(this.camera),
-      rect = this.el.getBoundingClientRect();
+    const rect = this.el.getBoundingClientRect();
+    this.syncViewport(rect);
+    const q = vec(p).project(this.camera);
     return {
       x: rect.left + ((q.x + 1) * rect.width) / 2,
       y: rect.top + ((-q.y + 1) * rect.height) / 2,
