@@ -54,6 +54,7 @@ const paint = async (page: Page) =>
         pavement: {},
         dashed: [],
         modes: e.project.roads.map((r: any) => r.transitionMode),
+        visualNodes: e.project.roadVisuals?.nodes.length ?? 0,
       };
     e.scene.details.traverse((o: any) => {
       if (o.userData.markingBoundary !== undefined) {
@@ -110,14 +111,12 @@ test("real authored successor mapping withdraws conflicting smooth paint, surviv
   expect((await paint(page)).boundaries["a:1"].end[0]).toBeCloseTo(-24, 5);
   await page.locator('[data-tool="upgrade"]').click();
   await page.locator('[data-upgrade-mode="smooth"]').click();
-  for (const x of [-50, 50]) {
-    const p = await page.evaluate(
-      (x) => (window as any).lab.worldToScreen({ x, y: 0, z: 0 }),
-      x,
-    );
-    await page.mouse.click(p.x, p.y, { button: "right" });
-  }
+  const p = await page.evaluate(() =>
+    (window as any).lab.worldToScreen({ x: 0, y: 0, z: 0 }),
+  );
+  await page.mouse.click(p.x, p.y, { button: "right" });
   expect((await paint(page)).modes.slice(0, 2)).toEqual(["direct", "direct"]);
+  expect((await paint(page)).visualNodes).toBe(0);
   expect((await paint(page)).boundaries["a:1"].end[1]).toBe(-2);
 });
 

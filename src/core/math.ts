@@ -1,4 +1,28 @@
 import type { Road, V } from "./types";
+/** Logical caches must never observe obsolete road-level decoration fields. */
+export function logicalRoadSignature(roads: readonly Road[]): string {
+  return JSON.stringify(
+    roads.map(
+      ({
+        autoTaper: _cache,
+        transitionMode: _style,
+        replacedSection,
+        ...road
+      }) => ({
+        ...road,
+        ...(replacedSection
+          ? {
+              replacedSection: Object.fromEntries(
+                Object.entries(replacedSection).filter(
+                  ([key]) => key !== "transitionMode",
+                ),
+              ),
+            }
+          : {}),
+      }),
+    ),
+  );
+}
 export const v = (x = 0, z = 0, y = 0): V => ({ x, y, z });
 export const add = (a: V, b: V): V => ({
   x: a.x + b.x,
@@ -83,10 +107,6 @@ export const baseCountAt = (r: Road, t: number) => {
       )
   );
 };
-export function taperWeight(r: Road, t: number, end: "start" | "end") {
-  const taper = r.autoTaper?.[end];
-  return taper ? 1 - smooth((end === "start" ? t : 1 - t) / taper.span) : 0;
-}
 export const backwardStart = (r: Road) =>
   r.twoWay ? (r.backwardLanesStart ?? r.lanesStart) : 0;
 export const backwardEnd = (r: Road) =>
@@ -116,29 +136,13 @@ export function countAt(r: Road, t: number) {
   return totalAt(r, t) / (r.twoWay ? 2 : 1);
 }
 export function totalAt(r: Road, t: number) {
-  if (!r.autoTaper) return baseCountAt(r, t) + baseBackwardCountAt(r, t);
-  let total = 0;
-  for (let lane = 0; lane < laneCount(r); lane++)
-    total += laneWidth(r, lane, t) / r.width;
-  return total;
+  return baseCountAt(r, t) + baseBackwardCountAt(r, t);
 }
-export function medianWidth(r: Road, t?: number) {
-  const nominal = r.twoWay ? (r.median?.width ?? 0) : 0;
-  if (t === undefined || !r.twoWay || !r.autoTaper) return nominal;
-  let width = nominal;
-  for (const end of ["start", "end"] as const) {
-    const target = r.autoTaper?.[end]?.medianWidth;
-    if (target !== undefined)
-      width += (target - nominal) * taperWeight(r, t, end);
-  }
-  return Math.max(0, width);
+/** True authored divider width; a visual join cannot alter the lane section. */
+export function medianWidth(r: Road, _t?: number) {
+  return r.twoWay ? (r.median?.width ?? 0) : 0;
 }
-export const medianExtent = (r: Road) =>
-  Math.max(
-    medianWidth(r),
-    r.autoTaper?.start?.medianWidth ?? 0,
-    r.autoTaper?.end?.medianWidth ?? 0,
-  );
+export const medianExtent = (r: Road) => medianWidth(r);
 export const pavementWidth = (r: Road, t: number) =>
   totalAt(r, t) * r.width + medianWidth(r, t);
 /** Editable node reference stays stable when a carriageway grows on one side. */
@@ -146,15 +150,11 @@ export function nodePoint(r: Road, t: number): V {
   const nominal = baseCountAt(r, t) + baseBackwardCountAt(r, t);
   const origin = r.widthOrigin ?? baseCountAt(r, 0) + baseBackwardCountAt(r, 0);
   const delta = ((nominal - origin) * r.width) / 2;
-  const automaticOffset =
-    (r.autoTaper?.start?.offset ?? 0) * taperWeight(r, t, "start") +
-    (r.autoTaper?.end?.offset ?? 0) * taperWeight(r, t, "end");
   return add(
     point(r, t),
     mul(
       normal(r, t),
-      (r.align === "left" ? delta : r.align === "right" ? -delta : 0) +
-        automaticOffset,
+      r.align === "left" ? delta : r.align === "right" ? -delta : 0,
     ),
   );
 }
@@ -162,10 +162,7 @@ export function center(r: Road, t: number): V {
   let offset = r.sectionOffset ?? 0;
   if (
     r.twoWay &&
-    (backwardStart(r) !== r.lanesStart ||
-      backwardEnd(r) !== r.lanesEnd ||
-      r.autoTaper?.start?.backwardLanes !== undefined ||
-      r.autoTaper?.end?.backwardLanes !== undefined)
+    (backwardStart(r) !== r.lanesStart || backwardEnd(r) !== r.lanesEnd)
   ) {
     let forward = 0,
       backward = 0;
@@ -194,18 +191,10 @@ export function laneWidth(r: Road, lane: number, t: number): number {
     : r.align === "right"
       ? max - 1 - lane
       : lane;
-  let width =
+  return (
     clamp((back ? baseBackwardCountAt(r, t) : baseCountAt(r, t)) - index) *
-    r.width;
-  for (const end of ["start", "end"] as const) {
-    const taper = r.autoTaper?.[end];
-    if (!taper) continue;
-    const order = r.twoWay ? index : lane,
-      count = back ? (taper.backwardLanes ?? taper.lanes) : taper.lanes;
-    if (order < taper.firstLane || order >= taper.firstLane + count)
-      width *= 1 - taperWeight(r, t, end);
-  }
-  return width;
+    r.width
+  );
 }
 export function lanePoint(r: Road, lane: number, t: number): V {
   let preceding = 0;

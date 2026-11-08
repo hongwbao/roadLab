@@ -11,6 +11,7 @@ import {
   laneDirection,
   lanePoint,
   laneWidth,
+  logicalRoadSignature,
   lerp,
   mul,
   nearest,
@@ -34,10 +35,23 @@ import {
   type TransitionMarkings,
 } from "../core/transition-markings";
 import { previewRoadMarkings } from "./road-markings";
+import { buildLaneJunctions, type LaneJunction } from "../core/lane-junctions";
+import { nodeVisualKey, setNodeSmooth } from "../core/road-visual-settings";
+import {
+  logicalRoadSurface,
+  logicalSurfacePlan,
+  roadVisualPlan,
+  surfacePositions,
+  visualExtensionSurfaces,
+  visualRoadEdges,
+  visualCollarSpan,
+  type RoadVisualPlan,
+  type RoadSurfacePlan,
+  type RoadSurfaceTriangle,
+} from "./road-visual-geometry";
 import { roadCrosswalkQuads } from "../core/junction-crosswalks";
 import {
   roadForks,
-  forkPavement,
   forkEdgePaths,
   forkSurfaces,
   type ForkNeighbours,
@@ -71,6 +85,9 @@ export class Scene {
   cars = new T.Group();
   ground = new T.Group();
   routePreview = new T.Group();
+  visualPavement = new T.Group();
+  seamPavement = new T.Group();
+  nodeVisualPreview = new T.Group();
   private ray = new T.Raycaster();
   private mouse = new T.Vector2();
   private junctionList: Junction[] = [];
@@ -85,6 +102,18 @@ export class Scene {
   private roadNodesSignature = "";
   private markingSignature = "";
   private transitionPaint = new Map<string, TransitionMarkings>();
+  private visualStyleSignature = "";
+  private visualPlan: RoadVisualPlan = new Map();
+  private logicalSurfaces?: RoadSurfacePlan;
+  private visualRenderCache = new Map<
+    string,
+    { signature: string; group: T.Group }
+  >();
+  private seamRenderCache = new Map<
+    string,
+    { signature: string; group: T.Group }
+  >();
+  private nodePreviewSignature = "";
   private previewMarkingSignature = "";
   private previewTransitionPaint = new Map<string, TransitionMarkings>();
   private junctionRenderCache = new Map<
@@ -93,7 +122,11 @@ export class Scene {
   >();
   private roadRenderCache = new Map<
     string,
-    { signature: string; groups: [T.Group, T.Group, T.Group, T.Group] }
+    {
+      signature: string;
+      paintSignature: string;
+      groups: [T.Group, T.Group, T.Group, T.Group];
+    }
   >();
   private hoverId?: string;
   private hoverMode?: string;
@@ -213,6 +246,9 @@ export class Scene {
       this.preview,
       this.cars,
       this.routePreview,
+      this.visualPavement,
+      this.seamPavement,
+      this.nodeVisualPreview,
     );
     this.scene.add(
       this.junctionMesh,
@@ -366,6 +402,24 @@ export class Scene {
     group.add(l);
     return l;
   }
+  private surfaceMesh(
+    triangles: readonly RoadSurfaceTriangle[],
+    group: T.Group,
+    material: T.Material,
+    metadata: Record<string, unknown>,
+  ) {
+    if (!triangles.length) return;
+    const geometry = new T.BufferGeometry();
+    geometry.setAttribute(
+      "position",
+      new T.Float32BufferAttribute(surfacePositions(triangles), 3),
+    );
+    geometry.computeVertexNormals();
+    const mesh = new T.Mesh(geometry, material);
+    mesh.userData = { ...metadata };
+    group.add(mesh);
+    return mesh;
+  }
   roadMesh(
     r: Road,
     group: T.Group,
@@ -377,36 +431,16 @@ export class Scene {
     },
   ) {
     const n = Math.max(60, r.knots.length * 35),
-      positions: number[] = [],
-      indices: number[] = [];
-    for (let i = 0; i <= n; i++) {
-      const t = range.start + ((range.end - range.start) * i) / n,
-        c = center(r, t),
-        norm = normal(r, t),
-        half = pavementWidth(r, t) / 2 + 0.35;
-      for (const sign of [-1, 1]) {
-        const q = add(c, mul(norm, half * sign));
-        positions.push(q.x, q.y, q.z);
-      }
-    }
-    for (let i = 0; i < n; i++) {
-      const j = i * 2;
-      indices.push(j, j + 2, j + 1, j + 1, j + 2, j + 3);
-    }
-    const g = new T.BufferGeometry();
-    const blockers = this.forks.get(r.id)?.pavement ?? [];
-    if (material === this.mats.asphalt && blockers.length) {
-      g.setAttribute(
-        "position",
-        new T.Float32BufferAttribute(
-          forkPavement(r, range, forkSurfaces(blockers)),
-          3,
-        ),
-      );
-    } else {
-      g.setAttribute("position", new T.Float32BufferAttribute(positions, 3));
-      g.setIndex(indices);
-    }
+      blockers =
+        material === this.mats.asphalt
+          ? this.forks.get(r.id)?.pavement
+          : undefined,
+      surface = logicalRoadSurface(r, range, blockers),
+      g = new T.BufferGeometry();
+    g.setAttribute(
+      "position",
+      new T.Float32BufferAttribute(surfacePositions(surface), 3),
+    );
     g.computeVertexNormals();
     const mesh = new T.Mesh(g, material);
     mesh.userData = { road: r.id };
@@ -546,7 +580,7 @@ export class Scene {
     showHandles = true,
   ) {
     this.currentProject = p;
-    const topologySignature = JSON.stringify(p.roads);
+    const topologySignature = logicalRoadSignature(p.roads);
     const signature = JSON.stringify([
       topologySignature,
       p.ports,
@@ -555,22 +589,91 @@ export class Scene {
       settings,
       showHandles,
       p.junctionLaneConnections,
+      p.roadVisuals,
     ]);
     if (signature === this.rebuildSignature) return;
     this.rebuildSignature = signature;
+    this.showNodeVisualPreview(p);
     if (topologySignature !== this.topologySignature) {
       this.junctionList = buildJunctions(p);
       this.forks = roadForks(p.roads);
       this.topologySignature = topologySignature;
     }
+    const surfaceSignature = JSON.stringify([
+        topologySignature,
+        p.junctionLaneConnections,
+      ]),
+      visualStyleSignature = JSON.stringify([surfaceSignature, p.roadVisuals]);
+    if (visualStyleSignature !== this.visualStyleSignature) {
+      this.logicalSurfaces = logicalSurfacePlan(p);
+      this.visualPlan = roadVisualPlan(
+        p,
+        buildLaneJunctions(p),
+        this.junctionList,
+      );
+      const extra = visualExtensionSurfaces(
+        p,
+        this.visualPlan,
+        this.logicalSurfaces,
+      );
+      this.visualPavement.clear();
+      const retained = new Set<string>();
+      for (const [id, triangles] of extra) {
+        retained.add(id);
+        const signature = JSON.stringify(triangles),
+          cached = this.visualRenderCache.get(id);
+        if (cached?.signature === signature) {
+          this.visualPavement.add(cached.group);
+          continue;
+        }
+        if (cached) this.clear(cached.group);
+        const group = new T.Group();
+        this.surfaceMesh(triangles, group, this.mats.asphalt, {
+          visualRoad: id,
+        });
+        this.visualRenderCache.set(id, { signature, group });
+        this.visualPavement.add(group);
+      }
+      for (const [id, cached] of this.visualRenderCache)
+        if (!retained.has(id)) {
+          this.clear(cached.group);
+          this.visualRenderCache.delete(id);
+        }
+      // The floor is independent of style; authored movements can change its envelope.
+      if (this.seamPavement.userData.signature !== surfaceSignature) {
+        this.seamPavement.clear();
+        const retained = new Set<string>();
+        for (const [key, triangles] of this.logicalSurfaces.seams) {
+          retained.add(key);
+          const signature = JSON.stringify(triangles),
+            cached = this.seamRenderCache.get(key);
+          if (cached?.signature === signature) {
+            this.seamPavement.add(cached.group);
+            continue;
+          }
+          if (cached) this.clear(cached.group);
+          const group = new T.Group();
+          this.surfaceMesh(triangles, group, this.mats.asphalt, {
+            visualSeam: key,
+          });
+          this.seamRenderCache.set(key, { signature, group });
+          this.seamPavement.add(group);
+        }
+        for (const [key, cached] of this.seamRenderCache)
+          if (!retained.has(key)) {
+            this.clear(cached.group);
+            this.seamRenderCache.delete(key);
+          }
+        this.seamPavement.userData.signature = surfaceSignature;
+      }
+      this.visualStyleSignature = visualStyleSignature;
+    }
     const markingSignature = JSON.stringify([
-      topologySignature,
+      visualStyleSignature,
       p.junctionLaneConnections,
     ]);
     if (markingSignature !== this.markingSignature) {
-      this.transitionPaint = p.roads.some(
-        (r) => r.transitionMode === "smooth" || r.autoTaper,
-      )
+      this.transitionPaint = p.roadVisuals?.nodes.length
         ? transitionMarkings(p, connections(p), this.junctionList)
         : new Map();
       this.markingSignature = markingSignature;
@@ -647,17 +750,28 @@ export class Scene {
       if (hidden && !settings.ghost) continue;
       const range = this.ranges.get(r.id)!;
       const roadSignature = JSON.stringify([
-        r,
+        logicalRoadSignature([r]),
         range,
-        this.forks.get(r.id),
+        this.forks.get(r.id)
+          ? [
+              logicalRoadSignature(this.forks.get(r.id)!.pavement),
+              logicalRoadSignature(this.forks.get(r.id)!.edges),
+            ]
+          : undefined,
         medianExtent(r) ? roadMedianRange(p, r, this.junctionList) : undefined,
         hidden,
         settings.paths,
         settings.arrows,
+      ]);
+      const paintSignature = JSON.stringify([
         this.transitionPaint.get(r.id),
+        this.visualPlan.get(r.id),
       ]);
       const cached = this.roadRenderCache.get(r.id);
-      if (cached?.signature === roadSignature) {
+      if (
+        cached?.signature === roadSignature &&
+        cached.paintSignature === paintSignature
+      ) {
         const [road, overlays, details, handles] = cached.groups;
         this.syncRoadEditing(
           r,
@@ -672,24 +786,31 @@ export class Scene {
         this.handles.add(handles);
         continue;
       }
-      if (cached) cached.groups.forEach((g) => this.clear(g));
-      const group = new T.Group(),
-        overlays = new T.Group(),
-        details = new T.Group(),
-        handles = new T.Group();
+      const reusePavement = cached?.signature === roadSignature;
+      if (cached) {
+        if (reusePavement) {
+          this.clear(cached.groups[1]);
+          this.clear(cached.groups[2]);
+        } else cached.groups.forEach((g) => this.clear(g));
+      }
+      const [group, overlays, details, handles] = reusePavement
+        ? cached!.groups
+        : [new T.Group(), new T.Group(), new T.Group(), new T.Group()];
       this.roadRenderCache.set(r.id, {
         signature: roadSignature,
+        paintSignature,
         groups: [group, overlays, details, handles],
       });
       this.overlays.add(overlays);
       this.details.add(details);
       this.handles.add(handles);
-      this.roadMesh(
-        r,
-        group,
-        hidden ? this.mats.ghost : this.mats.asphalt,
-        range,
-      );
+      if (!reusePavement)
+        this.roadMesh(
+          r,
+          group,
+          hidden ? this.mats.ghost : this.mats.asphalt,
+          range,
+        );
       if (hidden) {
         group.traverse((obj) => (obj.userData.noPick = true));
         this.roads.add(group);
@@ -701,10 +822,9 @@ export class Scene {
         for (let i = 0; i <= 100; i++) {
           const t = range.start + ((range.end - range.start) * i) / 100;
           pts.push(
-            add(
-              center(r, t),
-              mul(normal(r, t), (pavementWidth(r, t) / 2 - 0.12) * side),
-            ),
+            visualRoadEdges(r, t, this.visualPlan.get(r.id), 0.47)[
+              side === -1 ? 0 : 1
+            ],
           );
         }
         for (const path of forkEdgePaths(
@@ -879,7 +999,9 @@ export class Scene {
     for (const j of this.junctionList) {
       const signature = JSON.stringify([
         j,
-        j.arms.map((a) => p.roads.find((r) => r.id === a.road)),
+        logicalRoadSignature(
+          j.arms.map((a) => p.roads.find((r) => r.id === a.road)!),
+        ),
       ]);
       const cached = this.junctionRenderCache.get(j.id);
       if (cached?.signature === signature) {
@@ -892,19 +1014,12 @@ export class Scene {
         this.clear(group);
       }
       const junctionGroup = new T.Group();
-      const vertices = j.polygon.map((p) => new T.Vector2(p.x, p.z)),
-        triangles = T.ShapeUtils.triangulateShape(vertices, []).flat(),
-        positions = j.polygon.flatMap((p) => [p.x, j.position.y + 0.018, p.z]);
-      const geometry = new T.BufferGeometry();
-      geometry.setAttribute(
-        "position",
-        new T.Float32BufferAttribute(positions, 3),
+      this.surfaceMesh(
+        this.logicalSurfaces?.junctions.get(j.id) ?? [],
+        junctionGroup,
+        this.mats.asphalt,
+        { junction: j.id },
       );
-      geometry.setIndex(triangles);
-      geometry.computeVertexNormals();
-      const mesh = new T.Mesh(geometry, this.mats.asphalt);
-      mesh.userData = { junction: j.id };
-      junctionGroup.add(mesh);
       if (j.crosswalks)
         for (const arm of j.arms) {
           if (arm.crosswalkT === undefined) continue;
@@ -1036,7 +1151,22 @@ export class Scene {
           cached.groups.forEach((group) => (group.visible = false));
           this.previewHiddenRoads.add(road.id);
         }
+        const visual = this.visualRenderCache.get(road.id)?.group;
+        if (visual) {
+          visual.visible = false;
+          this.previewHiddenJunctions.add(visual);
+        }
       }
+    if (options?.replaceExisting) {
+      const ids = new Set(roads.map((road) => road.id));
+      for (const [key, entry] of this.seamRenderCache)
+        if (
+          (JSON.parse(key) as [string, number][]).some(([id]) => ids.has(id))
+        ) {
+          entry.group.visible = false;
+          this.previewHiddenJunctions.add(entry.group);
+        }
+    }
     this.clear(this.preview);
     if (!roads.length) {
       this.previewMarkingSignature = "";
@@ -1066,14 +1196,14 @@ export class Scene {
       ),
     );
     const draft = { ...this.currentProject, roads: nearby } as Project;
+    const previewVisualPlan = roadVisualPlan(draft);
     const markingSignature = JSON.stringify([
-      nearby,
+      logicalRoadSignature(nearby),
       draft.junctionLaneConnections,
+      draft.roadVisuals,
     ]);
     if (this.previewMarkingSignature !== markingSignature) {
-      this.previewTransitionPaint = nearby.some(
-        (r) => r.transitionMode === "smooth" || r.autoTaper,
-      )
+      this.previewTransitionPaint = draft.roadVisuals?.nodes.length
         ? transitionMarkings(
             draft,
             connections(draft),
@@ -1167,6 +1297,7 @@ export class Scene {
         r,
         range,
         this.previewTransitionPaint.get(r.id),
+        previewVisualPlan.get(r.id),
       );
       for (const [kind, paths] of [
         ["edge", geometry.edges],
@@ -1189,9 +1320,142 @@ export class Scene {
         line.renderOrder = 32;
       }
     }
+    if (options?.replaceExisting) {
+      const ids = new Set(roads.map((road) => road.id)),
+        floor = logicalSurfacePlan(draft),
+        extra = visualExtensionSurfaces(draft, previewVisualPlan, floor);
+      for (const [key, triangles] of floor.seams)
+        if ((JSON.parse(key) as [string, number][]).some(([id]) => ids.has(id)))
+          this.surfaceMesh(
+            triangles,
+            this.preview,
+            invalid ? this.mats.invalid : this.mats.ghost,
+            { previewSeam: key },
+          );
+      for (const [id, triangles] of extra)
+        if (ids.has(id))
+          this.surfaceMesh(
+            triangles,
+            this.preview,
+            invalid ? this.mats.invalid : this.mats.ghost,
+            { previewVisualRoad: id },
+          );
+    }
   }
   showPreview(r?: Road, invalid = false) {
     this.showPreviews(r ? [r] : [], invalid);
+  }
+  /** A sandbox of one node's decoration; logical surfaces and traffic remain shared. */
+  showNodeVisualPreview(project: Project, node?: LaneJunction, enabled = true) {
+    if (!node) {
+      this.nodePreviewSignature = "";
+      this.clear(this.nodeVisualPreview);
+      delete this.nodeVisualPreview.userData.target;
+      return;
+    }
+    const ids = new Set(node.arms.map((arm) => arm.road)),
+      signature = JSON.stringify([
+        nodeVisualKey(node),
+        enabled,
+        logicalRoadSignature(project.roads.filter((road) => ids.has(road.id))),
+        project.junctionLaneConnections,
+        project.roadVisuals,
+      ]);
+    if (signature === this.nodePreviewSignature) return;
+    this.nodePreviewSignature = signature;
+    this.clear(this.nodeVisualPreview);
+    const draft: Project = {
+      ...project,
+      roadVisuals: structuredClone(project.roadVisuals),
+    };
+    setNodeSmooth(draft, node, enabled);
+    const plan = roadVisualPlan(draft, [node], this.junctionList),
+      floor = this.logicalSurfaces ?? logicalSurfacePlan(project),
+      extra = visualExtensionSurfaces(draft, plan, floor),
+      lineMaterial = new T.LineBasicMaterial({
+        color: 0x9de2ff,
+        depthTest: false,
+      });
+    for (const arm of node.arms) {
+      const road = project.roads.find((r) => r.id === arm.road);
+      if (!road) continue;
+      const baseRange = roadRange(road, this.junctionList),
+        span = visualCollarSpan(road, arm.end).span,
+        range = {
+          start: Math.max(baseRange.start, arm.end === 0 ? 0 : 1 - span),
+          end: Math.min(baseRange.end, arm.end === 0 ? span : 1),
+        };
+      if (range.end > range.start) {
+        const surface = logicalRoadSurface(
+            road,
+            range,
+            this.forks.get(road.id)?.pavement,
+          ),
+          mesh = this.surfaceMesh(
+            surface,
+            this.nodeVisualPreview,
+            this.mats.ghost,
+            { nodePreview: node.id, road: road.id, noPick: true },
+          );
+        if (mesh) mesh.position.y += 0.03;
+        for (const side of [0, 1]) {
+          const edge = Array.from(
+            { length: 41 },
+            (_, i) =>
+              visualRoadEdges(
+                road,
+                range.start + ((range.end - range.start) * i) / 40,
+                plan.get(road.id),
+              )[side],
+          );
+          this.line(edge, lineMaterial, this.nodeVisualPreview).renderOrder =
+            35;
+        }
+      }
+    }
+    for (const patch of [
+      floor.seams.get(nodeVisualKey(node)),
+      floor.junctions.get(node.id),
+    ])
+      if (patch) {
+        const mesh = this.surfaceMesh(
+          patch,
+          this.nodeVisualPreview,
+          this.mats.ghost,
+          { nodePreview: node.id, noPick: true },
+        );
+        if (mesh) mesh.position.y += 0.03;
+      }
+    for (const [id, triangles] of extra) {
+      const mesh = this.surfaceMesh(
+        triangles,
+        this.nodeVisualPreview,
+        this.mats.ghost,
+        { nodePreview: node.id, road: id, noPick: true },
+      );
+      if (mesh) mesh.position.y += 0.03;
+    }
+    const radius = Math.max(
+        1.2,
+        this.camera.position.distanceTo(vec(node.position)) * 0.008,
+      ),
+      marker = new T.Mesh(
+        new T.TorusGeometry(radius, radius * 0.055, 6, 40),
+        new T.MeshBasicMaterial({ color: 0x9de2ff, depthTest: false }),
+      );
+    marker.rotation.x = -Math.PI / 2;
+    marker.position.set(
+      node.position.x,
+      node.position.y + 0.2,
+      node.position.z,
+    );
+    marker.renderOrder = 40;
+    this.nodeVisualPreview.add(marker);
+    if (
+      !this.nodeVisualPreview.children.some((child) => child instanceof T.Line)
+    )
+      lineMaterial.dispose();
+    this.nodeVisualPreview.userData.target = nodeVisualKey(node);
   }
   showLaneTarget(road?: Road, lanes: number[] = [], at = 1) {
     this.clear(this.laneTarget);

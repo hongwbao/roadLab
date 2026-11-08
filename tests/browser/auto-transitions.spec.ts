@@ -53,22 +53,24 @@ test("ordinary 2 and 3 lane assets join directly until explicitly upgraded", asy
   expect(s.project.roads[1].autoTaper).toBeUndefined();
   await page.locator('[data-tool="upgrade"]').click();
   await page.locator('[data-upgrade-mode="smooth"]').click();
-  await click(page, 45);
+  await click(page, 0);
   s = await state(page);
-  expect(s.project.roads[1].autoTaper.start.lanes).toBe(2);
+  expect(s.project.roadVisuals.nodes).toHaveLength(1);
+  expect(s.project.roads.every((r: any) => !r.autoTaper)).toBe(true);
   expect(s.connections).toHaveLength(2);
   await page.keyboard.press("Control+s");
   await page.reload();
   await page.waitForFunction(() => !!(window as any).lab);
   s = await state(page);
-  expect(s.project.roads[1].autoTaper.start.lanes).toBe(2);
+  expect(s.project.roadVisuals.nodes).toHaveLength(1);
+  expect(s.project.roads.every((r: any) => !r.autoTaper)).toBe(true);
   expect(s.project.roads).toHaveLength(2);
   await page.locator('[data-action="fit"]').click();
   await page.screenshot({ path: "artifacts/automatic-widening.png" });
   expect(errors).toEqual([]);
 });
 
-test("an explicit narrowing uses the wider approach and disappears after disconnecting", async ({
+test("node smoothing on a narrowing is independent of its true sections and survives deletion undo", async ({
   page,
 }) => {
   await setup(page);
@@ -84,9 +86,10 @@ test("an explicit narrowing uses the wider approach and disappears after disconn
   expect(s.project.roads[0].autoTaper).toBeUndefined();
   await page.locator('[data-tool="upgrade"]').click();
   await page.locator('[data-upgrade-mode="smooth"]').click();
-  await click(page, -45);
+  await click(page, 0);
   s = await state(page);
-  expect(s.project.roads[0].autoTaper.end.lanes).toBe(2);
+  expect(s.project.roadVisuals.nodes).toHaveLength(1);
+  expect(s.project.roads.every((r: any) => !r.autoTaper)).toBe(true);
   expect(s.project.roads[1].autoTaper).toBeUndefined();
   await page.screenshot({ path: "artifacts/automatic-narrowing.png" });
   await page.keyboard.press("b");
@@ -95,10 +98,12 @@ test("an explicit narrowing uses the wider approach and disappears after disconn
   s = await state(page);
   expect(s.project.roads).toHaveLength(1);
   expect(s.project.roads[0].autoTaper).toBeUndefined();
+  expect(s.project.roadVisuals?.nodes ?? []).toHaveLength(0);
   await page.keyboard.press("Control+z");
   s = await state(page);
   expect(s.project.roads).toHaveLength(2);
-  expect(s.project.roads[0].autoTaper.end.lanes).toBe(2);
+  expect(s.project.roadVisuals.nodes).toHaveLength(1);
+  expect(s.project.roads.every((r: any) => !r.autoTaper)).toBe(true);
 });
 
 test("a two-way direct join can be explicitly smoothed without creating an intersection", async ({
@@ -117,12 +122,15 @@ test("a two-way direct join can be explicitly smoothed without creating an inter
   let s = await state(page);
   expect(s.project.roads).toHaveLength(2);
   expect(s.project.roads[1].autoTaper).toBeUndefined();
+  const directConnections = s.connections;
+  expect(directConnections.length).toBeGreaterThan(0);
   await page.locator('[data-tool="upgrade"]').click();
   await page.locator('[data-upgrade-mode="smooth"]').click();
-  await click(page, 45);
+  await click(page, 0);
   s = await state(page);
-  expect(s.project.roads[1].autoTaper.start.lanes).toBe(1);
-  expect(s.connections).toHaveLength(2);
+  expect(s.project.roadVisuals.nodes).toHaveLength(1);
+  expect(s.project.roads.every((r: any) => !r.autoTaper)).toBe(true);
+  expect(s.connections).toEqual(directConnections);
   expect(s.junctions).toHaveLength(0);
   await page.setViewportSize({ width: 390, height: 844 });
   expect(

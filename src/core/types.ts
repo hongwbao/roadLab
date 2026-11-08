@@ -10,6 +10,10 @@ export type LaneAttachment = {
   lanes: number[];
   ownLanes: number[];
 };
+/** Node decoration is authored separately from every functional road property. */
+export type RoadVisualArm = { road: string; end: 0 | 1 };
+export type RoadNodeVisual = { arms: RoadVisualArm[]; smooth: true };
+export type RoadVisualSettings = { version: 1; nodes: RoadNodeVisual[] };
 export type AutomaticTaper = {
   lanes: number;
   backwardLanes?: number;
@@ -30,6 +34,7 @@ export type Road = {
   backwardLanesEnd?: number;
   /** One-way carriageway offset from its editable reference spline, in metres. */
   sectionOffset?: number;
+  /** Legacy import field. Runtime node decoration lives in Project.roadVisuals. */
   transitionMode?: "direct" | "smooth";
   median?: { kind: "concrete"; width: number };
   twoWay: boolean;
@@ -54,6 +59,7 @@ export type Road = {
   widthOrigin?: number;
   attachments?: { start?: LaneAttachment; end?: LaneAttachment };
   turns?: Record<string, Turn[]>;
+  /** Legacy derived display cache; ignored by logical geometry and discarded on import. */
   autoTaper?: { start?: AutomaticTaper; end?: AutomaticTaper };
   /** Last road-asset replacement, restored by right-click in replace mode. */
   replacedSection?: RoadSection;
@@ -102,6 +108,7 @@ export type Blueprint = {
   connections: Connection[];
   signals?: TrafficSignal[];
   junctionLaneConnections?: JunctionLaneRule[];
+  roadVisuals?: RoadVisualSettings;
 };
 export type Project = {
   version: 1;
@@ -117,6 +124,7 @@ export type Project = {
   laneLookahead?: number;
   signals?: TrafficSignal[];
   junctionLaneConnections?: JunctionLaneRule[];
+  roadVisuals?: RoadVisualSettings;
 };
 export type Issue = {
   road?: string;

@@ -54,7 +54,11 @@ import {
   normalizeTrafficSignals,
   validateTrafficSignals,
 } from "./traffic-signals";
-import { updateAutomaticTransitions } from "./auto-transitions";
+import {
+  initializeRoadVisuals,
+  remapRoadVisuals,
+  validateRoadVisuals,
+} from "./road-visual-settings";
 import { LANE_WIDTH } from "./road-standards";
 import { cloverleafExample } from "./cloverleaf";
 import { roadSectionKeys } from "./road-upgrades";
@@ -324,7 +328,7 @@ export function connections(p: Project): Connection[] {
 }
 // Historical manual overrides are retired; explicit junction lane rules use their own field.
 export function autoJunction(p: Project) {
-  updateAutomaticTransitions(p);
+  initializeRoadVisuals(p);
   p.connections = [];
   normalizeTrafficSignals(p);
   for (const road of p.roads) {
@@ -481,6 +485,9 @@ export function splitRoad(
     ref.road === id && ref.end === "end" ? { ...ref, road: b.id } : ref,
   );
   remapSplitJunctionLaneRules(p, id, b.id);
+  remapRoadVisuals(p, (arm) =>
+    arm.road === id && arm.end === 1 ? { ...arm, road: b.id } : arm,
+  );
   autoJunction(p);
   return b.id;
 }
@@ -506,6 +513,7 @@ export function insertKnot(r: Road, t: number) {
 }
 export function removeRoads(p: Project, ids: Set<string>) {
   p.roads = p.roads.filter((r) => !ids.has(r.id));
+  remapRoadVisuals(p, (arm) => (ids.has(arm.road) ? undefined : arm));
   removeJunctionLaneRulesForRoads(p, ids);
   p.connections = p.connections.filter(
     (c) => !ids.has(c.from.road) && !ids.has(c.to.road),
@@ -1122,11 +1130,14 @@ export function parseProject(text: string): Project {
         connections: t.connections,
         signals: t.signals,
         junctionLaneConnections: t.junctionLaneConnections,
+        roadVisuals: t.roadVisuals,
         ports: [],
         templates: [],
       }),
     );
   }
+  validateRoadVisuals(p);
+  initializeRoadVisuals(p);
   normalizePorts(p);
   normalizeTrafficSignals(p);
   normalizeJunctionLaneRules(p);

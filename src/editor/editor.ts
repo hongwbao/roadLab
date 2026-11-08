@@ -9,7 +9,14 @@ import {
   replacementAlignments,
   type ReplacementAlignment,
 } from "../core/road-upgrades";
-import { updateAutomaticTransitions } from "../core/auto-transitions";
+import { buildLaneJunctions } from "../core/lane-junctions";
+import {
+  isNodeSmooth,
+  logicalProjectSignature,
+  nodeVisualKey,
+  remapRoadVisuals,
+  setNodeSmooth,
+} from "../core/road-visual-settings";
 import {
   addRoadsideLanes,
   expandedRoad,
@@ -309,6 +316,7 @@ export class Editor {
     this.saveTimer = setTimeout(() => this.save(), 600);
   }
   refresh(ui = true) {
+    this.upgradePreviewKey = "";
     this.scene.rebuild(
       this.project,
       this.selected,
@@ -343,6 +351,115 @@ export class Editor {
       this.refresh();
       this.onToast((error as Error).message);
     }
+  }
+  /** Decoration changes preserve the live traffic engine and its controller. */
+  private editVisual(fn: () => boolean, message: string) {
+    const project = this.project,
+      before = copy(project);
+    try {
+      if (!fn()) return;
+      if (
+        logicalProjectSignature(before) !==
+        logicalProjectSignature(this.project)
+      )
+        throw new Error("显示设置不能修改道路或交通规则。");
+      this.history.commit(before);
+      this.upgradePreviewKey = "";
+      this.scene.showNodeVisualPreview(this.project);
+      this.refresh();
+      this.onToast(message);
+    } catch (error) {
+      Object.assign(project, before);
+      if (!before.roadVisuals) delete project.roadVisuals;
+      this.project = project;
+      this.refresh();
+      this.onToast((error as Error).message);
+    }
+  }
+  private restoreVisualSnapshot(snapshot: Project) {
+    // The facade keeps this exact Project reference for live demand/settings.
+    if (snapshot.roadVisuals)
+      this.project.roadVisuals = copy(snapshot.roadVisuals);
+    else delete this.project.roadVisuals;
+    const templates = new Map(snapshot.templates.map((t) => [t.id, t]));
+    for (const template of this.project.templates) {
+      const visuals = templates.get(template.id)?.roadVisuals;
+      if (visuals) template.roadVisuals = copy(visuals);
+      else delete template.roadVisuals;
+    }
+  }
+  private liveSettingsSignature(project: Project) {
+    return logicalProjectSignature({
+      ...project,
+      trafficMultiplier: undefined,
+      trafficBaseRate: undefined,
+      laneLookahead: undefined,
+      // Adding/removing a portal or changing its type remains a structural edit.
+      ports: project.ports.map((port) => ({
+        ...port,
+        rate: 0,
+        destinations: undefined,
+      })),
+    });
+  }
+  private restoreLiveSnapshot(snapshot: Project) {
+    this.restoreVisualSnapshot(snapshot);
+    for (const key of [
+      "trafficMultiplier",
+      "trafficBaseRate",
+      "laneLookahead",
+    ] as const) {
+      if (snapshot[key] === undefined) delete this.project[key];
+      else this.project[key] = snapshot[key];
+    }
+    for (const [i, port] of this.project.ports.entries()) {
+      port.rate = snapshot.ports[i].rate;
+      const destinations = snapshot.ports[i].destinations;
+      if (destinations) port.destinations = copy(destinations);
+      else delete port.destinations;
+    }
+  }
+  private get smoothing() {
+    return (
+      this.tool === "upgrade" &&
+      (this.upgradeMode === "smooth" || this.upgradeMode === "direct")
+    );
+  }
+  private nodeVisualHit(x: number, y: number) {
+    return buildLaneJunctions(this.project)
+      .map((node) => {
+        const p = this.scene.project(node.position);
+        return { node, distance: Math.hypot(x - p.x, y - p.y) };
+      })
+      .filter(({ distance }) => distance <= 30)
+      .sort((a, b) => a.distance - b.distance)[0]?.node;
+  }
+  private updateNodeVisualPreview(x: number, y: number) {
+    const node = this.nodeVisualHit(x, y),
+      enabled = this.upgradeMode === "smooth",
+      key = node
+        ? `${nodeVisualKey(node)}:${enabled}:${isNodeSmooth(this.project, node)}`
+        : "";
+    if (key === this.upgradePreviewKey) return;
+    this.upgradePreviewKey = key;
+    this.scene.setHover();
+    this.scene.showNodeVisualPreview(this.project, node, enabled);
+    this.onStatus(
+      node
+        ? `${enabled ? "平滑节点显示" : "取消节点平滑"} · 左键应用 · 右键取消`
+        : "悬停连接节点 · 左键应用 · 右键取消",
+    );
+  }
+  private applyNodeVisual(x: number, y: number, enabled: boolean) {
+    const node = this.nodeVisualHit(x, y);
+    if (!node) {
+      this.onToast("请点击两条道路连接处的节点。");
+      return;
+    }
+    this.editVisual(
+      () => setNodeSmooth(this.project, node, enabled),
+      enabled ? "已平滑此节点的显示" : "已取消此节点的平滑显示",
+    );
   }
   setPortRate(index: number, rate: number) {
     const p = this.project.ports[index];
@@ -402,6 +519,7 @@ export class Editor {
     this.drawStartSnap = undefined;
     this.snapInfo = undefined;
     this.scene.showPreviews([]);
+    this.scene.showNodeVisualPreview(this.project);
     this.scene.showBuildMarker();
     this.scene.showLaneTarget();
     this.scene.setHover();
@@ -469,8 +587,8 @@ export class Editor {
             : this.upgradeMode === "replace"
               ? "选择道路资产 · 左键替换 · 右键恢复原断面"
               : this.upgradeMode === "smooth"
-                ? "左键添加断面平滑过渡 · 右键取消过渡"
-                : "左键恢复直接连接 · 右键恢复平滑过渡",
+                ? "悬停连接节点 · 左键平滑显示 · 右键取消"
+                : "悬停连接节点 · 左键或右键取消平滑显示",
       widen: "选择单向道路资产 · 悬停道路左侧或右侧预览加车道 · 点击添加",
       turn: "点击路口，连接进出车道 · 右键取消选择 · J / Esc 退出",
       signal: "点击路口中心设置红绿灯 · 右键移除 · K / Esc 退出",
@@ -1577,17 +1695,20 @@ export class Editor {
           this.project.roads.map((r) => (r.id === candidate.id ? next : r)),
         ),
       };
-      updateAutomaticTransitions(preview);
       const old = new Map(this.project.roads.map((r) => [r.id, r]));
+      const visualNeighbours = new Set(
+        this.project.roadVisuals?.nodes
+          .filter((node) => node.arms.some((arm) => arm.road === candidate.id))
+          .flatMap((node) => node.arms.map((arm) => arm.road)) ?? [],
+      );
       const previewJunctions = buildJunctions(preview),
         existingJunctions = buildJunctions(this.project);
       const changed = preview.roads.filter(
         (r) =>
           r.id === next.id ||
+          visualNeighbours.has(r.id) ||
           JSON.stringify(roadRange(r, previewJunctions)) !==
             JSON.stringify(roadRange(old.get(r.id)!, existingJunctions)) ||
-          JSON.stringify(r.autoTaper) !==
-            JSON.stringify(old.get(r.id)?.autoTaper) ||
           (medianExtent(r) > 0 &&
             [0, 1].some((at) =>
               [0, 1].some(
@@ -1767,31 +1888,25 @@ export class Editor {
       return;
     }
     if (this.tool === "upgrade") {
+      if (this.smoothing) {
+        this.applyNodeVisual(
+          e.clientX,
+          e.clientY,
+          this.upgradeMode === "smooth",
+        );
+        return;
+      }
       if (!hit?.road) return;
-      this.edit(
-        () => {
-          const r = this.project.roads.find((r) => r.id === hit.road)!;
-          if (this.upgradeMode === "smooth") {
-            r.transitionMode = "smooth";
-          } else if (this.upgradeMode === "direct") {
-            r.transitionMode = "direct";
-            delete r.autoTaper;
-          } else {
-            replaceRoadSection(
-              this.project,
-              r.id,
-              getAsset(this.assetId).options,
-              getAsset(this.assetId).name,
-            );
-            reconnectIntersections(this.project);
-          }
-        },
-        this.upgradeMode === "replace"
-          ? "道路已替换"
-          : this.upgradeMode === "smooth"
-            ? "已启用端点平滑过渡"
-            : "已恢复直接连接",
-      );
+      this.edit(() => {
+        const r = this.project.roads.find((r) => r.id === hit.road)!;
+        replaceRoadSection(
+          this.project,
+          r.id,
+          getAsset(this.assetId).options,
+          getAsset(this.assetId).name,
+        );
+        reconnectIntersections(this.project);
+      }, "道路已替换");
       return;
     }
     if (hit?.road) this.select(hit.road, e.shiftKey);
@@ -1802,6 +1917,10 @@ export class Editor {
   }
 
   private rightClick(e: PointerEvent) {
+    if (this.smoothing) {
+      this.applyNodeVisual(e.clientX, e.clientY, false);
+      return;
+    }
     if (this.tool === "upgrade") {
       const hit = this.scene.hit(e.clientX, e.clientY);
       if (hit?.road) {
@@ -2027,6 +2146,13 @@ export class Editor {
         canvas.style.cursor = "crosshair";
         return;
       }
+      if (this.smoothing) {
+        this.updateNodeVisualPreview(e.clientX, e.clientY);
+        canvas.style.cursor = this.nodeVisualHit(e.clientX, e.clientY)
+          ? "pointer"
+          : "crosshair";
+        return;
+      }
       if (
         this.tool === "upgrade" &&
         ["median", "replace"].includes(this.upgradeMode)
@@ -2157,6 +2283,7 @@ export class Editor {
       }
     });
     canvas.addEventListener("pointerleave", () => {
+      this.scene.showNodeVisualPreview(this.project);
       if (this.drag || this.pointerPress) return;
       this.scene.setHover();
       this.junctionLaneTool.clearHover();
@@ -2281,6 +2408,17 @@ export class Editor {
         : `建造高度 ${this.draw.endHeight} 米`,
     );
   }
+  private cloneRoadVisuals(
+    source: Pick<Project, "roadVisuals">,
+    ids: ReadonlyMap<string, string>,
+  ) {
+    const target = { roadVisuals: copy(source.roadVisuals) };
+    remapRoadVisuals(target, (arm) => {
+      const road = ids.get(arm.road);
+      return road ? { ...arm, road } : undefined;
+    });
+    return target.roadVisuals;
+  }
   duplicate(template = false) {
     if (!this.chosen.length) return;
     const roads = copy(this.chosen),
@@ -2302,6 +2440,10 @@ export class Editor {
               this.project.junctionLaneConnections,
               new Map(roads.map((r) => [r.id, r.id])),
             ),
+            roadVisuals: this.cloneRoadVisuals(
+              this.project,
+              new Map(roads.map((r) => [r.id, r.id])),
+            ),
           }),
         "模板已保存",
       );
@@ -2313,9 +2455,14 @@ export class Editor {
         this.project.junctionLaneConnections,
         ids,
       );
+      const visuals = this.cloneRoadVisuals(this.project, ids);
       remapRoadReferences(roads, ids);
       transformRoads(roads, (p) => add(p, v(15, 30)));
       this.project.roads.push(...roads);
+      if (visuals?.nodes.length) {
+        this.project.roadVisuals ??= { version: 1, nodes: [] };
+        this.project.roadVisuals.nodes.push(...visuals.nodes);
+      }
       if (signals.length) {
         this.project.signals ??= [];
         this.project.signals.push(...signals);
@@ -2335,11 +2482,19 @@ export class Editor {
           ? this.history.undo(this.project)
           : this.history.redo(this.project);
       if (p) {
-        this.project = p;
+        const visualOnly =
+          logicalProjectSignature(this.project) === logicalProjectSignature(p);
+        const liveOnly =
+          !visualOnly &&
+          this.liveSettingsSignature(this.project) ===
+            this.liveSettingsSignature(p);
+        if (visualOnly) this.restoreVisualSnapshot(p);
+        else if (liveOnly) this.restoreLiveSnapshot(p);
+        else this.project = p;
         this.selected = new Set(
           [...this.selected].filter((id) => p.roads.some((r) => r.id === id)),
         );
-        this.stopForEdit();
+        if (!visualOnly && !liveOnly) this.stopForEdit();
         this.refresh();
       }
       return;
@@ -2447,6 +2602,9 @@ export class Editor {
             for (const arm of signal.arms)
               if (arm.road === r.id) arm.end = arm.end === 0 ? 1 : 0;
           reverseRoad(r);
+          remapRoadVisuals(this.project, (arm) =>
+            arm.road === r.id ? { ...arm, end: arm.end === 0 ? 1 : 0 } : arm,
+          );
           this.project.ports
             .filter((p) => p.road === r.id)
             .forEach((p) => (p.end = p.end === "start" ? "end" : "start"));
@@ -2499,11 +2657,16 @@ export class Editor {
       const ids = new Map(roads.map((r) => [r.id, uid()])),
         signals = cloneTrafficSignals(t.signals, ids);
       const laneRules = cloneJunctionLaneRules(t.junctionLaneConnections, ids);
+      const visuals = this.cloneRoadVisuals(t, ids);
       remapRoadReferences(roads, ids);
       transformRoads(roads, (p) =>
         v(p.x - cx + target.x, p.z - cz + target.z, p.y),
       );
       this.project.roads.push(...roads);
+      if (visuals?.nodes.length) {
+        this.project.roadVisuals ??= { version: 1, nodes: [] };
+        this.project.roadVisuals.nodes.push(...visuals.nodes);
+      }
       if (signals.length) {
         this.project.signals ??= [];
         this.project.signals.push(...signals);

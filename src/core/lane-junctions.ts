@@ -9,6 +9,7 @@ import {
   laneExitT,
   lanePoint,
   laneWidth,
+  logicalRoadSignature,
   mul,
   nodePoint,
   normal,
@@ -38,7 +39,7 @@ const cache = new WeakMap<
 export function buildLaneJunctions(
   project: Pick<Project, "roads">,
 ): LaneJunction[] {
-  const signature = JSON.stringify(project.roads),
+  const signature = logicalRoadSignature(project.roads),
     saved = cache.get(project);
   if (saved?.signature === signature) return saved.nodes;
   const ends: End[] = project.roads.flatMap((road) =>

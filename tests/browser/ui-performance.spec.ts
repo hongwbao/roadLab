@@ -156,3 +156,128 @@ test("immediate world picking after compact-to-desktop resize uses the current v
     await page.evaluate(() => (window as any).lab.editor.project.roads.length),
   ).toBe(1);
 });
+
+test("a node visual edit on 120 roads reuses the logical network and all base meshes", async ({
+  page,
+}, testInfo) => {
+  await cloverleaf(page);
+  const fixture = await page.evaluate(() => {
+    const e = (window as any).lab.editor;
+    e.scene.top();
+    const byId = new Map(e.project.roads.map((r: any) => [r.id, r]));
+    const node = e.junctionLaneTool.nodes.find(
+      (n: any) =>
+        n.kind === "continuation" &&
+        n.arms.length === 2 &&
+        n.position.x < -100 &&
+        n.arms.every((a: any) => {
+          const r = byId.get(a.road) as any;
+          return (
+            !r.twoWay && !r.profile && r.lanesStart === 2 && r.lanesEnd === 2
+          );
+        }),
+    );
+    if (!node)
+      throw new Error("No real two-road continuation in the 120-road fixture");
+    e.edit(() => {
+      const r = byId.get(node.arms[0].road) as any;
+      r.lanesStart = r.lanesEnd = 5;
+    });
+    e.simulation.prepareForRun();
+    const state = {
+      engine: e.simulation.sourceEngine,
+      network: e.simulation.sourceEngine.network,
+      rebuilds: 0,
+      configures: 0,
+      previews: [] as number[],
+      edits: [] as number[],
+    };
+    e.scene.roadMesh = (
+      (original: (...args: any[]) => any) =>
+      (...args: any[]) => {
+        if (args[1] !== e.scene.preview) state.rebuilds++;
+        return original(...args);
+      }
+    )(e.scene.roadMesh.bind(e.scene));
+    e.scene.showNodeVisualPreview = (
+      (original: (...args: any[]) => any) =>
+      (...args: any[]) => {
+        const start = performance.now();
+        try {
+          return original(...args);
+        } finally {
+          if (args[1]) state.previews.push(performance.now() - start);
+        }
+      }
+    )(e.scene.showNodeVisualPreview.bind(e.scene));
+    e.editVisual = (
+      (original: (...args: any[]) => any) =>
+      (...args: any[]) => {
+        const start = performance.now();
+        try {
+          return original(...args);
+        } finally {
+          state.edits.push(performance.now() - start);
+        }
+      }
+    )(e.editVisual.bind(e));
+    for (const name of ["configure", "prepareForRun", "prepareForEditing"])
+      e.simulation[name] = (
+        (original: (...args: any[]) => any) =>
+        (...args: any[]) => {
+          state.configures++;
+          return original(...args);
+        }
+      )(e.simulation[name].bind(e.simulation));
+    (window as any).nodeVisualTiming = state;
+    return { count: e.project.roads.length, position: node.position };
+  });
+  expect(fixture.count).toBe(120);
+  const before = await page.evaluate(pavement);
+  await page.locator('[data-tool="upgrade"]').click();
+  await page.locator('[data-upgrade-mode="smooth"]').click();
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      ),
+  );
+  const p = await page.evaluate(
+    (point) => (window as any).lab.worldToScreen(point),
+    fixture.position,
+  );
+  await page.mouse.move(p.x, p.y);
+  await page.mouse.click(p.x, p.y);
+  expect(
+    await page.evaluate(
+      () => (window as any).lab.editor.project.roadVisuals?.nodes.length ?? 0,
+    ),
+  ).toBe(1);
+  await page.locator('[data-action="undo"]').click();
+  await page.locator('[data-action="redo"]').click();
+  await page.mouse.click(p.x, p.y, { button: "right" });
+  expect(await page.evaluate(pavement)).toEqual(before);
+  const timing = await page.evaluate(() => {
+    const e = (window as any).lab.editor,
+      t = (window as any).nodeVisualTiming;
+    return {
+      rebuilds: t.rebuilds,
+      configures: t.configures,
+      previews: t.previews,
+      edits: t.edits,
+      sameEngine: t.engine === e.simulation.sourceEngine,
+      sameNetwork: t.network === e.simulation.sourceEngine.network,
+    };
+  });
+  await testInfo.attach("node-visual-120-road-timing", {
+    body: JSON.stringify(timing),
+    contentType: "application/json",
+  });
+  expect(timing.rebuilds).toBe(0);
+  expect(timing.configures).toBe(0);
+  expect(timing.sameEngine && timing.sameNetwork).toBe(true);
+  expect(timing.previews.length).toBeGreaterThan(0);
+  expect(timing.edits).toHaveLength(2);
+  expect(Math.max(...timing.previews)).toBeLessThan(200);
+  expect(Math.max(...timing.edits)).toBeLessThan(200);
+});

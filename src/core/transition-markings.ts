@@ -14,6 +14,8 @@ import {
   sub,
 } from "./math";
 import type { Junction } from "./junctions";
+import { buildLaneJunctions, type LaneJunction } from "./lane-junctions";
+import { isNodeSmooth } from "./road-visual-settings";
 import type { Connection, Project, Road, V } from "./types";
 
 export type MarkingRange = { start: number; end: number };
@@ -37,13 +39,18 @@ const dot = (a: V, b: V) => a.x * b.x + a.z * b.z;
  * Neither this function nor the sampler changes a road's transition setting.
  */
 export function transitionMarkings(
-  project: Pick<Project, "roads" | "junctionLaneConnections">,
+  project: Pick<Project, "roads" | "junctionLaneConnections" | "roadVisuals">,
   connections: readonly Connection[],
   junctions: readonly Junction[] = [],
+  nodes: readonly LaneJunction[] = buildLaneJunctions(project),
 ): Map<string, TransitionMarkings> {
   const roads = new Map(project.roads.map((road) => [road.id, road])),
     incidence = new Map<string, Port[]>(),
-    ends = new Map<string, Set<string>>(),
+    smoothEnds = new Set(
+      nodes
+        .filter((node) => isNodeSmooth(project, node))
+        .flatMap((node) => node.arms.map((arm) => endKey(arm.road, arm.end))),
+    ),
     physical = new Set(
       junctions.flatMap((j) => j.arms.map((a) => endKey(a.road, a.end))),
     );
@@ -51,9 +58,6 @@ export function transitionMarkings(
     const list = incidence.get(key(a)) ?? [];
     if (!list.some((other) => key(other) === key(b))) list.push(b);
     incidence.set(key(a), list);
-    const neighbours = ends.get(endKey(a.road.id, a.end)) ?? new Set();
-    neighbours.add(b.road.id);
-    ends.set(endKey(a.road.id, a.end), neighbours);
   };
   for (const connection of connections) {
     if (!connection.enabled) continue;
@@ -84,38 +88,23 @@ export function transitionMarkings(
     insert(from, to);
     insert(to, from);
   }
-  // An explicitly closed lane remains an affected endpoint even with no edges.
-  for (const rule of project.junctionLaneConnections ?? [])
-    if (
-      roads.has(rule.from.road) &&
-      !ends.has(endKey(rule.from.road, rule.from.end))
-    )
-      ends.set(endKey(rule.from.road, rule.from.end), new Set());
   const result = new Map<string, TransitionMarkings>();
   for (const road of project.roads) {
     const boundaries: TransitionMarkings = {};
     for (const end of [0, 1] as const) {
-      const neighbours = ends.get(endKey(road.id, end));
-      if (!neighbours || physical.has(endKey(road.id, end))) continue;
-      const taper = road.autoTaper?.[end === 0 ? "start" : "end"];
       if (
-        road.transitionMode !== "smooth" &&
-        !taper &&
-        ![...neighbours].some(
-          (id) => roads.get(id)?.transitionMode === "smooth",
-        )
+        !smoothEnds.has(endKey(road.id, end)) ||
+        physical.has(endKey(road.id, end))
       )
         continue;
       const table = arcTable(road),
         length = table.at(-1)!.s,
-        span =
-          taper?.span ??
-          Math.min(
-            0.42,
-            end === 0
-              ? arcParameter(table, Math.min(24, length * 0.42))
-              : 1 - arcParameter(table, length - Math.min(24, length * 0.42)),
-          );
+        span = Math.min(
+          0.42,
+          end === 0
+            ? arcParameter(table, Math.min(24, length * 0.42))
+            : 1 - arcParameter(table, length - Math.min(24, length * 0.42)),
+        );
       for (let index = 1; index < laneCount(road); index++) {
         if (road.twoWay && index === backwardLaneCount(road)) continue;
         // A physically vanishing lane has no port. Its normal taper boundary

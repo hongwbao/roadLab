@@ -1,4 +1,6 @@
 import { describe, it, expect } from "vitest";
+import { buildLaneJunctions } from "../src/core/lane-junctions";
+import { setNodeSmooth } from "../src/core/road-visual-settings";
 import { addRoadsideLanes } from "../src/core/road-sections";
 import {
   arcTable,
@@ -106,34 +108,36 @@ describe("roadside expansion and asymmetric sections", () => {
       expect(sim.network!.connectionLaneIds.has(link.id)).toBe(true);
     sim.dispose();
   });
-  it("only smooths an asymmetric join after the wide section is explicitly upgraded", () => {
+  it("keeps the full asymmetric section and connections when its node display is smoothed", () => {
     const p = emptyProject(),
       a = makeRoad(v(-80, 0), v(0, 0), { twoWay: true }),
       b = makeRoad(v(0, 0), v(80, 0), { twoWay: true });
     p.roads = [a, b];
     const { road } = addRoadsideLanes(p, b.id, "right");
     autoJunction(p);
+    const [node] = buildLaneJunctions(p),
+      before = structuredClone(p.roads),
+      links = connections(p),
+      points = [0, 0.1, 0.5, 0.9, 1].map((t) =>
+        Array.from({ length: 5 }, (_, lane) => lanePoint(road, lane, t)),
+      );
     expect(totalAt(road, 0)).toBe(5);
-    road.transitionMode = "smooth";
-    autoJunction(p);
-    expect(road.autoTaper!.start!.backwardLanes).toBe(2);
-    expect(totalAt(road, 0)).toBe(4);
+    expect(setNodeSmooth(p, node, true)).toBe(true);
+    expect(road.autoTaper).toBeUndefined();
+    expect(totalAt(road, 0)).toBe(5);
     expect(totalAt(road, 0.9)).toBe(5);
-    expect(laneWidth(road, 4, 0)).toBe(0);
-    for (const link of connections(p)) {
-      const from = p.roads.find((r) => r.id === link.from.road)!,
-        to = p.roads.find((r) => r.id === link.to.road)!;
-      expect(
-        dist(
-          lanePoint(from, link.from.lane, from === a ? 1 : 0),
-          lanePoint(to, link.to.lane, to.id === b.id ? 0 : 1),
-        ),
-      ).toBeLessThan(1e-8);
-    }
+    expect(laneWidth(road, 4, 0)).toBe(4);
+    expect(p.roads).toEqual(before);
+    expect(connections(p)).toEqual(links);
+    expect(
+      [0, 0.1, 0.5, 0.9, 1].map((t) =>
+        Array.from({ length: 5 }, (_, lane) => lanePoint(road, lane, t)),
+      ),
+    ).toEqual(points);
     expect(() => parseProject(JSON.stringify(p))).not.toThrow();
-    road.transitionMode = "direct";
-    autoJunction(p);
+    expect(setNodeSmooth(p, node, false)).toBe(true);
     expect(totalAt(road, 0)).toBe(5);
+    expect(connections(p)).toEqual(links);
   });
   it("preserves asymmetric geometry and reverse counts through splits and map saves", () => {
     const p = emptyProject(),

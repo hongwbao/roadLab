@@ -4,7 +4,8 @@ import {
   separatorPaths,
 } from "../src/core/transition-markings";
 import { previewRoadMarkings } from "../src/render/road-markings";
-import { updateAutomaticTransitions } from "../src/core/auto-transitions";
+import { buildLaneJunctions } from "../src/core/lane-junctions";
+import { setNodeSmooth } from "../src/core/road-visual-settings";
 import { buildJunctions, roadRange } from "../src/core/junctions";
 import { connections, emptyProject, makeRoad } from "../src/core/model";
 import {
@@ -13,10 +14,16 @@ import {
   dist,
   lanePoint,
   medianWidth,
+  laneWidth,
   v,
 } from "../src/core/math";
 import type { Connection, Project } from "../src/core/types";
 
+function smoothNodes(project: Project) {
+  project.roadVisuals = { version: 1, nodes: [] };
+  for (const node of buildLaneJunctions(project))
+    setNodeSmooth(project, node, true);
+}
 function pair(lanes = 3, target = lanes, twoWay = false) {
   const project = emptyProject();
   project.roads = [
@@ -25,17 +32,17 @@ function pair(lanes = 3, target = lanes, twoWay = false) {
       lanesStart: lanes,
       lanesEnd: lanes,
       twoWay,
-      transitionMode: "smooth",
+      transitionMode: "direct",
     }),
     makeRoad(v(), v(100), {
       id: "b",
       lanesStart: target,
       lanesEnd: target,
       twoWay,
-      transitionMode: "smooth",
+      transitionMode: "direct",
     }),
   ];
-  updateAutomaticTransitions(project);
+  smoothNodes(project);
   return project;
 }
 function links(project: Project, pairs: number[][]): Connection[] {
@@ -169,16 +176,18 @@ describe("routing-aware smooth separators", () => {
     },
   );
 
-  it("uses 2→3 physical vanishing widths and keeps only genuine end ports", () => {
+  it("keeps every logical 2→3 end lane full-width and withdraws unsupported paint only", () => {
     const p = pair(2, 3),
-      paint = transitionMarkings(p, connections(p)),
-      b = p.roads[1];
-    expect(b.autoTaper?.start).toBeDefined();
-    expect(paint.get("b")?.[2]).toBeUndefined();
+      b = p.roads[1],
+      before = JSON.stringify(p),
+      paint = transitionMarkings(p, connections(p));
+    expect(b.autoTaper).toBeUndefined();
+    expect([0, 1, 2].map((lane) => laneWidth(b, lane, 0))).toEqual([4, 4, 4]);
+    expect(paint.get("b")![2][0].continuous).toBe(false);
     const path = separatorPaths(b, 2, undefined, paint.get("b"))[0];
-    expect(path[0].x).toBeGreaterThan(0);
-    expect(path.every((point) => Number.isFinite(point.z))).toBe(true);
+    expect(path[0].x).toBeCloseTo(24, 6);
     expect(path.at(-1)).toEqual(boundaryPoint(b, 2, 1));
+    expect(JSON.stringify(p)).toBe(before);
   });
 
   it.each([0, 2])(
@@ -188,28 +197,31 @@ describe("routing-aware smooth separators", () => {
         [a, b] = p.roads;
       b.backwardLanesStart = b.backwardLanesEnd = 2;
       if (width) a.median = { kind: "concrete", width };
-      updateAutomaticTransitions(p);
+      smoothNodes(p);
       const paint = transitionMarkings(p, connections(p));
       expect(paint.get("a")?.[2]).toBeUndefined();
       expect(paint.get("b")?.[2]).toBeUndefined();
-      expect(medianWidth(a, 1)).toBe(medianWidth(b, 0));
-      expect(dist(lanePoint(a, 2, 1), lanePoint(b, 2, 0))).toBeLessThan(1e-8);
+      expect(medianWidth(a, 1)).toBe(width);
+      expect(medianWidth(b, 0)).toBe(0);
       const preview = previewRoadMarkings(b);
-      expect(preview.median.length).toBe(width ? 2 : 1);
+      expect(preview.median.length).toBe(1);
+      expect(previewRoadMarkings(a).median.length).toBe(width ? 2 : 1);
     },
   );
 
-  it("uses actual offset endpoint geometry and keeps the boundary seam continuous", () => {
+  it("keeps actual offset endpoints and suppresses an unsupported separating seam", () => {
     const p = pair(2),
       [a, b] = p.roads;
     for (const knot of b.knots)
       for (const point of [knot.p, knot.incoming, knot.outgoing]) point.z += 3;
-    updateAutomaticTransitions(p);
+    smoothNodes(p);
     const paint = transitionMarkings(p, connections(p)),
       from = separatorPaths(a, 1, undefined, paint.get("a"))[0],
       to = separatorPaths(b, 1, undefined, paint.get("b"))[0];
-    expect(dist(from.at(-1)!, to[0])).toBeLessThan(1e-8);
-    expect(from.at(-1)!.z).toBe(3);
+    expect(from.at(-1)!.x).toBeCloseTo(-24, 6);
+    expect(to[0].x).toBeCloseTo(24, 6);
+    expect(from.at(-1)!.z).toBe(0);
+    expect(to[0].z).toBe(3);
   });
 
   it("never turns a 3→2+1 fork mapping into crossing boundaries", () => {
@@ -223,6 +235,7 @@ describe("routing-aware smooth separators", () => {
         lanesEnd: 1,
       }),
     );
+    smoothNodes(p);
     const mapping = [
         ...links(p, [
           [0, 0],
@@ -247,6 +260,7 @@ describe("routing-aware smooth separators", () => {
   it("does not paint a real junction interior or consume editing-only insets", () => {
     const p = pair(2);
     p.roads.push(makeRoad(v(), v(0, 100), { id: "cross", twoWay: true }));
+    smoothNodes(p);
     const junctions = buildJunctions(p),
       paint = transitionMarkings(p, connections(p), junctions);
     expect(junctions).toHaveLength(1);
@@ -264,10 +278,11 @@ describe("routing-aware smooth separators", () => {
         [1, 2],
       ]);
     expect(transitionMarkings(p, cs).size).toBe(2);
+    for (const node of buildLaneJunctions(p)) setNodeSmooth(p, node, false);
+    // Legacy road-level display flags cannot reopen a node after cancellation.
     p.roads.forEach((road) => {
-      road.transitionMode = "direct";
+      road.transitionMode = "smooth";
     });
-    updateAutomaticTransitions(p);
     const before = JSON.stringify(p);
     expect(transitionMarkings(p, cs).size).toBe(0);
     expect(JSON.stringify(p)).toBe(before);

@@ -83,7 +83,7 @@ it("reduces lanes on the selected side and remaps surviving foreign attachments 
   ]);
 });
 
-it("removes only the selected feature, reverses transition modes and refuses to remove a direction's last lane", () => {
+it("removes only the selected feature, rejects road-level visual edits and preserves a direction's last lane", () => {
   const project = emptyProject(),
     road = makeRoad(v(), v(80, 0), {
       lanesStart: 1,
@@ -96,11 +96,10 @@ it("removes only the selected feature, reverses transition modes and refuses to 
   revertRoadUpgrade(project, road.id, "median");
   expect(project.roads[0].median).toBeUndefined();
   expect(project.roads[0].transitionMode).toBe("smooth");
-  revertRoadUpgrade(project, road.id, "smooth");
-  expect(project.roads[0].transitionMode).toBe("direct");
-  revertRoadUpgrade(project, road.id, "direct");
-  expect(project.roads[0].transitionMode).toBe("smooth");
   const before = structuredClone(project);
+  for (const mode of ["smooth", "direct"] as const)
+    expect(() => revertRoadUpgrade(project, road.id, mode)).toThrow("连接节点");
+  expect(project).toEqual(before);
   expect(() => revertRoadUpgrade(project, road.id, "widen", "right")).toThrow(
     "至少保留1",
   );

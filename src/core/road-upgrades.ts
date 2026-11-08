@@ -253,8 +253,7 @@ export function revertRoadUpgrade(
   if (mode === "median") setRoadMedian(project, id, null);
   else if (mode === "widen") removeRoadsideLanes(project, id, side, count);
   else if (mode === "smooth" || mode === "direct") {
-    road.transitionMode = mode === "smooth" ? "direct" : "smooth";
-    delete road.autoTaper;
+    throw new Error("请在连接节点应用或取消平滑显示。");
   } else {
     if (!road.replacedSection)
       throw new Error("此路段没有可恢复的道路替换记录。");

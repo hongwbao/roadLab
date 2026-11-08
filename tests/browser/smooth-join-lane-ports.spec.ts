@@ -132,7 +132,7 @@ async function upgrade(page: Page, cancel = false) {
     await page.locator('[data-action="roads"]').click();
   await page.locator('[data-tool="upgrade"]').click();
   await page.locator('[data-upgrade-mode="smooth"]').click();
-  const p = await world(page, { x: 80, y: 0, z: 0 });
+  const p = await world(page, { x: 0, y: 0, z: 0 });
   await page.mouse.click(p.x, p.y, cancel ? { button: "right" } : {});
 }
 
@@ -227,9 +227,9 @@ test("existing fourth-lane permission and closures survive smooth undo, reload a
   expect(await rules(page)).toEqual(saved);
   expect(
     await page.evaluate(
-      () => (window as any).lab.editor.project.roads[1].autoTaper,
+      () => (window as any).lab.editor.project.roadVisuals?.nodes.length ?? 0,
     ),
-  ).toBeUndefined();
+  ).toBe(0);
   await page.locator('[data-action="redo"]').click();
   expect(await rules(page)).toEqual(saved);
   await page.locator("#viewport").focus();
@@ -239,7 +239,8 @@ test("existing fourth-lane permission and closures survive smooth undo, reload a
   expect(await rules(page)).toEqual(saved);
   expect(
     await page.evaluate(
-      () => !!(window as any).lab.editor.project.roads[1].autoTaper,
+      () =>
+        ((window as any).lab.editor.project.roadVisuals?.nodes.length ?? 0) > 0,
     ),
   ).toBe(true);
   await page.locator('[data-action="top"]').click();
@@ -247,16 +248,16 @@ test("existing fourth-lane permission and closures survive smooth undo, reload a
   expect(await rules(page)).toEqual(saved);
   expect(
     await page.evaluate(
-      () => (window as any).lab.editor.project.roads[1].autoTaper,
+      () => (window as any).lab.editor.project.roadVisuals?.nodes.length ?? 0,
     ),
-  ).toBeUndefined();
+  ).toBe(0);
   await openNode(page);
   expect((await ports(page)).filter((p: any) => p.kind === "out")).toHaveLength(
     4,
   );
 });
 
-test("4 to 3 also exposes the real fading source lane and compiles its authored connection", async ({
+test("4 to 3 keeps the full source section and compiles its authored connection", async ({
   page,
 }) => {
   await seed(page, 4, 3, true);

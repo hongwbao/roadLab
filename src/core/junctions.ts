@@ -4,6 +4,7 @@ import {
   arcTable,
   center,
   nodePoint,
+  logicalRoadSignature,
   dist,
   mul,
   normal,
@@ -55,7 +56,7 @@ const junctionCache = new WeakMap<
   { signature: string; junctions: Junction[] }
 >();
 export function buildJunctions(p: Project): Junction[] {
-  const signature = JSON.stringify(p.roads),
+  const signature = logicalRoadSignature(p.roads),
     cached = junctionCache.get(p);
   if (cached?.signature === signature) return structuredClone(cached.junctions);
   const groups: { position: V; ends: { r: Road; end: 0 | 1 }[] }[] = [];

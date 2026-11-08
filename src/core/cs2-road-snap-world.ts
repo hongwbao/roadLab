@@ -189,8 +189,7 @@ function centerHasNoOffset(road: Road) {
     !road.sectionOffset &&
     (!road.twoWay ||
       ((road.backwardLanesStart ?? road.lanesStart) === road.lanesStart &&
-        (road.backwardLanesEnd ?? road.lanesEnd) === road.lanesEnd)) &&
-    !(road.autoTaper?.start?.offset || road.autoTaper?.end?.offset)
+        (road.backwardLanesEnd ?? road.lanesEnd) === road.lanesEnd))
   );
 }
 function breakpoints(road: Road) {
@@ -213,8 +212,6 @@ function breakpoints(road: Road) {
     points.add(road.transitionStart);
     points.add(road.transitionEnd);
   }
-  if (road.autoTaper?.start) points.add(road.autoTaper.start.span);
-  if (road.autoTaper?.end) points.add(1 - road.autoTaper.end.span);
   return [...points]
     .filter((t) => Number.isFinite(t) && t >= 0 && t <= 1)
     .sort((a, b) => a - b);
@@ -323,7 +320,6 @@ function roadSnapshot(
     road.profile,
     road.transitionStart,
     road.transitionEnd,
-    road.autoTaper,
     fitTolerance,
     widthTolerance,
     maxDepth,

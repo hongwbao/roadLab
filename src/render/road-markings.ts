@@ -4,7 +4,6 @@ import {
   arcTable,
   backwardLaneCount,
   boundaryPoint,
-  center,
   laneCount,
   laneDirection,
   lanePoint,
@@ -13,7 +12,6 @@ import {
   medianWidth,
   mul,
   normal,
-  pavementWidth,
   tangent,
 } from "../core/math";
 import {
@@ -22,12 +20,14 @@ import {
   type TransitionMarkings,
 } from "../core/transition-markings";
 import type { Road, V } from "../core/types";
+import { visualRoadEdges, type RoadVisualCollar } from "./road-visual-geometry";
 
 /** Preview geometry follows the same pavement and divider as the committed road. */
 export function previewRoadMarkings(
   road: Road,
   range: MarkingRange = { start: 0, end: 1 },
   markings?: TransitionMarkings,
+  collars?: readonly RoadVisualCollar[],
 ) {
   const table = arcTable(road),
     length = table.at(-1)!.s,
@@ -37,12 +37,7 @@ export function previewRoadMarkings(
       (_, i) => range.start + ((range.end - range.start) * i) / samples,
     ),
     edges = [-1, 1].map((side) =>
-      ts.map((t) =>
-        add(
-          center(road, t),
-          mul(normal(road, t), side * (pavementWidth(road, t) / 2 + 0.35)),
-        ),
-      ),
+      ts.map((t) => visualRoadEdges(road, t, collars)[side === -1 ? 0 : 1]),
     ),
     lanes: V[][] = [],
     median: V[][] = [],

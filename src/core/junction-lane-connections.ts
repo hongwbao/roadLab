@@ -11,6 +11,7 @@ import {
   laneEntryT,
   laneExitT,
   lanePoint,
+  logicalRoadSignature,
   mul,
   tangent,
 } from "./math";
@@ -21,10 +22,7 @@ import {
   turnOf,
 } from "./lane-rules";
 import { signalForJunction, signalStopOffset } from "./traffic-signals";
-import {
-  isJunctionLane,
-  physicalLaneEndpointT,
-} from "./junction-lane-geometry";
+import { isJunctionLane } from "./junction-lane-geometry";
 import type { Connection, Project, Road, Turn, V } from "./types";
 
 export type JunctionLaneEndpoint = { road: string; lane: number; end: 0 | 1 };
@@ -116,26 +114,15 @@ export function junctionLanePorts(
       t = arcParameter(table, arm.end === 0 ? offset : total - offset);
     for (let lane = 0; lane < laneCount(road); lane++) {
       if (!isJunctionLane(road, lane, arm.end)) continue;
-      const actualEnd = physicalLaneEndpointT(road, lane, arm.end),
-        portT =
-          actualEnd === undefined
-            ? t
-            : arm.end === 0
-              ? Math.max(t, actualEnd)
-              : Math.min(t, actualEnd);
       const kind = laneExitT(road, lane) === arm.end ? "in" : "out",
         ref = { road: road.id, lane, end: arm.end },
-        number = laneNumber(
-          road.autoTaper ? { ...road, autoTaper: undefined } : road,
-          lane,
-          arm.end,
-        );
+        number = laneNumber(road, lane, arm.end);
       result.push({
         ...ref,
         key: junctionLaneKey(ref),
         kind,
-        position: lanePoint(road, lane, portT),
-        direction: mul(tangent(road, portT), laneDirection(road, lane)),
+        position: lanePoint(road, lane, t),
+        direction: mul(tangent(road, t), laneDirection(road, lane)),
         name: junction.kind
           ? `${kind === "in" ? "入口" : "出口"}${armIndex + 1} · ${road.name} · ${number} 车道`
           : `${sideName(arm.direction)} · ${kind === "in" ? "入" : "出"} ${number} 车道`,
@@ -239,7 +226,7 @@ function candidateIndex(project: JunctionLaneProject) {
   // Routing validation needs endpoint pairs, not thousands of sampled curves.
   // Rules and phase timings cannot change their geometry; keep them out of the key.
   const signature = JSON.stringify([
-    project.roads,
+    logicalRoadSignature(project.roads),
     project.signals?.map((s) => [s.id, s.arms]),
   ]);
   const cached = candidateCache.get(project);

@@ -55,6 +55,7 @@ async function seed(page: Page) {
       editor.project.templates = [];
       delete editor.project.signals;
       delete editor.project.junctionLaneConnections;
+      delete editor.project.roadVisuals;
     });
     editor.scene.fit(editor.project.roads);
     editor.scene.top();
@@ -110,7 +111,7 @@ test("right click removes only a median, stays in upgrade mode and supports undo
   expect((await state()).road.median.width).toBe(2);
 });
 
-test("right click reverses lane additions and both transition upgrade modes on the clicked road", async ({
+test("right click reverses lane additions and cancels only the selected node's visual smoothing", async ({
   page,
 }) => {
   await seed(page);
@@ -124,14 +125,24 @@ test("right click reverses lane additions and both transition upgrade modes on t
   expect((await road()).lanesStart).toBe(2);
   await page.locator('[data-upgrade-mode="smooth"]').click();
   await expect(page.locator("#asset-list")).toBeHidden();
-  await expect(page.locator("#upgrade-description")).toContainText("隔离带");
+  await expect(page.locator("#upgrade-description")).toContainText("连接节点");
+  const count = () =>
+    page.evaluate(
+      () => (window as any).lab.editor.project.roadVisuals?.nodes.length ?? 0,
+    );
   await clickRoad(page, -40);
-  expect((await road()).transitionMode).toBe("smooth");
-  await clickRoad(page, -40, 0, "right");
+  expect(await count()).toBe(0);
+  await clickRoad(page, 0);
+  expect(await count()).toBe(1);
+  await clickRoad(page, 0, 0, "right");
+  expect(await count()).toBe(0);
   expect((await road()).transitionMode).toBe("direct");
+  await clickRoad(page, 0);
+  expect(await count()).toBe(1);
   await page.locator('[data-upgrade-mode="direct"]').click();
-  await clickRoad(page, -40, 0, "right");
-  expect((await road()).transitionMode).toBe("smooth");
+  await clickRoad(page, 0, 0, "right");
+  expect(await count()).toBe(0);
+  expect((await road()).transitionMode).toBe("direct");
 });
 
 test("right click restores the last replaced section after a save and reload", async ({
@@ -162,49 +173,59 @@ test("right click restores the last replaced section after a save and reload", a
   expect(restored.replacedSection).toBeUndefined();
 });
 
-test("equal-count median transitions change actual curb, pavement and source-lane curves; hovering keeps the saved map unchanged", async ({
+test("node display smoothing preserves the true median, pavement and compiled lanes; upgrade hover never writes the map", async ({
   page,
 }) => {
   await seed(page);
+  await page.evaluate(() => {
+    const e = (window as any).lab.editor;
+    e.simulation.prepareForRun();
+    (window as any).medianEngineBefore = e.simulation.sourceEngine;
+    (window as any).medianNetworkBefore = e.simulation.sourceEngine.network;
+  });
+  const capture = () =>
+    page.evaluate(() => {
+      const editor = (window as any).lab.editor;
+      let curb: any, pavement: any;
+      editor.scene.roads.traverse((item: any) => {
+        if (item.userData.median === "seam-b") curb = item;
+        else if (item.userData.road === "seam-b" && item.isMesh)
+          pavement = item;
+      });
+      const points = Array.from(
+          pavement.geometry.attributes.position.array,
+        ) as number[],
+        zs = points.filter((_, i) => i % 3 === 2),
+        lane = [...editor.simulation.sourceEngine.network.lanes.values()].find(
+          (lane: any) =>
+            lane.road === "seam-b" &&
+            lane.lane === 2 &&
+            lane.roadInterval[0] === 0,
+        ) as any;
+      return {
+        curb: Array.from(curb.geometry.attributes.position.array),
+        curbId: curb.geometry.uuid,
+        pavement: points,
+        pavementId: pavement.geometry.uuid,
+        width: Math.max(...zs) - Math.min(...zs),
+        laneStartZ: lane.curve.points[0].z,
+        median: editor.project.roads[1].median.width,
+        sameEngine:
+          editor.simulation.sourceEngine === (window as any).medianEngineBefore,
+        sameNetwork:
+          editor.simulation.sourceEngine.network ===
+          (window as any).medianNetworkBefore,
+      };
+    });
+  const beforeGeometry = await capture();
   await page.locator('[data-tool="upgrade"]').click();
   await page.locator('[data-upgrade-mode="smooth"]').click();
-  await clickRoad(page, -40);
-  const geometry = await page.evaluate(() => {
-    const editor = (window as any).lab.editor;
-    let curb: any, pavement: any;
-    editor.scene.roads.traverse((item: any) => {
-      if (item.userData.median === "seam-b") curb = item;
-      else if (item.userData.road === "seam-b" && item.isMesh) pavement = item;
-    });
-    const a = Array.from(curb.geometry.attributes.position.array) as number[];
-    const widths: number[] = [];
-    for (let index = 0; index < a.length; index += 12)
-      widths.push(Math.abs(a[index + 5] - a[index + 2]));
-    const road = Array.from(
-      pavement.geometry.attributes.position.array,
-    ) as number[];
-    editor.simulation.prepareForRun();
-    const lane = [
-      ...editor.simulation.sourceEngine.network.lanes.values(),
-    ].find(
-      (lane: any) =>
-        lane.road === "seam-b" && lane.lane === 2 && lane.roadInterval[0] === 0,
-    ) as any;
-    return {
-      widths,
-      pavementStart: Math.abs(road[5] - road[2]),
-      laneStartZ: lane.curve.points[0].z,
-      taper: editor.project.roads[1].autoTaper.start,
-    };
-  });
-  expect(geometry.taper.medianWidth).toBe(0);
-  expect(geometry.widths[0]).toBeCloseTo(0);
-  expect(geometry.widths.some((width) => width > 0.1 && width < 1.9)).toBe(
-    true,
-  );
-  expect(Math.max(...geometry.widths)).toBeCloseTo(2);
-  expect(geometry.pavementStart).toBeCloseTo(16.7);
-  expect(geometry.laneStartZ).toBeCloseTo(2);
+  await clickRoad(page, 0);
+  const geometry = await capture();
+  expect(geometry).toEqual(beforeGeometry);
+  expect(geometry.median).toBe(2);
+  expect(geometry.width).toBeCloseTo(18.7, 4);
+  expect(geometry.laneStartZ).toBeCloseTo(3);
   await page.locator('[data-upgrade-mode="median"]').click();
   const before = await page.evaluate(() =>
     JSON.stringify((window as any).lab.editor.project),
