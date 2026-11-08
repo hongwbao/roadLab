@@ -335,11 +335,15 @@ test("saved programs import onto another junction and JSON files round-trip with
     mimeType: "application/json",
     buffer: Buffer.from(JSON.stringify(imported)),
   });
-  expect(
-    (await state(page)).project.signals.find(
-      (signal: any) => signal.id === target.id,
-    ).program.phases[0].duration,
-  ).toBe(23);
+  // File.text() completes after the input change event is dispatched.
+  await expect
+    .poll(
+      async () =>
+        (await state(page)).project.signals.find(
+          (signal: any) => signal.id === target.id,
+        ).program.phases[0].duration,
+    )
+    .toBe(23);
   await expect(page.locator("[data-signal-error]")).toBeHidden();
   await page.locator("#viewport").focus();
   await page.keyboard.press("Control+s");
