@@ -1,55 +1,46 @@
 {
-  "recorded_at": "2026-11-08T06:13:45.566232+00:00",
-  "latest_change": "出发前固定道路路线，行驶中沿默认500米移动窗口实时选择车道；全部自动和自定义连接统一倒推，提前相邻变道与让出空隙，严格检查实际出口后继。地图菜单增加可保存、可实时修改的100–2000米预判参数。",
-  "record_type": "固定应用6506a36；293核心通过。80浏览器用例覆盖：首次全量79通过，旧导入测试选择器因两个details匹配而失败，测试定位修正后单项补测通过。高压交通2项车身重叠断言仍失败，未计入通过。",
+  "recorded_at": "2026-11-08T07:23:53.946334+00:00",
+  "latest_change": "新增按入口百分比及出口比例分配测试车流：全局100%×入口100%=每入口50辆/模拟分钟，平分给同向入口车道；目的地按比例独立随机。I工具上下文面板支持实时编辑、清晰虚线箭头及目标环、存档导入导出、道路分段/反向引用维护。",
+  "record_type": "固定应用1fbb290，304核心/85完整浏览器/11线上通过；测试预算修正版本2826010的92个应用源文件与线上完全一致。压力断言独立记录，不能称碰撞AI已修复。",
   "checks": [
     {
-      "command": "npx tsc --noEmit; vite build",
+      "command": "npx tsc --noEmit;vite build",
       "exit_code": 0,
-      "scope": "exact immutable application6506a36;whole project types and production bundle"
+      "scope": "immutable source1fbb290 full-project types andproduction assets"
     },
     {
-      "command": "npx vitest run [27 scoped suites]",
+      "command": "npx vitest run [29 scoped suites]",
       "exit_code": 0,
-      "passed_cases": 293,
-      "scope": "15lane planning/gap/corecases plus prior models,network,source runtime,signals,upgrades,offset andcloverleaf"
+      "passed_cases": 304,
+      "scope": "actual total200/min at4entries,four-lane budgets,weighted zero destinations acrossallsource lanes,live runtime/route retention,JSON validation,splitrefs,newentry100%,plusallpriorroad/source/signal/laneplanner regressions;heavy4entry regression has bounded15s timeout;92runtime files identical"
     },
     {
       "command": "PLAYWRIGHT_PORT=5199 npx playwright test",
-      "exit_code": 1,
-      "passed_cases": 79,
-      "failed_cases": 1,
-      "scope": "all3new lane settings andprior flows passed except old map-files summary selector matched2elements after adding a second disclosure;test-only fix below;original failing log retained"
-    },
-    {
-      "command": "PLAYWRIGHT_PORT=5199 npx playwright test tests/browser/editor.spec.ts --grep exports-and-imports",
       "exit_code": 0,
-      "passed_cases": 1,
-      "scope": "selector names 导入与备份文件 explicitly;export,corrupt import,valid import,save/reload passed;validation source2c9e364,all88src files andbuild inputs identical to deployed6506a36"
+      "passed_cases": 85,
+      "scope": "full exact static application1fbb290;5newODcases inclmapindication,livepercentage/base,save/equal/undo,compactfocus,physicalexitretentiononreversal;priorroads/signals/horizon/UIcache retained"
     },
     {
-      "command": "fixed-clock360simsec traffic pressure, baseline/current",
+      "command": "fixed-clock full tests/traffic.test.ts baseline/current",
       "exit_code": 1,
-      "passed_cases": 1,
-      "failed_cases": 2,
-      "scope": "historical overlap assertions retained;transition completion292to332,checkpoints[95,216,332],overlap samples121to219(worse);junction415completions/23overlaps identical;merge309to307completions/0overlaps;not a collision-fix release"
+      "scope": "identical test file andclock1700000000000;actual pressure metrics inODcomparison;transition overlap219→425,junction2→39,merge0→0;completion332→327,427→422,307→306;current14pass/3fail inclmergequeued20against<20;baselineinitialmerge timedout underparallel load,serialrepeat retained;no assertions weakened"
     },
     {
-      "command": "impeccable finish review",
+      "command": "impeccable finish review + fix verdict",
       "disposition": "ship",
-      "scope": "new collapsed parameter UI only,1440x900,1024x768,390x844;30inherited palette/type advisories;no traffic certification"
+      "scope": "one material ODvisibility finding resolved;2.75px cyanwithdarkoutline,screen-scaled dashes/arrow/endpoint rings,stickyentry→exit caption;desktop1440/compact1024/mobile390;verdictcoversscoredfix only;30inheritedadvisories;nottrafficphysicscertification"
     },
     {
       "command": "HTTP SHA256 localhost/LAN5173",
       "exit_code": 0,
       "passed_cases": 10,
-      "scope": "all5index/release/CSS/JS/worker resources match immutable dist"
+      "scope": "all5index/release/JS/CSS/workerresources match verified fixed dist"
     },
     {
-      "command": "PLAYWRIGHT_PORT=5173 [lane settings3+UI cache4+map import1]",
+      "command": "PLAYWRIGHT_PORT=5173 [OD5+UIcache4+existingliveflow2]",
       "exit_code": 0,
-      "passed_cases": 8,
-      "scope": "actual deployed runtime parameter,live car/time retention,save,reload,compact keyboard/menu stacking andexisting tool/performance/picking"
+      "passed_cases": 11,
+      "scope": "actual served site live weights/base,stablegeometry,guide target/dash,save/reload/equal/undo,reversemetadata,compact,global/perport flow andpriorperformance"
     },
     {
       "command": "SMOKE_URL=http://192.168.31.167:5173/ node tests/production.mjs",
@@ -59,7 +50,7 @@
     {
       "command": "git ls-remote origin refs/heads/main",
       "exit_code": 0,
-      "scope": "verified application6506a36 andtest-only correction2c9e364,followed bythis delivery documentation"
+      "scope": "application1fbb290 andtestbudget2826010 verified,followedbydelivery documentation"
     }
   ],
   "limitations": [
@@ -77,7 +68,8 @@
     "限速5–160km/h；普通编辑事务会暂停测试。虚线3米/6米按实际三维距离绘制，路段端头允许截短。",
     "偏移连接识别同层真实车道接触或有效吸附；纯直线双路段接缝不会自动开放。连线节点扩展不创建街道路口铺面、斑马线或自动信号灯。",
     "UI基准来自本机40段苜蓿叶、9次同步setTool调用；不代表首次载图、真实道路几何修改、开始测试时网络初始化或所有规模地图的帧率。",
-    "本次500米预判与提前让行不保证饱和路网不堵；固定时钟高压缩窄道路完成292→332，但重叠样本121→219，穿模问题未解决且样本增加。无灯路口压力结果与上一版一致。"
+    "本次500米预判与提前让行不保证饱和路网不堵；固定时钟高压缩窄道路完成292→332，但重叠样本121→219，穿模问题未解决且样本增加。无灯路口压力结果与上一版一致。",
+    "新出车分布下高压360秒过渡/路口车身重叠采样219→425、2→39，汇流0→0但排队20触发旧<20断言；本次未声称修复碰撞或消除高流量拥堵。50是用户确认的可调测试基准，并非所有道路的物理饱和流率。"
   ],
   "previous_verified_stable_snapshot": {
     "recorded_at": "2026-11-06T11:58:12.595591+00:00",
@@ -427,22 +419,23 @@
     "healthz": "ok"
   },
   "current_deployment": {
-    "version": "route-lanes-20261108-060529",
+    "version": "traffic-demand-20261108-071052",
     "url": "http://192.168.31.167:5173/",
-    "source_commit": "6506a36f961938f725f3eed447f6c8a49c9ab636",
-    "source_snapshot": "/home/bhw/repos/interchange-lab/.cache/builds/route-lanes-20261108-060529/source",
-    "validation_commit": "2c9e364e74a7cd4270fd46af27579e2b23bc31d9",
-    "validation_source": "/home/bhw/repos/interchange-lab/.cache/route-lanes/validation-source",
-    "manifest": "/home/bhw/repos/interchange-lab/.cache/deployments/route-lanes-20261108-060529/manifest.json",
+    "source_commit": "1fbb290e2cd20336ce7193cffdb8727db061aebd",
+    "source_snapshot": "/home/bhw/repos/interchange-lab/.cache/builds/traffic-demand-20261108-071052/source",
+    "validation_commit": "2826010dac2951c29714801cdd8005201a06433c",
+    "validation_source": "/home/bhw/repos/interchange-lab/.cache/traffic-demand/validation-source",
+    "manifest": "/home/bhw/repos/interchange-lab/.cache/deployments/traffic-demand-20261108-071052/manifest.json",
     "dist_sha256": {
       "assets/cs2-path-worker-DFcwOVUm.js": "98850414cebb8d678b7082ac85feaef178e9d67b2bf4f7cbb1707e248b3b074c",
-      "assets/index-D8yklALY.css": "607fcdf7f76b199d1e2ae639250ccf47c6d76e88338182f8e07c21ecf9dbc022",
-      "assets/index-JJj43tiq.js": "35bb9c54c6e08a60efbb066428858a9a5948ca460f696a319ad125a1577e8b43",
-      "index.html": "df25453df1cad101af1a5e175569c34656231d2ee954babdf9da82b7f16a911e",
-      "release.json": "d9d3b34a809e8b60211d1378b73757d9dc4b795bd53a69ddb65fe8bfe165dc7e"
+      "assets/index-Iu-XULhB.css": "cd61ad4b99cf784e94c5c3d6c0eebfba5ddc2784b8cad9e135d1a7bbcfab519c",
+      "assets/index-MScv8MV-.js": "76fec336507de28ee8d31ddd81e8852f714063811e4a70bea7cad703706f6b7f",
+      "index.html": "ff19977194e166264ee455d3df254faff5dbb5bc2f3e0322be12a9ce3ec7f11a",
+      "release.json": "e18c28684187ab62a93074be42f7f224f44e2ec9b092a4e46db4c41f21ff8110"
     },
-    "http_verification": "/home/bhw/repos/interchange-lab/.cache/deployments/route-lanes-20261108-060529/http-verification.json",
-    "ui_review": "/home/bhw/repos/interchange-lab/.cache/deployments/route-lanes-20261108-060529/ui-review/finish-review.md",
+    "http_verification": "/home/bhw/repos/interchange-lab/.cache/deployments/traffic-demand-20261108-071052/http-verification.json",
+    "ui_review": "/home/bhw/repos/interchange-lab/.cache/deployments/traffic-demand-20261108-071052/ui-review/finish-review.md",
+    "ui_final_verdict": "/home/bhw/repos/interchange-lab/.cache/deployments/traffic-demand-20261108-071052/ui-review/postfix-verdict.md",
     "service": "roadlab.service,active"
   },
   "previous_cs2_preview_checks": [
@@ -742,9 +735,9 @@
   "github_sync": {
     "repository": "https://github.com/hongwbao/roadLab",
     "branch": "main",
-    "verified_application_commit": "6506a36f961938f725f3eed447f6c8a49c9ab636",
-    "verification_test_commit": "2c9e364e74a7cd4270fd46af27579e2b23bc31d9",
-    "scope": "functional code andtest correction synced;delivery record follows"
+    "verified_application_commit": "1fbb290e2cd20336ce7193cffdb8727db061aebd",
+    "verification_test_commit": "2826010dac2951c29714801cdd8005201a06433c",
+    "scope": "code andtest changes synced;delivery record follows"
   },
   "previous_road_expansion_deployment": {
     "version": "road-expansion-20261107-103432",
@@ -845,8 +838,9 @@
   "previous_github_sync": {
     "repository": "https://github.com/hongwbao/roadLab",
     "branch": "main",
-    "verified_application_commit": "ba2354ec1d137a9c07d71c4b950aea6cfc8ae2e4",
-    "scope": "runtime source verified onmain;final measured performance and verification record committed afterward"
+    "verified_application_commit": "6506a36f961938f725f3eed447f6c8a49c9ab636",
+    "verification_test_commit": "2c9e364e74a7cd4270fd46af27579e2b23bc31d9",
+    "scope": "functional code andtest correction synced;delivery record follows"
   },
   "previous_median_upgrades_deployment": {
     "version": "median-upgrades-20261107-121216",
@@ -1423,5 +1417,171 @@
       "True saturation/signals/body safety can still stop traffic;no guarantee of jam-free maps.",
       "Sustained transition body-overlap samples increased121to219;not hidden or counted aspassing."
     ]
+  },
+  "previous_lane_planning_deployment": {
+    "version": "route-lanes-20261108-060529",
+    "url": "http://192.168.31.167:5173/",
+    "source_commit": "6506a36f961938f725f3eed447f6c8a49c9ab636",
+    "source_snapshot": "/home/bhw/repos/interchange-lab/.cache/builds/route-lanes-20261108-060529/source",
+    "validation_commit": "2c9e364e74a7cd4270fd46af27579e2b23bc31d9",
+    "validation_source": "/home/bhw/repos/interchange-lab/.cache/route-lanes/validation-source",
+    "manifest": "/home/bhw/repos/interchange-lab/.cache/deployments/route-lanes-20261108-060529/manifest.json",
+    "dist_sha256": {
+      "assets/cs2-path-worker-DFcwOVUm.js": "98850414cebb8d678b7082ac85feaef178e9d67b2bf4f7cbb1707e248b3b074c",
+      "assets/index-D8yklALY.css": "607fcdf7f76b199d1e2ae639250ccf47c6d76e88338182f8e07c21ecf9dbc022",
+      "assets/index-JJj43tiq.js": "35bb9c54c6e08a60efbb066428858a9a5948ca460f696a319ad125a1577e8b43",
+      "index.html": "df25453df1cad101af1a5e175569c34656231d2ee954babdf9da82b7f16a911e",
+      "release.json": "d9d3b34a809e8b60211d1378b73757d9dc4b795bd53a69ddb65fe8bfe165dc7e"
+    },
+    "http_verification": "/home/bhw/repos/interchange-lab/.cache/deployments/route-lanes-20261108-060529/http-verification.json",
+    "ui_review": "/home/bhw/repos/interchange-lab/.cache/deployments/route-lanes-20261108-060529/ui-review/finish-review.md",
+    "service": "roadlab.service,active"
+  },
+  "previous_lane_planning_checks": [
+    {
+      "command": "npx tsc --noEmit; vite build",
+      "exit_code": 0,
+      "scope": "exact immutable application6506a36;whole project types and production bundle"
+    },
+    {
+      "command": "npx vitest run [27 scoped suites]",
+      "exit_code": 0,
+      "passed_cases": 293,
+      "scope": "15lane planning/gap/corecases plus prior models,network,source runtime,signals,upgrades,offset andcloverleaf"
+    },
+    {
+      "command": "PLAYWRIGHT_PORT=5199 npx playwright test",
+      "exit_code": 1,
+      "passed_cases": 79,
+      "failed_cases": 1,
+      "scope": "all3new lane settings andprior flows passed except old map-files summary selector matched2elements after adding a second disclosure;test-only fix below;original failing log retained"
+    },
+    {
+      "command": "PLAYWRIGHT_PORT=5199 npx playwright test tests/browser/editor.spec.ts --grep exports-and-imports",
+      "exit_code": 0,
+      "passed_cases": 1,
+      "scope": "selector names 导入与备份文件 explicitly;export,corrupt import,valid import,save/reload passed;validation source2c9e364,all88src files andbuild inputs identical to deployed6506a36"
+    },
+    {
+      "command": "fixed-clock360simsec traffic pressure, baseline/current",
+      "exit_code": 1,
+      "passed_cases": 1,
+      "failed_cases": 2,
+      "scope": "historical overlap assertions retained;transition completion292to332,checkpoints[95,216,332],overlap samples121to219(worse);junction415completions/23overlaps identical;merge309to307completions/0overlaps;not a collision-fix release"
+    },
+    {
+      "command": "impeccable finish review",
+      "disposition": "ship",
+      "scope": "new collapsed parameter UI only,1440x900,1024x768,390x844;30inherited palette/type advisories;no traffic certification"
+    },
+    {
+      "command": "HTTP SHA256 localhost/LAN5173",
+      "exit_code": 0,
+      "passed_cases": 10,
+      "scope": "all5index/release/CSS/JS/worker resources match immutable dist"
+    },
+    {
+      "command": "PLAYWRIGHT_PORT=5173 [lane settings3+UI cache4+map import1]",
+      "exit_code": 0,
+      "passed_cases": 8,
+      "scope": "actual deployed runtime parameter,live car/time retention,save,reload,compact keyboard/menu stacking andexisting tool/performance/picking"
+    },
+    {
+      "command": "SMOKE_URL=http://192.168.31.167:5173/ node tests/production.mjs",
+      "exit_code": 0,
+      "scope": "LAN default5roads/2routes/canvas,no page/asset errors"
+    },
+    {
+      "command": "git ls-remote origin refs/heads/main",
+      "exit_code": 0,
+      "scope": "verified application6506a36 andtest-only correction2c9e364,followed bythis delivery documentation"
+    }
+  ],
+  "traffic_demand": {
+    "base_vehicles_per_sim_minute": 50,
+    "entry_default_percent": 100,
+    "four_entries_at100_total": 200,
+    "per_lane_independent_equal_budgets": true,
+    "weighted_destinations_independent_of_entry_lane": true,
+    "live_edits_preserve_existing_trips": true,
+    "legacy_actual_rates_preserved": true,
+    "road_split_and_reverse_endpoints_preserved": true,
+    "pressure_comparison": {
+      "fixed_clock_ms": 1700000000000,
+      "test_file_identical": true,
+      "baseline_commit": "6506a36f961938f725f3eed447f6c8a49c9ab636",
+      "current_commit": "1fbb290e2cd20336ce7193cffdb8727db061aebd",
+      "before": {
+        "transition": {
+          "completed": 332,
+          "active": 54,
+          "overlaps": 219,
+          "maxMove": 0.8333543575117829,
+          "maxAngle": 0.26211107609449696,
+          "turns": 27,
+          "checkpoints": [95, 216, 332]
+        },
+        "junction": {
+          "completed": 427,
+          "active": 72,
+          "overlaps": 2,
+          "maxMove": 0.6944592234296806,
+          "maxAngle": 0.07332871597895664,
+          "turns": 31919,
+          "checkpoints": [133, 282, 427]
+        },
+        "merge": {
+          "completed": 307,
+          "active": 86,
+          "overlaps": 0,
+          "maxMove": 0.8333455749952386,
+          "maxAngle": 0.08651069361631852,
+          "turns": 69,
+          "checkpoints": [95, 201, 307]
+        }
+      },
+      "after": {
+        "transition": {
+          "completed": 327,
+          "active": 60,
+          "overlaps": 425,
+          "maxMove": 0.8333570553935948,
+          "maxAngle": 0.24868144357110877,
+          "turns": 40,
+          "checkpoints": [99, 203, 327]
+        },
+        "junction": {
+          "completed": 422,
+          "active": 73,
+          "overlaps": 39,
+          "maxMove": 0.6944589215207473,
+          "maxAngle": 0.07320773783747647,
+          "turns": 32407,
+          "checkpoints": [127, 283, 422]
+        },
+        "merge": {
+          "completed": 306,
+          "active": 86,
+          "overlaps": 0,
+          "maxMove": 0.833345188992078,
+          "maxAngle": 0.0844665660357839,
+          "turns": 113,
+          "checkpoints": [95, 200, 306]
+        }
+      },
+      "baseline_serial": {
+        "passed": 15,
+        "failed": 2
+      },
+      "current": {
+        "passed": 14,
+        "failed": 3,
+        "merge_queued": 20,
+        "merge_queue_assertion": "<20"
+      }
+    },
+    "pressure_file": "/home/bhw/repos/interchange-lab/.cache/deployments/traffic-demand-20261108-071052/logs/pressure-comparison.json",
+    "prior_initial_full_browser": "d63cb07:83passed/1old1320expectation;fixedfor11entries×50×400%=2200;final85passed",
+    "prior_core_timeout": "one4entry60simsec regression took5.2s underparallel load;onlythat test timeout increased5to15s;allassertions retained,final304pass"
   }
 }
