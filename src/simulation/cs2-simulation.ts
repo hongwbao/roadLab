@@ -1,8 +1,17 @@
+import {
+  coordinateLaneMerges,
+  type MergeOccupant,
+  type MergeRequest,
+} from "./lane-merge-coordination";
 import { laneJunctionTrims } from "../core/lane-junctions";
 /** Ordinary-car source runtime assembly. Browser/world adapters are explicit. */
 import { updateAutomaticTransitions } from "../core/auto-transitions";
 import {
   buildEarlyLanePlan,
+  laneLookaheadEnd,
+  DEFAULT_LANE_LOOKAHEAD,
+  MIN_LANE_LOOKAHEAD,
+  MAX_LANE_LOOKAHEAD,
   chooseEarlyLane,
   laneChangeGapClear,
   earlyLaneSpeedLimit,
@@ -194,6 +203,9 @@ type Trip = {
   };
   request?: number;
   completed: boolean;
+  fixedPath?: Cs2SearchStep[];
+  fixedIndex?: number;
+  fixedRoads?: string[];
 };
 type Occupant = {
   id: number;
@@ -358,9 +370,18 @@ export class Cs2TrafficSimulation {
   private navigationActionsFrame = -1;
   private earlyLanePlans = new Map<
     number,
-    { groups: Trip["groups"]; index: number; plan: EarlyLanePlan | null }
+    {
+      groups: Trip["groups"];
+      index: number;
+      end: number;
+      plan: EarlyLanePlan | null;
+    }
   >();
-  private authoredLaneRoads = new Set<string>();
+  laneLookahead = DEFAULT_LANE_LOOKAHEAD;
+  private globalOccupancy = new Map<string, MergeOccupant[]>();
+  private mergeTargets = new Map<number, string>();
+  private mergeAllowed = new Set<number>();
+  private mergeSpeedCaps = new Map<number, number>();
   private reservedNavigation = new Map<
     number,
     { current: CS2NavigationCurrentState; nextLanes: CS2NavigationQueuedLane[] }
@@ -488,8 +509,12 @@ export class Cs2TrafficSimulation {
     updateAutomaticTransitions(project);
     normalizePorts(project);
     this.project = project;
-    this.authoredLaneRoads = new Set(
-      (project.junctionLaneConnections ?? []).map((rule) => rule.from.road),
+    this.laneLookahead = Math.max(
+      MIN_LANE_LOOKAHEAD,
+      Math.min(
+        MAX_LANE_LOOKAHEAD,
+        project.laneLookahead ?? DEFAULT_LANE_LOOKAHEAD,
+      ),
     );
     this.roads = new Map(project.roads.map((road) => [road.id, road]));
     this.arcs = new Map(project.roads.map((road) => [road.id, arcTable(road)]));
@@ -679,6 +704,10 @@ export class Cs2TrafficSimulation {
     this.knownRoutes.clear();
     this.trips.clear();
     this.earlyLanePlans.clear();
+    this.globalOccupancy.clear();
+    this.mergeTargets.clear();
+    this.mergeAllowed.clear();
+    this.mergeSpeedCaps.clear();
     this.boundaries = [];
     this.runtime = undefined;
     this.network = undefined;
@@ -900,6 +929,38 @@ export class Cs2TrafficSimulation {
       trip.request = query.requestId;
       if (!ownerPrepared) prepareCs2PersonalCarPathRequest(trip.owner, 0);
     }
+    if (trip?.fixedPath?.length) {
+      const current = this.runtime?.readVehicle(trip.id)?.current;
+      const lane = current?.laneId && this.network?.lanes.get(current.laneId);
+      const start = lane
+        ? trip.fixedPath.findIndex(
+            (step, i) =>
+              i >= (trip.fixedIndex ?? 0) &&
+              this.network!.lanes.get(step.owner)?.group === lane.group,
+          )
+        : 0;
+      if (start < 0) throw new Error("Vehicle left its fixed road route");
+      trip.fixedIndex = start;
+      const steps = trip.fixedPath.slice(start).map((step) => ({
+        ...step,
+        delta: [...step.delta] as [number, number],
+      }));
+      if (current) steps[0].delta[0] = current.curvePosition.x;
+      consume({
+        requestId: query.requestId,
+        revision: this.graph!.revision,
+        status: "found",
+        steps,
+        cost: 0,
+        distance: 0,
+        duration: 0,
+        expanded: 0,
+        graphTraversal: 0,
+        randomState: query.seed,
+        inverted: false,
+      });
+      return Promise.resolve();
+    }
     if (this.options.synchronousPathsOnlyForTests) {
       consume(searchCs2Path(this.graph!, query));
       return Promise.resolve();
@@ -934,6 +995,10 @@ export class Cs2TrafficSimulation {
     this.parkedOwners.clear();
     this.trips.clear();
     this.earlyLanePlans.clear();
+    this.globalOccupancy.clear();
+    this.mergeTargets.clear();
+    this.mergeAllowed.clear();
+    this.mergeSpeedCaps.clear();
     this.positionCache.clear();
     this.blockers.clear();
     for (const car of vehicles) {
@@ -1027,6 +1092,7 @@ export class Cs2TrafficSimulation {
           car,
           completed: false,
         };
+      this.pinRoadRoute(trip);
       this.trips.set(car.id, trip);
       this.nextId = Math.max(this.nextId, car.id);
       const position = cs2NavigationCurvePosition(lane.curve, t),
@@ -1180,6 +1246,7 @@ export class Cs2TrafficSimulation {
         continue;
       }
       trip.groups = this.network!.groupsForPath(trip.path);
+      this.pinRoadRoute(trip);
       trip.groupIndex = 0;
       // PersonalCarAI owns ResetUpdatedPath/ResetPath after the navigation job.
       this.knownRoutes.add(`${portKey(trip.source)}>${portKey(trip.sink)}`);
@@ -1384,8 +1451,153 @@ export class Cs2TrafficSimulation {
       }).length,
     );
   }
+  setLaneLookahead(metres: number) {
+    if (
+      !Number.isFinite(metres) ||
+      metres < MIN_LANE_LOOKAHEAD ||
+      metres > MAX_LANE_LOOKAHEAD
+    )
+      return false;
+    if (this.laneLookahead !== metres) {
+      this.laneLookahead = metres;
+      this.earlyLanePlans.clear();
+    }
+    if (this.project) this.project.laneLookahead = metres;
+    return true;
+  }
+  private pinRoadRoute(trip: Trip) {
+    if (trip.fixedPath || !trip.path.length) return;
+    trip.fixedPath = trip.path.map((step) => ({
+      ...step,
+      delta: [...step.delta],
+    }));
+    trip.fixedIndex = 0;
+    trip.fixedRoads = trip.groups
+      .flatMap((g) => {
+        const lane = this.network!.lanes.get(g.laneIds[0]);
+        return lane?.kind === "road" && lane.road ? [lane.road] : [];
+      })
+      .filter((road, i, all) => i === 0 || road !== all[i - 1]);
+  }
+  private laneKey(lane: Cs2NetworkLane) {
+    return JSON.stringify([lane.road, lane.direction, lane.lane]);
+  }
+  private roadS(lane: Cs2NetworkLane, t: number) {
+    const table = this.arcs.get(lane.road!)!,
+      interval = lane.roadInterval!;
+    const roadT = interval[0] + (interval[1] - interval[0]) * t;
+    let i = table.findIndex((row) => row.t >= roadT);
+    if (i < 1) i = 1;
+    const a = table[i - 1],
+      b = table[i];
+    const s = a.s + ((b.s - a.s) * (roadT - a.t)) / Math.max(1e-9, b.t - a.t);
+    return lane.direction === 1 ? s : table.at(-1)!.s - s;
+  }
+  private routeLanePlan(trip: Trip, remaining: number) {
+    const end = laneLookaheadEnd(
+        this.network!,
+        trip.groups,
+        trip.groupIndex,
+        remaining,
+        this.laneLookahead,
+      ),
+      cached = this.earlyLanePlans.get(trip.id);
+    if (
+      cached?.groups === trip.groups &&
+      cached.index === trip.groupIndex &&
+      cached.end === end
+    )
+      return cached.plan;
+    const plan = buildEarlyLanePlan(
+      this.network!,
+      trip.groups,
+      trip.groupIndex,
+      end,
+    );
+    this.earlyLanePlans.set(trip.id, {
+      groups: trip.groups,
+      index: trip.groupIndex,
+      end,
+      plan,
+    });
+    return plan;
+  }
+  private prepareLaneMerges() {
+    const network = this.network!;
+    this.globalOccupancy.clear();
+    this.mergeTargets.clear();
+    for (const [id, rows] of this.occupancy) {
+      const lane = network.lanes.get(id)!;
+      if (lane.kind !== "road") continue;
+      const key = this.laneKey(lane),
+        list = this.globalOccupancy.get(key) ?? [];
+      for (const row of rows)
+        list.push({
+          id: row.id,
+          s: this.roadS(lane, row.t),
+          speed: row.speed,
+          changing: !!row.view.current.changeLaneId,
+        });
+      this.globalOccupancy.set(key, list);
+    }
+    const requests: MergeRequest[] = [];
+    for (const row of this.physical.values()) {
+      const trip = this.trips.get(row.id),
+        lane = network.lanes.get(row.lane)!;
+      if (!trip || lane.kind !== "road") continue;
+      const group = network.groups.get(lane.group)!;
+      if (!group.allowChange) continue;
+      this.syncGroup(trip, lane.id);
+      const remaining =
+        this.curveS(lane.id, trip.groups[trip.groupIndex].interval[1]) - row.s;
+      const plan = this.routeLanePlan(trip, remaining),
+        target = chooseEarlyLane(
+          plan,
+          group.members,
+          lane.id,
+          remaining,
+          row.speed,
+          this.laneLookahead,
+        );
+      if (!target || target === lane.id) continue;
+      const origin = group.members.indexOf(lane.id),
+        destination = plan!.allowed
+          .map((id) => group.members.indexOf(id))
+          .filter((i) => i >= 0)
+          .sort((a, b) => Math.abs(a - origin) - Math.abs(b - origin))[0];
+      const corridor: string[] = [];
+      for (
+        let i = origin + Math.sign(destination - origin);
+        Math.sign(destination - origin) > 0
+          ? i <= destination
+          : i >= destination;
+        i += Math.sign(destination - origin)
+      )
+        corridor.push(this.laneKey(network.lanes.get(group.members[i])!));
+      this.mergeTargets.set(row.id, target);
+      requests.push({
+        id: row.id,
+        position: this.roadS(lane, row.t),
+        speed: row.speed,
+        distance: remaining + plan!.distanceAfterCurrent,
+        target: this.laneKey(network.lanes.get(target)!),
+        corridor,
+      });
+    }
+    const result = coordinateLaneMerges(requests, this.globalOccupancy);
+    this.mergeAllowed = result.allowed;
+    this.mergeSpeedCaps = result.speedCaps;
+  }
   private syncGroup(trip: Trip, laneId: string) {
     const group = this.network!.lanes.get(laneId)?.group;
+    if (trip.fixedPath) {
+      const fixed = trip.fixedPath.findIndex(
+        (step, i) =>
+          i >= (trip.fixedIndex ?? 0) &&
+          this.network!.lanes.get(step.owner)?.group === group,
+      );
+      if (fixed >= 0) trip.fixedIndex = fixed;
+    }
     if (trip.groups[trip.groupIndex]?.group !== group) {
       const index = trip.groups.findIndex(
         (row, index) => index >= trip.groupIndex && row.group === group,
@@ -2140,6 +2352,7 @@ export class Cs2TrafficSimulation {
             this.requestSpace.set(decision.requestSpaceFor, targetLane);
         }
       }
+    this.prepareLaneMerges();
   }
   /** RoadLab route preparation policy; the recovered selection/motion helpers
    * remain unchanged. Physical changes stay adjacent and use real lane gaps. */
@@ -2151,70 +2364,69 @@ export class Cs2TrafficSimulation {
     const network = this.network!,
       lane = network.lanes.get(view.current.laneId!)!,
       group = network.groups.get(lane.group)!;
-    if (
-      !this.authoredLaneRoads.size ||
-      lane.kind !== "road" ||
-      !group.allowChange ||
-      selected.laneId !== view.current.laneId ||
-      selected.flags & 0x100
-    )
-      return selected;
-    const cached = this.earlyLanePlans.get(trip.id);
-    const plan =
-      cached?.groups === trip.groups && cached.index === trip.groupIndex
-        ? cached.plan
-        : buildEarlyLanePlan(
-            network,
-            trip.groups,
-            trip.groupIndex,
-            this.authoredLaneRoads,
-          );
-    if (
-      !cached ||
-      cached.groups !== trip.groups ||
-      cached.index !== trip.groupIndex
-    )
-      this.earlyLanePlans.set(trip.id, {
-        groups: trip.groups,
-        index: trip.groupIndex,
-        plan,
-      });
-    if (!plan) return selected;
+    if (lane.kind !== "road" || !group.allowChange) return selected;
     const row = this.physical.get(trip.id),
       speed = speedOf(view),
       remaining =
         this.curveS(lane.id, trip.groups[trip.groupIndex].interval[1]) -
-        (row?.s ?? 0),
-      planned = chooseEarlyLane(plan, group.members, lane.id, remaining, speed);
-    let target = planned ?? selected.changeLaneId ?? null;
-    if (view.current.changeLaneId && view.current.changeProgress > 0)
-      target = view.current.changeLaneId;
-    const origin = group.members.indexOf(lane.id),
-      index = target ? group.members.indexOf(target) : origin;
-    if (index < 0 || origin < 0) return selected;
-    if (Math.abs(index - origin) > 1)
-      target = group.members[origin + Math.sign(index - origin)];
-    if (target === lane.id) target = null;
+        (row?.s ?? 0);
+    const plan = this.routeLanePlan(trip, remaining);
+    let target: string | null = null;
+    const active = view.current.changeLaneId;
+    if (active && view.current.changeProgress > 0) target = active;
+    else if (this.mergeTargets.has(trip.id))
+      target = this.mergeAllowed.has(trip.id)
+        ? this.mergeTargets.get(trip.id)!
+        : null;
+    else if (
+      !plan &&
+      remaining > Math.max(35, speed * 4) &&
+      selected.changeLaneId
+    ) {
+      const origin = group.members.indexOf(lane.id),
+        destination = group.members.indexOf(selected.changeLaneId);
+      const next = group.members[origin + Math.sign(destination - origin)];
+      if (next && next !== lane.id) {
+        const position = this.roadS(lane, row?.t ?? selected.curvePosition.x);
+        const front = (key: string) =>
+          Math.min(
+            Infinity,
+            ...(this.globalOccupancy.get(key) ?? [])
+              .filter((v) => v.id !== trip.id && v.s > position)
+              .map((v) => v.s - position),
+          );
+        const own = front(this.laneKey(lane)),
+          other = front(this.laneKey(network.lanes.get(next)!));
+        if (
+          own < speed * 3 + 10 &&
+          other > own + Math.max(8, speed * 0.75) &&
+          laneChangeGapClear(
+            trip.id,
+            position,
+            speed,
+            this.globalOccupancy.get(this.laneKey(network.lanes.get(next)!)) ??
+              [],
+          )
+        )
+          target = next;
+      }
+    }
     if (
       target &&
-      target !== view.current.changeLaneId &&
-      !laneChangeGapClear(
-        trip.id,
-        this.curveS(target, selected.curvePosition.x),
-        speed,
-        this.occupancy.get(target) ?? [],
-      )
+      Math.abs(group.members.indexOf(target) - group.members.indexOf(lane.id)) >
+        1
     )
-      target = null;
-    if (
-      target === (selected.changeLaneId ?? null) &&
-      (!target ||
-        target !== view.current.changeLaneId ||
-        selected.changeProgress === view.current.changeProgress)
-    )
-      return selected;
+      target =
+        group.members[
+          group.members.indexOf(lane.id) +
+            Math.sign(
+              group.members.indexOf(target) - group.members.indexOf(lane.id),
+            )
+        ];
     const current = {
       ...selected,
+      laneId: view.current.laneId,
+      curvePosition: { ...view.current.curvePosition },
       changeLaneId: target,
       changeProgress:
         target && target === view.current.changeLaneId
@@ -2225,7 +2437,8 @@ export class Cs2TrafficSimulation {
       CS2_NAV_TARGET_FLAGS.TurnLeft | CS2_NAV_TARGET_FLAGS.TurnRight;
     current.flags &= ~turnMask;
     if (target) {
-      const destination = group.members.indexOf(target),
+      const origin = group.members.indexOf(lane.id),
+        destination = group.members.indexOf(target),
         inverted = !!(
           (this.selectionWorld!.lanes.get(lane.id)?.carLane?.flags ?? 0) & 4
         );
@@ -2235,6 +2448,38 @@ export class Cs2TrafficSimulation {
           : CS2_NAV_TARGET_FLAGS.TurnRight;
     }
     return current;
+  }
+  private connectedQueue(
+    current: CS2NavigationCurrentState,
+    queue: CS2NavigationQueuedLane[],
+  ) {
+    let previous = this.network!.lanes.get(
+      current.changeLaneId ?? current.laneId!,
+    )!;
+    const result: CS2NavigationQueuedLane[] = [];
+    for (const entry of queue) {
+      const next = this.network!.lanes.get(entry.laneId)!;
+      // Progress 1 has reached the target lane geometrically. The recovered
+      // navigator keeps a small overrun before clearing changeLaneId; blocking
+      // that tail here would prevent it finishing at a short road's endpoint.
+      if (
+        !result.length &&
+        next.kind === "connection" &&
+        current.changeLaneId &&
+        current.changeProgress < 1
+      )
+        break;
+      const successors = this.network!.successors.get(previous.id) ?? [];
+      const target = successors.includes(entry.laneId)
+        ? entry.laneId
+        : this.network!.groups.get(next.group)!.members.find((id) =>
+            successors.includes(id),
+          );
+      if (!target) break;
+      result.push({ ...entry, laneId: target });
+      previous = this.network!.lanes.get(target)!;
+    }
+    return result;
   }
   private decision(view: CS2RuntimeVehicleView): CS2RuntimeDecision {
     const id = Number(view.id),
@@ -2312,7 +2557,10 @@ export class Cs2TrafficSimulation {
       pathMethods: 2,
     });
     current = this.prepareEarlyLaneChange(trip, view, selected.current);
-    queue = this.constrainArtificialSeams(current, selected.nextLanes);
+    queue = this.connectedQueue(
+      current,
+      this.constrainArtificialSeams(current, selected.nextLanes),
+    );
     trip.owner.elementIndex = Math.min(
       trip.path.length,
       trip.groupIndex + queue.length + 1,
@@ -2461,6 +2709,8 @@ export class Cs2TrafficSimulation {
         ),
       );
     }
+    if (lane.kind === "road")
+      maxSpeed = Math.min(maxSpeed, this.mergeSpeedCaps.get(id) ?? Infinity);
     const checked = cs2CheckLaneSelectionBlocker({
       world: this.selectionWorld!,
       current,

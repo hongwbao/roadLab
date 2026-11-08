@@ -2105,11 +2105,13 @@ export class Simulation {
         source.adoptVehicles(this.vehicles);
       source.running = this.running;
       source.speed = this.speed;
-      if (this.project)
+      if (this.project) {
+        source.setLaneLookahead(this.project.laneLookahead ?? 500);
         source.syncDemand(
           this.project.ports,
           this.project.trafficMultiplier ?? 1,
         );
+      }
       source.update(delta);
       this.syncSourceEngine();
       return;

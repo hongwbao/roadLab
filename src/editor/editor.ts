@@ -351,6 +351,18 @@ export class Editor {
     this.queueSave();
     this.onChange();
   }
+  setLaneLookahead(metres: number) {
+    if (!Number.isFinite(metres) || metres < 100 || metres > 2000) {
+      this.onToast("车道预判距离为 100–2000 米。");
+      this.onChange();
+      return;
+    }
+    if (metres === (this.project.laneLookahead ?? 500)) return;
+    this.history.commit(this.project);
+    this.project.laneLookahead = metres;
+    this.queueSave();
+    this.onChange();
+  }
   select(id: string, append = false) {
     if (!append) this.selected.clear();
     if (append && this.selected.has(id)) this.selected.delete(id);

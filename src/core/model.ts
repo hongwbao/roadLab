@@ -841,6 +841,13 @@ export function parseProject(text: string): Project {
       p.trafficMultiplier > 4)
   )
     throw new Error("车流强度须在 0–400% 之间。");
+  if (
+    p.laneLookahead !== undefined &&
+    (!finite(p.laneLookahead) ||
+      p.laneLookahead < 100 ||
+      p.laneLookahead > 2000)
+  )
+    throw new Error("车道预判距离须为100–2000米。");
   for (const r of p.roads) {
     if (
       !r ||

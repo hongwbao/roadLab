@@ -9,7 +9,7 @@ import {
   laneChangeGapClear,
 } from "../src/simulation/early-lane-planning";
 
-it("starts a three-lane preparation earlier than a single-lane one and requests adjacent steps", () => {
+it("starts preparation inside the configured window and requests adjacent steps", () => {
   const members = ["left", "middle-left", "middle-right", "right"],
     plan = { allowed: ["right"], distanceAfterCurrent: 0 };
   expect(chooseEarlyLane(plan, members, "left", 250, 16)).toBe("middle-left");
@@ -24,7 +24,7 @@ it("starts a three-lane preparation earlier than a single-lane one and requests 
 it("honours upstream distance and waits for a safe gap ahead and behind", () => {
   expect(
     chooseEarlyLane(
-      { allowed: ["right"], distanceAfterCurrent: 200 },
+      { allowed: ["right"], distanceAfterCurrent: 450 },
       ["left", "right"],
       "left",
       120,

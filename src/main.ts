@@ -138,7 +138,7 @@ function thumbnail(asset: RoadAsset) {
 document.querySelector("#app")!.innerHTML = `
  <main class="game-workspace"><div id="viewport" tabindex="0" aria-label="道路地图"></div>
  <header class="game-header"><div class="project-brand">${icon("route")}<strong>路网工坊</strong></div><input id="project-name" aria-label="项目名称" maxlength="120"><span id="save-state" role="status">已保存</span><div class="header-actions">${button("undo", "撤销", "undo-2", "icon-only")}${button("redo", "重做", "redo-2", "icon-only")}${button("menu", "地图菜单", "menu", "icon-only")}${button("help", "操作帮助", "help-circle", "icon-only")}</div></header>
- <section id="map-menu" class="floating-panel map-menu" hidden><div class="panel-heading"><h2>地图</h2><span class="map-menu-note">当前进度自动保存</span></div><div class="menu-grid">${button("new", "重置为空白地图", "rotate-ccw")}${button("example-shared", "载入测试地图", "route")}${button("example-transition", "立交过渡示例", "route")}${button("example-junction", "城市路口示例", "grid-2x2")}${button("example-elevated", "苜蓿叶立交示例", "layers")}${button("templates", "我的路网模板", "copy")}</div><section class="map-saves"><div class="panel-heading"><h3>本机存档</h3><span id="save-count"></span></div><form id="save-form"><label for="save-name" class="visually-hidden">存档名称</label><input id="save-name" name="name" maxlength="80" autocomplete="off" placeholder="给存档起个名字" required><button id="save-submit" type="submit" class="primary">${icon("save")}<span>保存新存档</span></button></form><div id="save-list" class="save-list"></div><p class="muted">存档保存在当前浏览器；打开此地址可随时载入。</p></section><details class="map-files"><summary>导入与备份文件</summary><div class="menu-grid">${button("import", "导入 JSON", "folder-open")}${button("export", "导出 JSON", "download")}</div></details></section>
+ <section id="map-menu" class="floating-panel map-menu" hidden><div class="panel-heading"><h2>地图</h2><span class="map-menu-note">当前进度自动保存</span></div><div class="menu-grid">${button("new", "重置为空白地图", "rotate-ccw")}${button("example-shared", "载入测试地图", "route")}${button("example-transition", "立交过渡示例", "route")}${button("example-junction", "城市路口示例", "grid-2x2")}${button("example-elevated", "苜蓿叶立交示例", "layers")}${button("templates", "我的路网模板", "copy")}</div><section class="map-saves"><div class="panel-heading"><h3>本机存档</h3><span id="save-count"></span></div><form id="save-form"><label for="save-name" class="visually-hidden">存档名称</label><input id="save-name" name="name" maxlength="80" autocomplete="off" placeholder="给存档起个名字" required><button id="save-submit" type="submit" class="primary">${icon("save")}<span>保存新存档</span></button></form><div id="save-list" class="save-list"></div><p class="muted">存档保存在当前浏览器；打开此地址可随时载入。</p></section><details class="map-files"><summary>导入与备份文件</summary><div class="menu-grid">${button("import", "导入 JSON", "folder-open")}${button("export", "导出 JSON", "download")}</div></details><details class="map-files traffic-ai-settings"><summary>交通 AI 设置</summary><label for="lane-lookahead">车道预判距离 <span><input id="lane-lookahead" type="number" min="100" max="2000" step="1" value="500" aria-describedby="lane-lookahead-help">米</span></label><p id="lane-lookahead-help" class="muted">沿既定路线实时选择车道，提前逐条变道。运行中可调整，随地图保存。</p></details></section>
  <div class="view-controls">${button("top", "俯视", "arrow-down-to-line")}${button("perspective", "立体", "layers")}${button("fit", "查看全图", "focus")}${button("grid", "网格", "grid-2x2", "icon-only")}${button("focus-transition", "查看过渡段", "spline", "icon-only")}</div>
  <div class="map-title"><strong id="scene-name">道路实验</strong><span id="scene-summary"></span></div>
  <div id="snap-feedback" class="snap-feedback" hidden></div><div id="selection-box" hidden></div><div id="empty-hint" hidden>选择下方的道路资产，开始建造。</div>
@@ -260,6 +260,10 @@ function render() {
     );
   const name = document.querySelector<HTMLInputElement>("#project-name")!;
   if (document.activeElement !== name) name.value = editor.project.name;
+  const lookahead =
+    document.querySelector<HTMLInputElement>("#lane-lookahead")!;
+  if (document.activeElement !== lookahead)
+    lookahead.value = String(editor.project.laneLookahead ?? 500);
   document.querySelector("#scene-name")!.textContent = editor.project.name;
   document.querySelector("#scene-summary")!.textContent =
     `${editor.project.roads.length} 段道路 · ${buildLaneJunctions(editor.project).filter((j) => j.arms.length >= 3 || j.kind === "attachment").length} 处路口`;
@@ -879,6 +883,10 @@ document.addEventListener("input", (e) => {
 });
 document.addEventListener("change", (e) => {
   const input = e.target as HTMLInputElement;
+  if (input.id === "lane-lookahead") {
+    editor.setLaneLookahead(input.value === "" ? NaN : Number(input.value));
+    input.value = String(editor.project.laneLookahead ?? 500);
+  }
   if (input.dataset.roadSpeed)
     editor.setRoadSpeed(
       input.dataset.roadSpeed,

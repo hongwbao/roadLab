@@ -109,6 +109,8 @@ export type Project = {
   ports: Port[];
   templates: Blueprint[];
   trafficMultiplier?: number;
+  /** Metres of fixed-route lane lookahead; absent uses500. */
+  laneLookahead?: number;
   signals?: TrafficSignal[];
   junctionLaneConnections?: JunctionLaneRule[];
 };
