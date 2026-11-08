@@ -56,6 +56,7 @@ import {
   cs2CurveCurviness,
   cs2LowSpeedDistanceOffset,
   cs2MaxDriveSpeed,
+  cs2MaxBrakingSpeed,
   cs2SafetyTime,
   cs2SpeedRange,
 } from "./cs2-driving";
@@ -418,6 +419,15 @@ export class Cs2TrafficSimulation {
   private selectionWorld?: CS2LaneSelectWorld;
   private continuousConnectionGroups = new Map<string, boolean>();
   private signalOccupancy = new SignalMovementOccupancy();
+  private receivingJunctions = new Set<string>();
+  private receivingStopDistances = new Map<number, number>();
+  private receivingCorridors = new Map<
+    string,
+    {
+      lanes: { lane: string; offset: number }[];
+      length: number;
+    }
+  >();
   private reservationWorld?: CS2ReservationWorld;
   private laneObjects = new Map<string, CS2LaneSpeedLaneObject[]>();
   private searchTree = new Map<string, CS2LaneCacheBounds>();
@@ -572,6 +582,18 @@ export class Cs2TrafficSimulation {
       (connection) => connection.enabled,
     );
     this.buildGeometry(links);
+    this.receivingJunctions = new Set(
+      this.junctions.map((junction) => junction.id),
+    );
+    const nodeRoads = new Map<string, Set<string>>();
+    for (const row of this.geometry.values()) {
+      const roads = nodeRoads.get(row.junction) ?? new Set<string>();
+      roads.add(row.connection.from.road);
+      roads.add(row.connection.to.road);
+      nodeRoads.set(row.junction, roads);
+    }
+    for (const [node, roads] of nodeRoads)
+      if (roads.size > 2) this.receivingJunctions.add(node);
     const sourceRules = deriveCs2ConnectionRules(
       [...this.geometry.values()].map((row): Cs2RoadConnectionGeometry => ({
         id: row.connection.id,
@@ -775,6 +797,9 @@ export class Cs2TrafficSimulation {
     this.selectionWorld = undefined;
     this.continuousConnectionGroups.clear();
     this.signalOccupancy.clear();
+    this.receivingJunctions.clear();
+    this.receivingStopDistances.clear();
+    this.receivingCorridors.clear();
     this.completedByExit.clear();
     this.trafficLights.clear();
     this.laneOverlaps.clear();
@@ -1966,6 +1991,7 @@ export class Cs2TrafficSimulation {
     this.signalOccupancy.remove(trip.id);
   }
   private removeLaneMembership(id: number) {
+    this.receivingStopDistances.delete(id);
     for (const [lane, buffer] of this.laneObjects)
       if (buffer.some((entry) => entry.object === String(id)))
         this.cacheCommands.push({
@@ -2515,8 +2541,8 @@ export class Cs2TrafficSimulation {
     const source = network.groups.get(network.lanes.get(sourceId)!.group)!,
       target = network.groups.get(network.lanes.get(targetId)!.group)!;
     if (
-      !source.allowChange ||
-      !target.allowChange ||
+      source.kind !== "road" ||
+      target.kind !== "road" ||
       source.members.length !== target.members.length ||
       group.members.length !== source.members.length
     )
@@ -2606,6 +2632,16 @@ export class Cs2TrafficSimulation {
     let previous = this.network!.lanes.get(
       current.changeLaneId ?? current.laneId!,
     )!;
+    let remaining = Math.max(
+      0,
+      this.curveS(previous.id, current.curvePosition.z) -
+        this.physicalS(
+          previous,
+          this.nearest(previous, view.state.position),
+          view.state.position,
+        ),
+    );
+    this.receivingStopDistances.delete(Number(view.id));
     const result: CS2NavigationQueuedLane[] = [];
     for (const entry of queue) {
       const next = this.network!.lanes.get(entry.laneId)!;
@@ -2628,9 +2664,114 @@ export class Cs2TrafficSimulation {
             successors.includes(id),
           );
       if (!target) break;
+      if (
+        !this.receivingSpaceClear(
+          Number(view.id),
+          this.network!.lanes.get(target)!,
+          remaining,
+        )
+      ) {
+        this.receivingStopDistances.set(
+          Number(view.id),
+          Math.max(0, remaining - FRONT - 0.15),
+        );
+        break;
+      }
       result.push({ ...entry, laneId: target });
       previous = this.network!.lanes.get(target)!;
+      remaining += Math.abs(
+        this.curveS(previous.id, entry.end) -
+          this.curveS(previous.id, entry.start),
+      );
     }
+    return result;
+  }
+  /** Node-space logic in the recovered iterator can skip non-crossing turns.
+   * Independently require storage for this car in its actual receiving lane,
+   * so a blocked right exit waits upstream rather than inside the junction. */
+  private receivingSpaceClear(
+    self: number,
+    movement: Cs2NetworkLane,
+    distance: number,
+  ) {
+    if (
+      movement.kind !== "connection" ||
+      !movement.junction ||
+      !this.receivingJunctions.has(movement.junction)
+    )
+      return true;
+    const targetId = this.network!.successors.get(movement.id)?.[0];
+    if (!targetId) return false;
+    const corridor = this.receivingCorridor(targetId),
+      own = this.physical.get(self),
+      turnSpeed = cs2MaxDriveSpeed(
+        own?.view.car ?? CS2_BASE_CAR,
+        movement.maxSpeed,
+        this.curviness.get(movement.id) ?? 0,
+      ),
+      arrival = Math.min(
+        3,
+        (distance + movement.curve.length) /
+          Math.max(1, Math.min(own?.speed ?? 0, turnSpeed)),
+      );
+    const cars = new Map<number, { s: number; speed: number }>();
+    for (const span of corridor.lanes)
+      for (const row of this.occupancy.get(span.lane) ?? []) {
+        const s = span.offset + row.s;
+        if (s > 200) break;
+        if (row.id !== self && s >= -FRONT)
+          cars.set(row.id, { s, speed: row.speed });
+      }
+    // Predict from the head of the receiving queue backwards. A moving car
+    // cannot invent storage through a stationary leader or a closed road end.
+    // Ordinary segment seams continue this local corridor; other exits do not.
+    let available = corridor.length;
+    for (const other of [...cars.values()].sort((a, b) => b.s - a.s)) {
+      const centre = Math.max(
+        other.s,
+        Math.min(other.s + other.speed * arrival, available - FRONT - 1),
+      );
+      available = centre - FRONT;
+    }
+    return available >= LENGTH + 1;
+  }
+  private receivingCorridor(start: string) {
+    const cached = this.receivingCorridors.get(start);
+    if (cached) return cached;
+    const network = this.network!,
+      lanes: { lane: string; offset: number }[] = [],
+      visited = new Set<string>();
+    let lane = network.lanes.get(start)!,
+      length = 0;
+    while (lane.kind === "road" && !visited.has(lane.id) && lanes.length < 32) {
+      visited.add(lane.id);
+      lanes.push({ lane: lane.id, offset: length });
+      length += lane.curve.length;
+      if (length >= 200) break;
+      const successors = network.successors.get(lane.id) ?? [];
+      if (successors.length !== 1) {
+        if (
+          !successors.length &&
+          this.project!.ports.some(
+            (port) =>
+              isSink(port) &&
+              port.road === lane.road &&
+              port.end === (lane.direction === 1 ? "end" : "start"),
+          )
+        )
+          length = Infinity;
+        break;
+      }
+      let next = network.lanes.get(successors[0])!;
+      if (next.kind === "connection") {
+        if (!this.continuousConnection(next.group)) break;
+        length += next.curve.length;
+        next = network.lanes.get(network.successors.get(next.id)![0])!;
+      } else if (next.road !== lane.road || next.lane !== lane.lane) break;
+      lane = next;
+    }
+    const result = { lanes, length };
+    this.receivingCorridors.set(start, result);
     return result;
   }
   private nominateSignalMovement(id: number, lane: Cs2NetworkLane) {
@@ -2892,6 +3033,12 @@ export class Cs2TrafficSimulation {
       }
     if (!stop) iterator.iterateTarget(iterator.state.currentPosition);
     let maxSpeed = iterator.state.maxSpeed;
+    const receivingStop = this.receivingStopDistances.get(id);
+    if (receivingStop !== undefined)
+      maxSpeed = Math.min(
+        maxSpeed,
+        cs2MaxBrakingSpeed(car, receivingStop, CS2_NAVIGATION_TIMESTEP),
+      );
     const lanePlan = this.earlyLanePlans.get(id)?.plan;
     if (
       lane.kind === "road" &&
