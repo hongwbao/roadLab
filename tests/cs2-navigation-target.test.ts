@@ -447,6 +447,106 @@ it("retains caller-owned current and navigation state", () => {
     nextLanes: a.nextLanes,
   }).toEqual(before);
 });
+
+function exitInput(reverseCurve = false): CS2RoadTargetInput {
+  const points = reverseCurve
+      ? [
+          [0, 0, 100],
+          [0, 0, 200 / 3],
+          [0, 0, 100 / 3],
+          [0, 0, 0],
+        ]
+      : [
+          [0, 0, 0],
+          [0, 0, 100 / 3],
+          [0, 0, 200 / 3],
+          [0, 0, 100],
+        ],
+    lane = curve(points, 4, [0, 0], "exit", 100);
+  return {
+    state: {
+      position: p([0, 0, reverseCurve ? 4 : 96]),
+      velocity: p([0, 0, reverseCurve ? -10 : 10]),
+      rotation: reverseCurve
+        ? { x: 0, y: 1, z: 0, w: 0 }
+        : { x: 0, y: 0, z: 0, w: 1 },
+    },
+    navigation: {
+      targetPosition: p([0, 0, reverseCurve ? 0 : 100]),
+      maxSpeed: 10,
+    },
+    current: {
+      laneId: lane.id,
+      changeLaneId: null,
+      curvePosition: { x: 0.96, y: 0.96, z: 1 },
+      changeProgress: 0,
+      lanePosition: 0,
+      flags: 0,
+      duration: 0,
+      distance: 0,
+    },
+    nextLanes: [],
+    lanes: new Map([[lane.id, lane]]),
+    vehicleWidth: 1.65,
+    frontExtent: 1.9,
+    pivotOffset: 0,
+    maxSpeed: 10,
+    random01: 0.5,
+  };
+}
+
+it.each([false, true])(
+  "extends an explicitly rolling exit in its travel direction, reverse curve %s",
+  (reverse) => {
+    const a = exitInput(reverse),
+      result = cs2UpdateRoadNavigationTarget({ ...a, rollingExit: true });
+    expect(result.navigation.targetPosition.z).toBe(reverse ? -40 : 140);
+    expect(result.navigation.maxSpeed).toBe(10);
+    expect(result.endReached).toBe(false);
+    a.state.position.z = reverse ? -0.2 : 100.2;
+    const passed = cs2UpdateRoadNavigationTarget({ ...a, rollingExit: true });
+    expect(passed.endReached).toBe(true);
+  },
+);
+
+it("extends a backwards curve parameter toward zero rather than into the road", () => {
+  const a = exitInput();
+  a.state.position.z = 4;
+  a.state.velocity.z = -10;
+  a.state.rotation = { x: 0, y: 1, z: 0, w: 0 };
+  a.navigation.targetPosition.z = 0;
+  a.current.curvePosition = { x: 0.04, y: 0.04, z: 0 };
+  const result = cs2UpdateRoadNavigationTarget({ ...a, rollingExit: true });
+  expect(result.navigation.targetPosition.z).toBe(-40);
+  expect(result.endReached).toBe(false);
+});
+
+it("keeps the source endpoint behavior when rollingExit is omitted or false", () => {
+  for (const stopped of [false, true]) {
+    const a = exitInput();
+    if (stopped) {
+      a.state.position.z = 99.5;
+      a.state.velocity.z = 0;
+      a.maxSpeed = 0;
+    }
+    const native = cs2UpdateRoadNavigationTarget(a);
+    expect(cs2UpdateRoadNavigationTarget({ ...a, rollingExit: false })).toEqual(
+      native,
+    );
+    expect(native.navigation.targetPosition.z).toBe(100);
+    expect(native.endReached).toBe(stopped);
+  }
+});
+
+it("does not replace an actual zero speed constraint with rolling-exit speed", () => {
+  const result = cs2UpdateRoadNavigationTarget({
+    ...exitInput(),
+    rollingExit: true,
+    maxSpeed: 0,
+  });
+  expect(result.navigation.maxSpeed).toBe(0);
+  expect(result.endReached).toBe(false);
+});
 it("exposes per-lane speed checks while retaining the original scan horizon", () => {
   const a = input(oracle.normalCases.at(-1)!.input),
     args = {

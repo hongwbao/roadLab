@@ -321,6 +321,8 @@ export type CS2RoadTargetInput = {
   car?: CS2CarData;
   /** Result of the speed/conflict iterator before the target update. */
   maxSpeed: number;
+  /** External map exits continue through the boundary without stopping. */
+  rollingExit?: boolean;
   oncoming?: number;
   canChangeLane?: number;
   /** One explicit [0,1) sample from the host navigation random stream. */
@@ -567,6 +569,7 @@ export function cs2UpdateRoadNavigationTarget(input: CS2RoadTargetInput) {
       }
       if (nextLanes.length === 0) {
         if (
+          !input.rollingExit &&
           distance(compare, navigation.targetPosition) < f(1 + signedPivot) &&
           currentSpeed < f(0.1)
         )
@@ -620,6 +623,21 @@ export function cs2UpdateRoadNavigationTarget(input: CS2RoadTargetInput) {
       nextLanes.shift();
       consumed++;
     }
+  }
+  if (input.rollingExit && nextLanes.length === 0) {
+    const exitCurve = getLane(current.laneId!),
+      end = cs2NavigationCurvePosition(exitCurve, current.curvePosition.z),
+      direction = mul(
+        normal(tangent(exitCurve, current.curvePosition.z)),
+        current.curvePosition.z < 0.5 ? -1 : 1,
+      );
+    if (dot(sub(compare, end), direction) >= -0.05)
+      current.flags |= F.EndReached;
+    else if (distance(navigation.targetPosition, end) < 1)
+      navigation.targetPosition = add(
+        end,
+        mul(direction, Math.max(40, currentSpeed * 3)),
+      );
   }
   navigation.maxSpeed = Math.min(
     navigation.maxSpeed,

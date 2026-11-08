@@ -108,6 +108,7 @@ export type CS2RuntimeContext = {
 export type CS2RuntimeDecision = {
   maxSpeed: number;
   random01: number;
+  rollingExit?: boolean;
   oncoming?: number;
   canChangeLane?: number;
   temporaryBlocker?: boolean;
@@ -551,6 +552,7 @@ export class Cs2VehicleRuntime {
             pivotOffset: old.geometry.pivotOffset,
             car: old.car,
             maxSpeed: decision.maxSpeed,
+            rollingExit: decision.rollingExit,
             random01: decision.random01,
             oncoming: decision.oncoming,
             canChangeLane: decision.canChangeLane,

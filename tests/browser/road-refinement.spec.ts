@@ -205,6 +205,78 @@ test("previews both retained lanes and center, hides old pavement, cycles with T
   await page.mouse.move(p.x, p.y);
   expect((await preview()).ghost).toBe(true);
 });
+for (const example of [
+  { category: "city", asset: "city-4", twoWay: true, backward: 1 },
+  { category: "oneway", asset: "one-2", twoWay: false, backward: undefined },
+]) {
+  test(`replacement uses the current ${example.twoWay ? "asymmetric forward/backward" : "one-way"} lane counts for both preview and commit`, async ({
+    page,
+  }) => {
+    await seed(page);
+    await page.locator(`[data-category="${example.category}"]`).click();
+    await page.locator(`[data-asset="${example.asset}"]`).click();
+    await page.locator('[data-tool="upgrade"]').click();
+    await expect(page.locator("#lane-build-tools")).toBeVisible();
+    await expect(page.locator("#upgrade-description")).toContainText(
+      "调整正反向车道数",
+    );
+    const original = await page.evaluate(() =>
+      JSON.stringify((window as any).lab.editor.project),
+    );
+    await page
+      .getByRole("button", { name: "增加正向车道", exact: true })
+      .click();
+    await expect(page.locator("#build-start-count")).toHaveText("3");
+    if (example.twoWay) {
+      await page
+        .getByRole("button", { name: "减少反向车道", exact: true })
+        .click();
+      await expect(page.locator("#build-backward-count")).toHaveText("1");
+    } else await expect(page.locator("#backward-count-control")).toBeHidden();
+    const p = await at(page);
+    await page.mouse.move(p.x, p.y);
+    const preview = await page.evaluate(() => {
+      const e = (window as any).lab.editor;
+      return {
+        next: e.replacementTarget?.next,
+        project: JSON.stringify(e.project),
+      };
+    });
+    expect(preview.project).toBe(original);
+    expect(preview.next).toMatchObject({
+      twoWay: example.twoWay,
+      lanesStart: 3,
+      lanesEnd: 3,
+      width: 4,
+    });
+    expect(preview.next.backwardLanesStart).toBe(example.backward);
+    expect(preview.next.backwardLanesEnd).toBe(example.backward);
+    expect(preview.next.name).toBe(
+      example.twoWay ? "双向 1＋3 车道" : "单向 3 车道",
+    );
+    await page.mouse.click(p.x, p.y);
+    const committed = await page.evaluate(
+      () => (window as any).lab.editor.project.roads[0],
+    );
+    expect({ ...committed, replacedSection: undefined }).toEqual({
+      ...preview.next,
+      replacedSection: undefined,
+    });
+    await page.mouse.click(p.x, p.y, { button: "right" });
+    const restored = await page.evaluate(
+      () => (window as any).lab.editor.project.roads[0],
+    );
+    expect(restored).toMatchObject({
+      twoWay: false,
+      lanesStart: 2,
+      lanesEnd: 2,
+      width: 4,
+    });
+    expect(restored.backwardLanesStart).toBeUndefined();
+    expect(restored.backwardLanesEnd).toBeUndefined();
+    expect(restored.replacedSection).toBeUndefined();
+  });
+}
 test("the cloverleaf renderer has no overlapping shared asphalt or legacy transverse stripes at forks", async ({
   page,
 }) => {
