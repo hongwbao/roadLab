@@ -664,7 +664,7 @@ test("exports and imports road maps, rejects corrupt files and restores local sa
 }) => {
   await open(page);
   await page.locator('[data-action="menu"]').click();
-  await page.locator(".map-files summary").click();
+  await page.getByText("导入与备份文件", { exact: true }).click();
   const d = page.waitForEvent("download");
   await page.locator('[data-action="export"]').click();
   await (await d).saveAs("artifacts/game-export.json");
