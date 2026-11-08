@@ -1,3 +1,4 @@
+import { roadLabRouteParameters } from "./route-choice-policy";
 import {
   chooseDestination,
   sourceDemandRate,
@@ -121,7 +122,6 @@ import {
   Cs2PathFlags,
   applyCs2PathResult,
   cs2PathfindFailed,
-  cs2PersonalCarFallbackParameters,
   cs2RequireNewPath,
   cs2StuckPathDecision,
   prepareCs2PersonalCarPathRequest,
@@ -899,7 +899,7 @@ export class Cs2TrafficSimulation {
       start: this.targets(source, true, lane, startDistance),
       end: this.targets(sink, false),
       parameters: {
-        ...cs2PersonalCarFallbackParameters(CS2_BASE_CAR.maxSpeed),
+        ...roadLabRouteParameters(CS2_BASE_CAR.maxSpeed),
         methods: 8194,
       },
       seed: this.random.nextUInt(),
