@@ -1,5 +1,6 @@
 /** Shared lane topology adapter; source boundaries are documented in CS2_NETWORK.md. */
-import type { Connection, Project, V } from "../core/types";
+import type { Connection, Project, Road, V } from "../core/types";
+import { physicalLaneEndpointT } from "../core/junction-lane-geometry";
 import {
   add,
   arcParameter,
@@ -36,6 +37,27 @@ import {
 } from "./cs2-road-rules";
 
 export type Cs2NetworkBezier = readonly [V, V, V, V];
+const DEFAULT_LANE_WIDTH_RATIO = 0.8;
+
+/** Host rule for an authored connection into/out of a derived collar. Keep a
+ * deeper real junction trim; never extend a genuine profile or an automatic
+ * connection through a zero-width endpoint. Geometry and compiler share it. */
+export function cs2NetworkLaneEndpointT(
+  road: Road,
+  lane: number,
+  end: 0 | 1,
+  trimT: number,
+  authored: boolean,
+  minimumWidthRatio = DEFAULT_LANE_WIDTH_RATIO,
+) {
+  if (!authored || !road.autoTaper?.[end === 0 ? "start" : "end"]) return trimT;
+  const root = physicalLaneEndpointT(road, lane, end, minimumWidthRatio);
+  return root === undefined
+    ? trimT
+    : end === 0
+      ? Math.max(trimT, root)
+      : Math.min(trimT, root);
+}
 export type Cs2NetworkConnectionGeometry = {
   /** Actual lane-centre connector, in travel order, after junction trimming. */
   points: Cs2NetworkBezier;
@@ -276,7 +298,11 @@ export function compileCs2Network(input: Cs2NetworkInput): Cs2CompiledNetwork {
     roadTables = new Map<string, ReturnType<typeof arcTable>>(),
     roads = new Map(input.project.roads.map((r) => [r.id, r]));
   const tolerance = Math.max(0.001, input.geometryTolerance ?? 0.03),
-    usableRatio = clamp(input.minimumLaneWidthRatio ?? 0.8, 0.01, 1);
+    usableRatio = clamp(
+      input.minimumLaneWidthRatio ?? DEFAULT_LANE_WIDTH_RATIO,
+      0.01,
+      1,
+    );
   let nextNode = 0;
   const nodeIds = new Map<string, number>();
   const node = (id: string) => {
@@ -521,17 +547,31 @@ export function compileCs2Network(input: Cs2NetworkInput): Cs2CompiledNetwork {
       toTrim = input.roadTrims?.get(toRoad.id),
       fromTable = roadTables.get(fromRoad.id)!,
       toTable = roadTables.get(toRoad.id)!,
-      expectedFrom = arcParameter(
-        fromTable,
-        from.direction === 1
-          ? fromTable.at(-1)!.s - (fromTrim?.end ?? 0)
-          : (fromTrim?.start ?? 0),
+      expectedFrom = cs2NetworkLaneEndpointT(
+        fromRoad,
+        connection.from.lane,
+        from.direction === 1 ? 1 : 0,
+        arcParameter(
+          fromTable,
+          from.direction === 1
+            ? fromTable.at(-1)!.s - (fromTrim?.end ?? 0)
+            : (fromTrim?.start ?? 0),
+        ),
+        !!connection.manual,
+        usableRatio,
       ),
-      expectedTo = arcParameter(
-        toTable,
-        to.direction === 1
-          ? (toTrim?.start ?? 0)
-          : toTable.at(-1)!.s - (toTrim?.end ?? 0),
+      expectedTo = cs2NetworkLaneEndpointT(
+        toRoad,
+        connection.to.lane,
+        to.direction === 1 ? 0 : 1,
+        arcParameter(
+          toTable,
+          to.direction === 1
+            ? (toTrim?.start ?? 0)
+            : toTable.at(-1)!.s - (toTrim?.end ?? 0),
+        ),
+        !!connection.manual,
+        usableRatio,
       );
     if (
       Math.abs(fromEnd - expectedFrom) > 1e-6 ||

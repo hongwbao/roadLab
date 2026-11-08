@@ -97,6 +97,7 @@ import {
 import { cs2LookRotationSafe, type CS2MotionState } from "./cs2-motion";
 import {
   compileCs2Network,
+  cs2NetworkLaneEndpointT,
   cs2NetworkPathSpecification,
   cs2RoadLaneKey,
   type Cs2CompiledNetwork,
@@ -1373,19 +1374,31 @@ export class Cs2TrafficSimulation {
       if (!road || !next) continue;
       const direction = laneDirection(road, connection.from.lane),
         nextDirection = laneDirection(next, connection.to.lane),
-        ft = arcParameter(
-          this.arcs.get(road.id)!,
-          direction === 1
-            ? this.endpoint(road, direction, true)
-            : this.arcs.get(road.id)!.at(-1)!.s -
-                this.endpoint(road, direction, true),
+        ft = cs2NetworkLaneEndpointT(
+          road,
+          connection.from.lane,
+          direction === 1 ? 1 : 0,
+          arcParameter(
+            this.arcs.get(road.id)!,
+            direction === 1
+              ? this.endpoint(road, direction, true)
+              : this.arcs.get(road.id)!.at(-1)!.s -
+                  this.endpoint(road, direction, true),
+          ),
+          !!connection.manual,
         ),
-        nt = arcParameter(
-          this.arcs.get(next.id)!,
-          nextDirection === 1
-            ? this.endpoint(next, nextDirection, false)
-            : this.arcs.get(next.id)!.at(-1)!.s -
-                this.endpoint(next, nextDirection, false),
+        nt = cs2NetworkLaneEndpointT(
+          next,
+          connection.to.lane,
+          nextDirection === 1 ? 0 : 1,
+          arcParameter(
+            this.arcs.get(next.id)!,
+            nextDirection === 1
+              ? this.endpoint(next, nextDirection, false)
+              : this.arcs.get(next.id)!.at(-1)!.s -
+                  this.endpoint(next, nextDirection, false),
+          ),
+          !!connection.manual,
         ),
         from = lanePoint(road, connection.from.lane, ft),
         to = lanePoint(next, connection.to.lane, nt),
