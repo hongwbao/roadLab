@@ -11,7 +11,6 @@ import {
   laneEntryT,
   laneExitT,
   lanePoint,
-  laneWidth,
   mul,
   tangent,
 } from "./math";
@@ -22,6 +21,10 @@ import {
   turnOf,
 } from "./lane-rules";
 import { signalForJunction, signalStopOffset } from "./traffic-signals";
+import {
+  isJunctionLane,
+  physicalLaneEndpointT,
+} from "./junction-lane-geometry";
 import type { Connection, Project, Road, Turn, V } from "./types";
 
 export type JunctionLaneEndpoint = { road: string; lane: number; end: 0 | 1 };
@@ -94,7 +97,7 @@ const validRef = (
     (ref.end === 0 || ref.end === 1) &&
     (kind === "in" ? laneExitT(road, ref.lane) : laneEntryT(road, ref.lane)) ===
       ref.end &&
-    laneWidth(road, ref.lane, ref.end) > road.width * 0.7
+    isJunctionLane(road, ref.lane, ref.end)
   );
 };
 export function junctionLanePorts(
@@ -112,16 +115,27 @@ export function junctionLanePorts(
       offset = arm.trim + (signalized ? signalStopOffset(arm) : 0),
       t = arcParameter(table, arm.end === 0 ? offset : total - offset);
     for (let lane = 0; lane < laneCount(road); lane++) {
-      if (laneWidth(road, lane, arm.end) <= road.width * 0.7) continue;
+      if (!isJunctionLane(road, lane, arm.end)) continue;
+      const actualEnd = physicalLaneEndpointT(road, lane, arm.end),
+        portT =
+          actualEnd === undefined
+            ? t
+            : arm.end === 0
+              ? Math.max(t, actualEnd)
+              : Math.min(t, actualEnd);
       const kind = laneExitT(road, lane) === arm.end ? "in" : "out",
         ref = { road: road.id, lane, end: arm.end },
-        number = laneNumber(road, lane, arm.end);
+        number = laneNumber(
+          road.autoTaper ? { ...road, autoTaper: undefined } : road,
+          lane,
+          arm.end,
+        );
       result.push({
         ...ref,
         key: junctionLaneKey(ref),
         kind,
-        position: lanePoint(road, lane, t),
-        direction: mul(tangent(road, t), laneDirection(road, lane)),
+        position: lanePoint(road, lane, portT),
+        direction: mul(tangent(road, portT), laneDirection(road, lane)),
         name: junction.kind
           ? `${kind === "in" ? "入口" : "出口"}${armIndex + 1} · ${road.name} · ${number} 车道`
           : `${sideName(arm.direction)} · ${kind === "in" ? "入" : "出"} ${number} 车道`,

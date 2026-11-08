@@ -45,6 +45,14 @@ automaticTransitionPreview(project: Project, incoming: Road[]): {
 
 自动过渡不改动红绿灯、局部预测让行或其他驾驶策略。
 
+## 过渡几何与车道权限分离
+
+派生领口可以把某车道在接缝处压到零宽，但不改变原道路的逻辑车道身份。3→4加平滑前后，连线工具都保留3个驶入和4个驶出；4→3同样保留4个驶入。权限校验仅忽略派生 `autoTaper` 对宽度的压缩，保留真实 `profile`、方向及道路车道编号。
+
+新显式连线接入该车道在过渡内真实达到可行驶宽度的首／末片段，并保持已有路口或附件trim约束。路面控制点、实际零宽接缝和连续展开效果不因补齐端口而改动；没有生成额外临时道路或假车道。默认自动映射和普通接头trim保持原策略。
+
+原有连线和显式空目标通过平滑开关、右键取消、保存重载及历史操作保持不变。已经被旧版本清空并保存的规则不会自动推断恢复，以免覆盖用户真正的禁行。
+
 ## 车道连线与过渡标线
 
 `src/core/transition-markings.ts` 的 `transitionMarkings(project, connections, physicalJunctions)` 消费 `connections(project)` 的最终合法映射（包括 `junctionLaneConnections`），返回按道路和车道边界索引组织的端点局部标线计划。`separatorPaths(road, index, range, plan)` 输出沿真实 `boundaryPoint` 的路径；不会修改 `lanePoint`、控制点、过渡设置或交通路线。J工具的虚拟端口 inset 不属于物理车道几何，不用作标线起终点。
