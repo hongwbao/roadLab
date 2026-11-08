@@ -27,7 +27,7 @@ export function cloverleafExample(makeRoad: RoadFactory): Project {
   const keys = ["east", "south", "west", "north"];
   const collectors: Road[][] = [];
   const nodes = [-440, -380, -82, 82, 380, 440];
-  const height = (direction: number) => (direction % 2 ? 12 : 0);
+  const height = (direction: number) => (direction % 2 ? 8 : 0);
   const rotate = (x: number, z: number, y: number, direction: number): V => {
     switch (direction % 4) {
       case 1:
