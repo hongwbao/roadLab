@@ -37,6 +37,11 @@ import {
   type TransitionMarkings,
 } from "../core/transition-markings";
 import { previewRoadMarkings } from "./road-markings";
+import {
+  connectionVisuals,
+  connectionRoadPaint,
+  type ConnectionVisuals,
+} from "./connection-visuals";
 import { buildLaneJunctions, type LaneJunction } from "../core/lane-junctions";
 import { nodeVisualKey, setNodeSmooth } from "../core/road-visual-settings";
 import {
@@ -89,6 +94,7 @@ export class Scene {
   routePreview = new T.Group();
   visualPavement = new T.Group();
   seamPavement = new T.Group();
+  connectionDecorations = new T.Group();
   nodeVisualPreview = new T.Group();
   private ray = new T.Raycaster();
   private mouse = new T.Vector2();
@@ -104,6 +110,7 @@ export class Scene {
   private roadNodesSignature = "";
   private markingSignature = "";
   private transitionPaint = new Map<string, TransitionMarkings>();
+  private connectionPaintVisuals = new Map<string, ConnectionVisuals>();
   private visualStyleSignature = "";
   private visualPlan: RoadVisualPlan = new Map();
   private logicalSurfaces?: RoadSurfacePlan;
@@ -250,6 +257,7 @@ export class Scene {
       this.routePreview,
       this.visualPavement,
       this.seamPavement,
+      this.connectionDecorations,
       this.nodeVisualPreview,
     );
     this.scene.add(
@@ -615,6 +623,16 @@ export class Scene {
         buildLaneJunctions(p),
         this.junctionList,
       );
+      this.connectionPaintVisuals = connectionVisuals(
+        p,
+        this.visualPlan,
+        this.logicalSurfaces,
+      );
+      this.clear(this.connectionDecorations);
+      this.drawConnectionVisuals(
+        this.connectionPaintVisuals,
+        this.connectionDecorations,
+      );
       const extra = visualExtensionSurfaces(
         p,
         this.visualPlan,
@@ -678,7 +696,10 @@ export class Scene {
     ]);
     if (markingSignature !== this.markingSignature) {
       this.transitionPaint = p.roadVisuals?.nodes.length
-        ? transitionMarkings(p, connections(p), this.junctionList)
+        ? connectionRoadPaint(
+            transitionMarkings(p, connections(p), this.junctionList),
+            this.connectionPaintVisuals,
+          )
         : new Map();
       this.markingSignature = markingSignature;
     }
@@ -1156,6 +1177,11 @@ export class Scene {
       }
     if (options?.replaceExisting) {
       const ids = new Set(roads.map((road) => road.id));
+      for (const group of this.connectionDecorations.children)
+        if ((group.userData.roads as string[]).some((id) => ids.has(id))) {
+          group.visible = false;
+          this.previewHiddenJunctions.add(group);
+        }
       for (const [key, entry] of this.seamRenderCache)
         if (
           (JSON.parse(key) as [string, number][]).some(([id]) => ids.has(id))
@@ -1204,10 +1230,13 @@ export class Scene {
     ]);
     if (this.previewMarkingSignature !== markingSignature) {
       this.previewTransitionPaint = draft.roadVisuals?.nodes.length
-        ? transitionMarkings(
-            draft,
-            connections(draft),
-            options?.junctions ?? this.junctionList,
+        ? connectionRoadPaint(
+            transitionMarkings(
+              draft,
+              connections(draft),
+              options?.junctions ?? this.junctionList,
+            ),
+            connectionVisuals(draft, previewVisualPlan),
           )
         : new Map();
       this.previewMarkingSignature = markingSignature;
@@ -1340,6 +1369,47 @@ export class Scene {
             invalid ? this.mats.invalid : this.mats.ghost,
             { previewVisualRoad: id },
           );
+      this.drawConnectionVisuals(
+        new Map(
+          [...connectionVisuals(draft, previewVisualPlan, floor)].filter(
+            ([, node]) => node.roads.some((id) => ids.has(id)),
+          ),
+        ),
+        this.preview,
+        true,
+      );
+    }
+  }
+
+  private drawConnectionVisuals(
+    visuals: Map<string, ConnectionVisuals>,
+    target: T.Group,
+    ghost = false,
+  ) {
+    for (const [key, node] of visuals) {
+      const group = new T.Group();
+      group.userData = { connectionNode: key, roads: node.roads };
+      for (const [kind, paths, material] of [
+        ["edge", node.edges, this.mats.mark],
+        ["lane", node.lanes, this.mats.dashedMark],
+        ["median", node.median, this.mats.centerline],
+      ] as const)
+        for (const path of paths) {
+          const line = this.line(
+            path,
+            ghost ? this.mats.lane : material,
+            group,
+          );
+          line.userData = { connectionMarking: kind, connectionNode: key };
+        }
+      const median = this.surfaceMesh(
+        node.medianFill,
+        group,
+        ghost ? this.mats.ghostMedian : this.mats.side,
+        { connectionMedian: key },
+      );
+      if (median) median.position.y += 0.035;
+      target.add(group);
     }
   }
   showPreview(r?: Road, invalid = false) {
@@ -1435,6 +1505,17 @@ export class Scene {
       );
       if (mesh) mesh.position.y += 0.03;
     }
+    const connection = connectionVisuals(
+      draft,
+      roadVisualPlan(draft),
+      floor,
+    ).get(nodeVisualKey(node));
+    if (connection)
+      this.drawConnectionVisuals(
+        new Map([[nodeVisualKey(node), connection]]),
+        this.nodeVisualPreview,
+        true,
+      );
     const radius = Math.max(
         1.2,
         this.camera.position.distanceTo(vec(node.position)) * 0.008,

@@ -163,7 +163,9 @@ test("real construction of a 3-to-5 node keeps all five ports fixed through smoo
         const points = [0, 3, 6].map((j) =>
           values
             .slice(i + j, i + j + 3)
-            .map((n) => Math.round(n * 1000))
+            // Match the Float32 upload used by the actual Three.js buffers
+            // before rounding; half-millimetre values can straddle that boundary.
+            .map((n) => Math.round(Math.fround(n) * 1000))
             .join(","),
         );
         triangles.push(points.sort().join("|"));

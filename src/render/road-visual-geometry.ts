@@ -29,6 +29,7 @@ import { isNodeSmooth, nodeVisualKey } from "../core/road-visual-settings";
 import { connections } from "../core/model";
 import {
   buildRoadConnectionPlan,
+  roadConnectionCurve,
   type RoadConnectionPlan,
 } from "../core/road-connection-geometry";
 import type { Connection, Project, Road, V } from "../core/types";
@@ -176,6 +177,62 @@ export function visualRoadEdges(
     n = normal(road, t),
     half = pavementWidth(road, t) / 2 + 0.35 - inset;
   return [add(c, mul(n, -half - left)), add(c, mul(n, half + right))] as const;
+}
+
+export type ConnectionVisualSection = {
+  key: string;
+  node: LaneJunction;
+  arms: readonly [
+    { road: Road; end: 0 | 1; t: number },
+    { road: Road; end: 0 | 1; t: number },
+  ];
+  edges: readonly [readonly [V, V, V, V], readonly [V, V, V, V]];
+};
+
+/** Render-only sweep over the actual connection gap, joining existing collars. */
+export function connectionVisualSections(
+  project: Project,
+  plan: RoadVisualPlan,
+  logical = logicalSurfacePlan(project),
+): ConnectionVisualSection[] {
+  const roads = new Map(project.roads.map((road) => [road.id, road])),
+    physical = new Set(buildJunctions(project).map((node) => node.id)),
+    result: ConnectionVisualSection[] = [];
+  for (const node of logical.functional.nodes) {
+    if (
+      node.kind !== "continuation" ||
+      !isNodeSmooth(project, node) ||
+      !simpleSeam(node, roads, physical)
+    )
+      continue;
+    const [aa, bb] = node.arms;
+    if (aa.trim + bb.trim < 0.1) continue;
+    const a = roads.get(aa.road)!,
+      b = roads.get(bb.road)!,
+      forwardA = mul(tangent(a, aa.t), aa.end === 1 ? 1 : -1),
+      forwardB = mul(tangent(b, bb.t), bb.end === 0 ? 1 : -1),
+      lateral = { x: -forwardA.z, y: 0, z: forwardA.x },
+      ordered = (road: Road, t: number) =>
+        [...visualRoadEdges(road, t, plan.get(road.id))].sort(
+          (x, y) => dot(x, lateral) - dot(y, lateral),
+        ),
+      ae = ordered(a, aa.t),
+      be = ordered(b, bb.t);
+    result.push({
+      key: nodeVisualKey(node),
+      node,
+      arms: [
+        { road: a, end: aa.end, t: aa.t },
+        { road: b, end: bb.end, t: bb.t },
+      ],
+      edges: [0, 1].map(
+        (side) =>
+          roadConnectionCurve(ae[side], be[side], forwardA, forwardB, true)
+            .points,
+      ) as unknown as ConnectionVisualSection["edges"],
+    });
+  }
+  return result;
 }
 
 function fan(poly: readonly V[]): RoadSurfaceTriangle[] {
@@ -331,6 +388,7 @@ function movementEnvelope(
 }
 
 export type RoadSurfacePlan = {
+  functional: RoadConnectionPlan;
   ranges: Map<string, Range>;
   roads: Map<string, readonly RoadSurfaceTriangle[]>;
   junctions: Map<string, readonly RoadSurfaceTriangle[]>;
@@ -429,6 +487,7 @@ export function logicalSurfacePlan(project: Project): RoadSurfacePlan {
     }
   }
   const plan = {
+    functional,
     ranges,
     roads,
     junctions: junctionSurfaces,
@@ -473,6 +532,22 @@ export function visualExtensionSurfaces(
     }
     const patches = uncovered(triangles, obstacles);
     result.set(road.id, patches);
+    obstacles.push(...patches);
+  }
+  // The road strips stop at functional stations. Fill the styled sweep between
+  // them as well; subtraction preserves the logical vehicle envelope unchanged.
+  for (const section of connectionVisualSections(project, plan, logical)) {
+    const triangles: RoadSurfaceTriangle[] = [];
+    for (let i = 0; i < 64; i++) {
+      const a = bezier(...section.edges[0], i / 64),
+        b = bezier(...section.edges[1], i / 64),
+        c = bezier(...section.edges[0], (i + 1) / 64),
+        d = bezier(...section.edges[1], (i + 1) / 64);
+      triangles.push([a, c, b], [b, c, d]);
+    }
+    const patches = uncovered(triangles, obstacles),
+      owner = section.arms[0].road.id;
+    result.set(owner, [...(result.get(owner) ?? []), ...patches]);
     obstacles.push(...patches);
   }
   return result;
