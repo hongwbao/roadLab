@@ -78,10 +78,13 @@ test("adding the neighbouring median rebuilds the already-rendered curb instead 
       return {
         id: found.geometry.uuid,
         start: Math.min(...coordinates.filter((_, i) => i % 3 === 0)),
+        actualRoadStart:
+          (window as any).lab.editor.scene.ranges.get("seam-b").start * 80,
       };
     });
   const before = await mesh();
-  expect(before.start).toBeCloseTo(1.5);
+  expect(before.actualRoadStart).toBeGreaterThan(1.5);
+  expect(before.start).toBeCloseTo(before.actualRoadStart);
   await page.locator('[data-tool="upgrade"]').click();
   await page.locator('[data-upgrade-mode="median"]').click();
   await clickRoad(page, -40);
@@ -200,7 +203,8 @@ test("node display smoothing preserves the true median, pavement and compiled la
           (lane: any) =>
             lane.road === "seam-b" &&
             lane.lane === 2 &&
-            lane.roadInterval[0] === 0,
+            lane.kind === "road" &&
+            lane.role !== "master",
         ) as any;
       return {
         curb: Array.from(curb.geometry.attributes.position.array),

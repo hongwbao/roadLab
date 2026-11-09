@@ -154,8 +154,19 @@ describe("independent road display geometry", () => {
           `direct pavement lost at ${JSON.stringify(centroid)}`,
         ).toBe(true);
       }
-      for (const road of project.roads)
-        for (const t of [0, 0.02, 0.15, 0.5, 0.85, 0.98, 1])
+      for (const road of project.roads) {
+        const range = logicalSurfacePlan(project).ranges.get(road.id)!;
+        // Functional connection regions replace the trimmed portion of the
+        // road. Its old lanePoint is no longer a drivable trajectory there;
+        // connector body coverage is checked in road-connection-geometry.test.
+        const samples = [
+          range.start,
+          range.end,
+          ...[0, 0.02, 0.15, 0.5, 0.85, 0.98, 1].filter(
+            (t) => t >= range.start && t <= range.end,
+          ),
+        ];
+        for (const t of samples)
           for (let lane = 0; lane < laneCount(road); lane++)
             for (const side of [-1, 1]) {
               const edge = add(
@@ -167,6 +178,7 @@ describe("independent road display geometry", () => {
                 `lane body edge outside ${road.id}/${lane}/${t}`,
               ).toBe(true);
             }
+      }
       expect(geometry(project.roads)).toEqual(beforeGeometry);
       expect(logicalProjectSignature(project)).toBe(signature);
       expect(connections(project)).toEqual(links);

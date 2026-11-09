@@ -1,8 +1,9 @@
 import * as T from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-import { buildJunctions, roadRange, type Junction } from "../core/junctions";
+import { buildJunctions, type Junction } from "../core/junctions";
 import {
   add,
+  bezier,
   boundaryPoint,
   backwardLaneCount,
   center,
@@ -26,6 +27,7 @@ import {
   medianExtent,
 } from "../core/math";
 import { connections } from "../core/model";
+import { buildRoadConnectionPlan } from "../core/road-connection-geometry";
 import { allowedTurns } from "../core/lane-rules";
 import { renderRoadMedian } from "./road-median";
 import { roadMedianRange } from "../core/road-median";
@@ -456,6 +458,7 @@ export class Scene {
           : material === this.mats.ghost
             ? this.mats.ghostMedian
             : material,
+        range,
       );
     if (material !== this.mats.asphalt) return;
     // A thin deck gives elevated roads a readable edge; columns are visual only.
@@ -602,6 +605,7 @@ export class Scene {
     const surfaceSignature = JSON.stringify([
         topologySignature,
         p.junctionLaneConnections,
+        p.signals?.map((signal) => [signal.id, signal.arms]),
       ]),
       visualStyleSignature = JSON.stringify([surfaceSignature, p.roadVisuals]);
     if (visualStyleSignature !== this.visualStyleSignature) {
@@ -684,9 +688,7 @@ export class Scene {
       this.signalRenderSignature = signalSignature;
     }
     this.handles.visible = showHandles;
-    this.ranges = new Map(
-      p.roads.map((r) => [r.id, roadRange(r, this.junctionList)]),
-    );
+    this.ranges = this.logicalSurfaces!.ranges;
     this.junctionMesh.clear();
     const junctionIds = new Set(this.junctionList.map((j) => j.id));
     for (const [id, cached] of this.junctionRenderCache)
@@ -974,23 +976,18 @@ export class Scene {
       );
     }
     if (settings.paths) {
-      const cs = connections(p).filter((x) => x.enabled);
+      const cs = connections(p).filter((x) => x.enabled),
+        plan = buildRoadConnectionPlan(p, cs);
       for (const c of cs) {
-        const a = p.roads.find((r) => r.id === c.from.road),
-          b = p.roads.find((r) => r.id === c.to.road);
-        if (!a || !b) continue;
-        const ap = lanePoint(
-            a,
-            c.from.lane,
-            laneDirection(a, c.from.lane) === 1 ? 1 : 0,
-          ),
-          bp = lanePoint(
-            b,
-            c.to.lane,
-            laneDirection(b, c.to.lane) === 1 ? 0 : 1,
+        const curve = plan.curves.get(c.id);
+        if (curve && curve.length > 0.1)
+          this.line(
+            Array.from({ length: 49 }, (_, i) =>
+              bezier(...curve.points, i / 48),
+            ),
+            this.mats.lane,
+            this.overlays,
           );
-        if (dist(ap, bp) > 0.1)
-          this.line([ap, bp], this.mats.lane, this.overlays);
       }
     }
     // Fork edge clipping follows the shared pavement. Do not draw synthetic
@@ -1197,6 +1194,9 @@ export class Scene {
     );
     const draft = { ...this.currentProject, roads: nearby } as Project;
     const previewVisualPlan = roadVisualPlan(draft);
+    const previewFloor = options?.replaceExisting
+      ? logicalSurfacePlan(draft)
+      : undefined;
     const markingSignature = JSON.stringify([
       logicalRoadSignature(nearby),
       draft.junctionLaneConnections,
@@ -1273,7 +1273,7 @@ export class Scene {
         this.preview,
         invalid ? this.mats.invalid : this.mats.ghost,
         options?.replaceExisting
-          ? roadRange(r, [...(options.junctions ?? [])])
+          ? previewFloor!.ranges.get(r.id)!
           : { start: 0, end: 1 },
         options?.junctions,
         options?.project,
@@ -1291,7 +1291,7 @@ export class Scene {
         depthTest: false,
       });
       const range = options?.replaceExisting
-        ? roadRange(r, [...(options.junctions ?? [])])
+        ? previewFloor!.ranges.get(r.id)!
         : { start: 0, end: 1 };
       const geometry = previewRoadMarkings(
         r,
@@ -1379,7 +1379,7 @@ export class Scene {
     for (const arm of node.arms) {
       const road = project.roads.find((r) => r.id === arm.road);
       if (!road) continue;
-      const baseRange = roadRange(road, this.junctionList),
+      const baseRange = floor.ranges.get(road.id)!,
         span = visualCollarSpan(road, arm.end).span,
         range = {
           start: Math.max(baseRange.start, arm.end === 0 ? 0 : 1 - span),

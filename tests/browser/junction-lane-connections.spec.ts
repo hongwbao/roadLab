@@ -40,7 +40,7 @@ const project = (page: Page) =>
 const point = (page: Page, p: { x: number; y: number; z: number }) =>
   page.evaluate((p) => (window as any).lab.worldToScreen(p), p);
 
-test("a lateral and graded seam stays selectable after all exits close, then restores and saves a real untrimmed connection", async ({
+test("a lateral and graded seam stays selectable after all exits close, then restores and saves its functional connection", async ({
   page,
 }) => {
   const errors: string[] = [];
@@ -97,6 +97,12 @@ test("a lateral and graded seam stays selectable after all exits close, then res
     await page.locator('[data-tool="turn"]').click();
     const p = await point(page, position);
     await page.mouse.click(p.x, p.y);
+    if (
+      await page.evaluate(
+        () => !!(window as any).lab.editor.junctionLaneTool.selectedFrom,
+      )
+    )
+      await page.mouse.click(p.x + 70, p.y + 70, { button: "right" });
     await expect(page.locator("#turn-panel")).toContainText(
       "道路接头（2 条道路）",
     );
@@ -177,16 +183,25 @@ test("a lateral and graded seam stays selectable after all exits close, then res
       trims: [...engine.trims.values()],
       junctions: engine.junctions.length,
       nodes: e.junctionLaneTool.nodes.length,
+      curves: [...engine.network.lanes.values()]
+        .filter((lane: any) => lane.connection && lane.role !== "master")
+        .map((lane: any) => lane.curve.points),
     };
   });
   expect(actual.links.sort()).toEqual([
     "offset-a:0>offset-b:0",
     "offset-a:0>offset-b:1",
   ]);
-  expect(actual.trims).toEqual([
-    { start: 0, end: 0 },
-    { start: 0, end: 0 },
-  ]);
+  expect(actual.trims[0].start).toBe(0);
+  expect(actual.trims[1].end).toBe(0);
+  expect(actual.trims[0].end).toBeGreaterThan(0);
+  expect(actual.trims[1].start).toBeGreaterThan(0);
+  expect(actual.trims[0].end).toBeLessThanOrEqual(32 + 1e-6);
+  expect(actual.trims[1].start).toBeLessThanOrEqual(32 + 1e-6);
+  expect(actual.curves).toHaveLength(2);
+  for (const points of actual.curves)
+    for (let i = 1; i < 4; i++)
+      expect(points[i].x).toBeGreaterThan(points[i - 1].x);
   expect(actual.junctions).toBe(0);
   expect(actual.nodes).toBe(1);
   expect(errors).toEqual([]);
@@ -253,9 +268,9 @@ test("ordinary bidirectional seams support real drag, reject invalid drops and p
     return t.layout.candidates.find((l: any) => l.id === "seam-a:2>seam-b:4");
   });
   expect(link).toBeTruthy();
-  const source = await point(page, link.from.position),
-    target = await point(page, link.to.position),
-    camera = () =>
+  let source = await point(page, link.from.position),
+    target = await point(page, link.to.position);
+  const camera = () =>
       page.evaluate(() => {
         const s = (window as any).lab.editor.scene;
         return {
@@ -291,6 +306,17 @@ test("ordinary bidirectional seams support real drag, reject invalid drops and p
     ),
   ).toBe(true);
   const afterDrag = await rules();
+  // Authored lane changes can allocate a real connection region. Reacquire
+  // current ports after the graph edit; style-only edits still keep them fixed.
+  const updated = await page.evaluate(
+    (id) =>
+      (window as any).lab.editor.junctionLaneTool.layout.candidates.find(
+        (l: any) => l.id === id,
+      ),
+    link.id,
+  );
+  source = await point(page, updated.from.position);
+  target = await point(page, updated.to.position);
   // Incoming targets and blank terrain never create rules or move the camera.
   const invalid = await page.evaluate(() =>
     (window as any).lab.editor.junctionLaneTool.ports.find(

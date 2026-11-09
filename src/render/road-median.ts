@@ -22,12 +22,32 @@ export function renderRoadMedian(
   junctions: readonly Junction[],
   group: T.Group,
   material: T.Material,
+  clip?: { start: number; end: number },
 ) {
   const width = medianExtent(road),
     range = width && roadMedianRange(project, road, junctions);
   if (!range) return;
-  const table = arcTable(road),
-    span = range.endDistance - range.startDistance,
+  const table = arcTable(road);
+  if (clip) {
+    const distanceAt = (t: number) => {
+      const i = Math.min(table.length - 2, Math.floor(t * (table.length - 1))),
+        a = table[i],
+        b = table[i + 1];
+      return a.s + ((b.s - a.s) * (t - a.t)) / Math.max(1e-8, b.t - a.t);
+    };
+    const start = distanceAt(clip.start),
+      end = distanceAt(clip.end);
+    if (start > range.startDistance) {
+      range.startDistance = start;
+      range.noseStart = true;
+    }
+    if (end < range.endDistance) {
+      range.endDistance = end;
+      range.noseEnd = true;
+    }
+    if (range.endDistance <= range.startDistance) return;
+  }
+  const span = range.endDistance - range.startDistance,
     n = Math.max(24, Math.min(256, Math.ceil(span / 2))),
     tip = Math.min(width * 1.5 + 1, span / 4),
     positions: number[] = [],

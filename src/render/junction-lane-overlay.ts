@@ -231,14 +231,23 @@ export class JunctionLaneOverlay {
     x: number,
     y: number,
     project: ProjectPoint,
+    kind?: "in" | "out",
   ): JunctionLaneHit | undefined {
     if (!this.group.visible || !this.layout) return;
     let point: JunctionLanePort | undefined,
       best = 14;
     for (const port of this.layout.ports) {
+      if (kind && port.kind !== kind) continue;
       const p = project(port.position),
         d = Math.hypot(x - p.x, y - p.y);
-      if (d < best) {
+      // Transparent, aligned seams share real endpoint coordinates. Prefer an
+      // incoming port initially and a valid destination after choosing a source,
+      // without moving the endpoint away from the actual traffic geometry.
+      const preferred = port.kind === (this.selected ? "out" : "in");
+      if (
+        d < best - 0.01 ||
+        (d < 14 && Math.abs(d - best) <= 0.01 && preferred)
+      ) {
         best = d;
         point = port;
       }

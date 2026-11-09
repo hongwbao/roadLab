@@ -4,8 +4,6 @@ import {
   arcTable,
   center,
   bezier,
-  laneDirection,
-  lanePoint,
   laneEntryT,
   laneExitT,
   length,
@@ -29,6 +27,10 @@ import { roadSurfaceTriangles } from "../core/junction-crosswalks";
 import { forkPavement, forkSurfaces, roadForks } from "../core/road-forks";
 import { isNodeSmooth, nodeVisualKey } from "../core/road-visual-settings";
 import { connections } from "../core/model";
+import {
+  buildRoadConnectionPlan,
+  type RoadConnectionPlan,
+} from "../core/road-connection-geometry";
 import type { Connection, Project, Road, V } from "../core/types";
 
 export type RoadSurfaceTriangle = readonly [V, V, V];
@@ -127,10 +129,16 @@ export function roadVisualPlan(
         left = Math.max(0, -Math.min(...offsets) - half),
         right = Math.max(0, Math.max(...offsets) - half);
       if (left < 0.001 && right < 0.001) continue;
+      const range = logicalSurfacePlan(project).ranges.get(own.road.id)!,
+        length = arcTable(own.road).at(-1)!.s,
+        functionalInset =
+          own.end === 0
+            ? distanceAt(own.road, range.start)
+            : length - distanceAt(own.road, range.end);
       const span = visualCollarSpan(
         own.road,
         own.end,
-        Math.max(24, Math.max(left, right) * 6),
+        functionalInset + Math.max(24, Math.max(left, right) * 6),
       );
       const collars = result.get(own.road.id) ?? [];
       collars.push({
@@ -285,6 +293,7 @@ function movementEnvelope(
   node: LaneJunction,
   roads: ReadonlyMap<string, Road>,
   links: readonly Connection[],
+  curves: RoadConnectionPlan["curves"],
 ) {
   const ends = new Set(node.arms.map((a) => `${a.road}:${a.end}`)),
     points: V[] = [],
@@ -298,19 +307,9 @@ function movementEnvelope(
     const at = laneExitT(a, link.from.lane),
       bt = laneEntryT(b, link.to.lane);
     if (!ends.has(`${a.id}:${at}`) || !ends.has(`${b.id}:${bt}`)) continue;
-    const from = lanePoint(a, link.from.lane, at),
-      to = lanePoint(b, link.to.lane, bt),
-      handle = dist(from, to) * 0.45,
-      controls = [
-        from,
-        add(
-          from,
-          mul(tangent(a, at), handle * laneDirection(a, link.from.lane)),
-        ),
-        add(to, mul(tangent(b, bt), -handle * laneDirection(b, link.to.lane))),
-        to,
-      ] as const,
-      second =
+    const controls = curves.get(link.id)?.points;
+    if (!controls) continue;
+    const second =
         Math.max(
           length(add(sub(controls[2], mul(controls[1], 2)), controls[0])),
           length(add(sub(controls[3], mul(controls[2], 2)), controls[1])),
@@ -332,6 +331,7 @@ function movementEnvelope(
 }
 
 export type RoadSurfacePlan = {
+  ranges: Map<string, Range>;
   roads: Map<string, readonly RoadSurfaceTriangle[]>;
   junctions: Map<string, readonly RoadSurfaceTriangle[]>;
   seams: Map<string, readonly RoadSurfaceTriangle[]>;
@@ -345,18 +345,42 @@ export function logicalSurfacePlan(project: Project): RoadSurfacePlan {
   const signature = JSON.stringify([
       logicalRoadSignature(project.roads),
       project.junctionLaneConnections,
+      project.signals?.map((signal) => [signal.id, signal.arms]),
     ]),
     cached = logicalCache.get(project);
   if (cached?.signature === signature) return cached.plan;
   const junctions = buildJunctions(project),
-    nodes = buildLaneJunctions(project),
+    links = connections(project),
+    functional = buildRoadConnectionPlan(project, links),
+    nodes = functional.nodes,
+    functionalEnds = new Set(
+      nodes
+        .filter((node) => node.kind === "continuation")
+        .flatMap((node) => node.arms.map((arm) => `${arm.road}:${arm.end}`)),
+    ),
+    ranges = new Map(
+      project.roads.map((road) => {
+        const physical = roadRange(road, junctions);
+        return [
+          road.id,
+          {
+            start: functionalEnds.has(`${road.id}:0`)
+              ? functional.stations.get(`${road.id}:0`)!.t
+              : physical.start,
+            end: functionalEnds.has(`${road.id}:1`)
+              ? functional.stations.get(`${road.id}:1`)!.t
+              : physical.end,
+          },
+        ];
+      }),
+    ),
     forks = roadForks(project.roads),
     roads = new Map(
       project.roads.map((road) => [
         road.id,
         logicalRoadSurface(
           road,
-          roadRange(road, junctions),
+          ranges.get(road.id)!,
           forks.get(road.id)?.pavement,
         ),
       ]),
@@ -370,7 +394,6 @@ export function logicalSurfacePlan(project: Project): RoadSurfacePlan {
     all = [...roads.values(), ...junctionSurfaces.values()].flat(),
     byId = new Map(project.roads.map((road) => [road.id, road])),
     physical = new Set(junctions.map((j) => j.id)),
-    links = connections(project),
     seams = new Map<string, readonly RoadSurfaceTriangle[]>(),
     unsupportedNodes: string[] = [];
   for (const node of [...nodes].sort((a, b) =>
@@ -384,14 +407,20 @@ export function logicalSurfacePlan(project: Project): RoadSurfacePlan {
     // A short vehicle-sized pad supplies the existing route's body envelope at
     // a discontinuous section. It never changes an endpoint or lane trajectory.
     const points = pair.flatMap(({ road, end }) =>
-        section(road, end).flatMap((p) =>
-          [-1, 1].map((sign) =>
-            add(p, mul(tangent(road, end), sign * NODE_SURFACE_HALF_LENGTH)),
-          ),
+        section(road, functional.stations.get(`${road.id}:${end}`)!.t).flatMap(
+          (p) =>
+            [-1, 1].map((sign) =>
+              add(p, mul(tangent(road, end), sign * NODE_SURFACE_HALF_LENGTH)),
+            ),
         ),
       ),
       patch = uncovered(
-        fan(convexHull([...points, ...movementEnvelope(node, byId, links)])),
+        fan(
+          convexHull([
+            ...points,
+            ...movementEnvelope(node, byId, links, functional.curves),
+          ]),
+        ),
         all,
       );
     if (patch.length) {
@@ -399,7 +428,13 @@ export function logicalSurfacePlan(project: Project): RoadSurfacePlan {
       all.push(...patch);
     }
   }
-  const plan = { roads, junctions: junctionSurfaces, seams, unsupportedNodes };
+  const plan = {
+    ranges,
+    roads,
+    junctions: junctionSurfaces,
+    seams,
+    unsupportedNodes,
+  };
   logicalCache.set(project, { signature, plan });
   return plan;
 }
@@ -422,7 +457,7 @@ export function visualExtensionSurfaces(
     if (!collars?.length) continue;
     const triangles: RoadSurfaceTriangle[] = [],
       samples = Math.max(60, road.knots.length * 35),
-      range = roadRange(road, buildJunctions(project));
+      range = logical.ranges.get(road.id)!;
     for (let i = 0; i < samples; i++) {
       const a = range.start + ((range.end - range.start) * i) / samples,
         b = range.start + ((range.end - range.start) * (i + 1)) / samples,

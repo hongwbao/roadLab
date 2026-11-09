@@ -27,7 +27,12 @@ export class JunctionLaneTool {
   layout?: JunctionLaneLayout;
   private signature = "";
   private hover?: JunctionLaneHit;
-  private drag?: { from: JunctionLaneEndpoint; x: number; y: number };
+  private drag?: {
+    from: JunctionLaneEndpoint;
+    previousFrom?: JunctionLaneEndpoint;
+    x: number;
+    y: number;
+  };
   constructor(private editor: Editor) {
     editor.scene.scene.add(this.overlay.group);
   }
@@ -240,14 +245,19 @@ export class JunctionLaneTool {
   /** Return true only for an incoming dot, so camera drags elsewhere still work. */
   beginDrag(x: number, y: number) {
     if (this.editor.tool !== "turn") return false;
-    const hit = this.overlay.hit(x, y, (p) => this.editor.scene.project(p));
+    const hit = this.overlay.hit(
+      x,
+      y,
+      (p) => this.editor.scene.project(p),
+      "in",
+    );
     if (hit?.kind !== "port" || hit.port.kind !== "in") return false;
     const from = {
       road: hit.port.road,
       lane: hit.port.lane,
       end: hit.port.end,
     };
-    this.drag = { from, x, y };
+    this.drag = { from, previousFrom: this.selectedFrom, x, y };
     this.selectedFrom = from;
     this.selectedConnection = undefined;
     this.hover = hit;
@@ -262,8 +272,18 @@ export class JunctionLaneTool {
     if (!drag) return false;
     this.drag = undefined;
     this.overlay.previewTo();
-    if (Math.hypot(x - drag.x, y - drag.y) < 5) return true;
-    const hit = this.overlay.hit(x, y, (p) => this.editor.scene.project(p));
+    if (Math.hypot(x - drag.x, y - drag.y) < 5) {
+      this.selectedFrom = drag.previousFrom;
+      this.overlay.setState(this.selectedFrom);
+      this.select(x, y);
+      return true;
+    }
+    const hit = this.overlay.hit(
+      x,
+      y,
+      (p) => this.editor.scene.project(p),
+      "out",
+    );
     if (hit?.kind !== "port" || hit.port.kind !== "out") return true;
     const candidate = this.layout?.candidates.find(
       (link) =>

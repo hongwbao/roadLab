@@ -1,11 +1,9 @@
 import { buildLaneJunctions, type LaneJunction } from "./lane-junctions";
 import {
-  add,
   arcParameter,
   arcTable,
   bezier,
   center,
-  dist,
   laneCount,
   laneDirection,
   laneEntryT,
@@ -23,6 +21,11 @@ import {
 } from "./lane-rules";
 import { signalForJunction, signalStopOffset } from "./traffic-signals";
 import { isJunctionLane } from "./junction-lane-geometry";
+import {
+  buildRoadConnectionPlan,
+  roadConnectionCurve,
+  type RoadConnectionPlan,
+} from "./road-connection-geometry";
 import type { Connection, Project, Road, Turn, V } from "./types";
 
 export type JunctionLaneEndpoint = { road: string; lane: number; end: 0 | 1 };
@@ -101,6 +104,7 @@ const validRef = (
 export function junctionLanePorts(
   project: JunctionLaneProject,
   junction: LaneJunction,
+  plan?: RoadConnectionPlan,
 ): JunctionLanePort[] {
   const roads = roadMap(project),
     result: JunctionLanePort[] = [],
@@ -111,7 +115,9 @@ export function junctionLanePorts(
     const table = arcTable(road),
       total = table.at(-1)!.s,
       offset = arm.trim + (signalized ? signalStopOffset(arm) : 0),
-      t = arcParameter(table, arm.end === 0 ? offset : total - offset);
+      t =
+        plan?.stations.get(`${road.id}:${arm.end}`)?.t ??
+        arcParameter(table, arm.end === 0 ? offset : total - offset);
     for (let lane = 0; lane < laneCount(road); lane++) {
       if (!isJunctionLane(road, lane, arm.end)) continue;
       const kind = laneExitT(road, lane) === arm.end ? "in" : "out",
@@ -163,18 +169,19 @@ function pairAllowed(
     );
   return !aa?.ownLanes.includes(from.lane) && !ba?.ownLanes.includes(to.lane);
 }
-/** Uses the same trimmed endpoints and 0.45-span tangent handles as the live simulation. */
+/** Shared cubic geometry; live layouts supply the actual functional station. */
 export function junctionLaneLink(
   from: JunctionLanePort,
   to: JunctionLanePort,
+  continuation = false,
 ): JunctionLaneLink {
-  const span = dist(from.position, to.position) * 0.45,
-    points: readonly [V, V, V, V] = [
-      { ...from.position },
-      add(from.position, mul(from.direction, span)),
-      add(to.position, mul(to.direction, -span)),
-      { ...to.position },
-    ];
+  const { points } = roadConnectionCurve(
+    from.position,
+    to.position,
+    from.direction,
+    to.direction,
+    continuation,
+  );
   return {
     id: junctionLaneConnectionId(from, to),
     from,
@@ -187,14 +194,21 @@ export function junctionLaneLink(
 export function junctionLaneCandidates(
   project: JunctionLaneProject,
   junction: LaneJunction,
+  plan?: RoadConnectionPlan,
 ): JunctionLaneLink[] {
-  const ports = junctionLanePorts(project, junction),
+  const ports = junctionLanePorts(project, junction, plan),
     roads = roadMap(project),
     result: JunctionLaneLink[] = [];
   for (const from of ports.filter((p) => p.kind === "in"))
     for (const to of ports.filter((p) => p.kind === "out"))
       if (pairAllowed(roads, from, to, junction))
-        result.push(junctionLaneLink(from, to));
+        result.push(
+          junctionLaneLink(
+            from,
+            to,
+            !!plan && junction.kind === "continuation",
+          ),
+        );
   return result;
 }
 export function junctionLaneLayout(
@@ -202,11 +216,13 @@ export function junctionLaneLayout(
   junction: LaneJunction,
   connections: readonly Connection[],
 ): JunctionLaneLayout {
-  const candidates = junctionLaneCandidates(project, junction),
+  const plan = buildRoadConnectionPlan(project, connections),
+    actualNode = plan.nodes.find((node) => node.id === junction.id) ?? junction,
+    candidates = junctionLaneCandidates(project, actualNode, plan),
     enabled = new Set(connections.filter((c) => c.enabled).map((c) => c.id));
   return {
-    junction,
-    ports: junctionLanePorts(project, junction),
+    junction: actualNode,
+    ports: junctionLanePorts(project, actualNode, plan),
     candidates,
     links: candidates.filter((link) => enabled.has(link.id)),
   };
