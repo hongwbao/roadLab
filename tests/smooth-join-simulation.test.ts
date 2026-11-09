@@ -173,8 +173,14 @@ it.each([
         (w) => w.includes(id) && /fades|mismatch/.test(w),
       ),
     ).toEqual([]);
-    expect((sim as any).trims.get("a")).toEqual({ start: 0, end: 0 });
-    expect((sim as any).trims.get("b")).toEqual({ start: 0, end: 0 });
+    // This legal lateral movement now reserves a functional forward region;
+    // visual style still cannot change its geometry or unused road ends.
+    expect((sim as any).trims.get("a").start).toBe(0);
+    expect((sim as any).trims.get("a").end).toBeGreaterThan(0);
+    expect((sim as any).trims.get("b").start).toBeGreaterThan(0);
+    expect((sim as any).trims.get("b").end).toBe(0);
+    expect(incoming.curve.points[3].x).toBeLessThan(0);
+    expect(outgoing.curve.points[0].x).toBeGreaterThan(0);
     sim.dispose();
   },
 );
@@ -251,8 +257,9 @@ it.each([
   (from, to, source, target) => {
     const project = fixture(from, to),
       id = authored(project, source, target),
-      fromT = 0.7,
-      toT = 0.3,
+      // Deeper than the functional continuation's per-arm40% reservation.
+      fromT = 0.45,
+      toT = 0.55,
       network = compileCs2Network({
         project,
         connections: connections(project),
@@ -415,7 +422,8 @@ it.each([false, true])(
       sim.network!.roadLaneIds.get(cs2RoadLaneKey("b", 0))!.at(-1)!,
     )!;
     expect(source.direction).toBe(-1);
-    expect(source.roadInterval![1]).toBe(0);
+    expect(source.roadInterval![1]).toBeGreaterThan(0);
+    expect(source.roadInterval![1]).toBeLessThan(1);
     expect(
       dist(connection.curve.points[0], source.curve.points[3]),
     ).toBeLessThan(0.0001);

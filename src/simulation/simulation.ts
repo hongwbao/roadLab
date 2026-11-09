@@ -1,6 +1,10 @@
 import { buildJunctions, type Junction } from "../core/junctions";
 import { chooseDestination, sourceDemandRate } from "../core/traffic-demand";
 import {
+  buildRoadConnectionPlan,
+  type RoadConnectionCurve,
+} from "../core/road-connection-geometry";
+import {
   add,
   arcParameter,
   arcTable,
@@ -513,6 +517,7 @@ export class Simulation {
   private trims = new Map<string, { start: number; end: number }>();
   private mergeController = new IntersectionController();
   private connectorCache = new Map<string, NonNullable<Vehicle["connector"]>>();
+  private connectionCurves = new Map<string, RoadConnectionCurve>();
   private mergeTargets = new Set<string>();
   private laneEnds = new Map<string, number>();
   private curviness = new Map<string, number>();
@@ -634,6 +639,9 @@ export class Simulation {
           ];
         }),
       );
+      const plan = buildRoadConnectionPlan(p, connections(p), this.trims);
+      this.trims = plan.trims;
+      this.connectionCurves = plan.curves;
       return;
     }
     this.sourceFlow.configure(p.roads);
@@ -675,6 +683,9 @@ export class Simulation {
       }),
     );
     this.cs = connections(p);
+    const plan = buildRoadConnectionPlan(p, this.cs, this.trims);
+    this.trims = plan.trims;
+    this.connectionCurves = plan.curves;
     this.routingCache.trims = this.trims;
     this.mergeTargets.clear();
     const inputs = new Map<string, Set<string>>();
@@ -843,6 +854,7 @@ export class Simulation {
       blockedRetreats: 0,
     };
     this.connectorCache.clear();
+    this.connectionCurves.clear();
     this.trafficDelays.clear();
     this.sampledAt = 0;
     this.routingCache.changes.clear();
@@ -1093,11 +1105,16 @@ export class Simulation {
         this.arcs.get(nr.id)!,
         next.direction === 1 ? this.entry(next) : nlen - this.entry(next),
       );
-    const from = lanePoint(r, step.outLane, ft),
-      to = lanePoint(nr, next.inLane, nt),
+    const shared = this.connectionCurves.get(id),
+      from = shared?.points[0] ?? lanePoint(r, step.outLane, ft),
+      to = shared?.points[3] ?? lanePoint(nr, next.inLane, nt),
       d = dist(from, to),
-      c1 = add(from, mul(tangent(r, ft), d * 0.45 * step.direction)),
-      c2 = add(to, mul(tangent(nr, nt), -d * 0.45 * next.direction));
+      c1 =
+        shared?.points[1] ??
+        add(from, mul(tangent(r, ft), d * 0.45 * step.direction)),
+      c2 =
+        shared?.points[2] ??
+        add(to, mul(tangent(nr, nt), -d * 0.45 * next.direction));
     const arc = [{ t: 0, s: 0 }];
     let last = from,
       s = 0;

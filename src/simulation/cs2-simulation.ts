@@ -10,7 +10,10 @@ import {
   type MergeRequest,
 } from "./lane-merge-coordination";
 import { LaneCongestion, leastOccupiedLane } from "./lane-congestion";
-import { laneJunctionTrims } from "../core/lane-junctions";
+import {
+  buildRoadConnectionPlan,
+  type RoadConnectionCurve,
+} from "../core/road-connection-geometry";
 /** Ordinary-car source runtime assembly. Browser/world adapters are explicit. */
 import {
   buildEarlyLanePlan,
@@ -23,18 +26,14 @@ import {
 } from "./early-lane-planning";
 import { buildJunctions, type Junction } from "../core/junctions";
 import {
-  add,
-  arcParameter,
   arcTable,
   bezier,
   clamp,
   dist,
   laneCount,
   laneDirection,
-  lanePoint,
   mul,
   sub,
-  tangent,
 } from "../core/math";
 import { connections, normalizePorts } from "../core/model";
 import { turnOf } from "../core/lane-rules";
@@ -579,11 +578,12 @@ export class Cs2TrafficSimulation {
         },
       ]),
     );
-    this.trims = new Map(laneJunctionTrims(project, this.trims));
     const links = connections(project).filter(
-      (connection) => connection.enabled,
-    );
-    this.buildGeometry(links);
+        (connection) => connection.enabled,
+      ),
+      plan = buildRoadConnectionPlan(project, links, this.trims);
+    this.trims = plan.trims;
+    this.buildGeometry(links, plan.curves);
     this.receivingJunctions = new Set(
       this.junctions.map((junction) => junction.id),
     );
@@ -645,6 +645,7 @@ export class Cs2TrafficSimulation {
       connections: links,
       revision: ++this.revision,
       roadTrims: this.trims,
+      connectionPlan: plan,
       connectionGeometry: geometry,
     });
     this.laneCongestion = new LaneCongestion(this.network, (group) =>
@@ -1319,7 +1320,10 @@ export class Cs2TrafficSimulation {
     }
     this.readyPaths = remaining;
   }
-  private buildGeometry(links: readonly Connection[]) {
+  private buildGeometry(
+    links: readonly Connection[],
+    curves: ReadonlyMap<string, RoadConnectionCurve>,
+  ) {
     // The renderer has no native node entity. All connections sharing a logical
     // road endpoint must nevertheless have one owner, including parallel lanes.
     const parents = new Map<string, string>();
@@ -1370,37 +1374,10 @@ export class Cs2TrafficSimulation {
         next = this.roads.get(connection.to.road);
       if (!road || !next) continue;
       const direction = laneDirection(road, connection.from.lane),
-        nextDirection = laneDirection(next, connection.to.lane),
-        ft = arcParameter(
-          this.arcs.get(road.id)!,
-          direction === 1
-            ? this.endpoint(road, direction, true)
-            : this.arcs.get(road.id)!.at(-1)!.s -
-                this.endpoint(road, direction, true),
-        ),
-        nt = arcParameter(
-          this.arcs.get(next.id)!,
-          nextDirection === 1
-            ? this.endpoint(next, nextDirection, false)
-            : this.arcs.get(next.id)!.at(-1)!.s -
-                this.endpoint(next, nextDirection, false),
-        ),
-        from = lanePoint(road, connection.from.lane, ft),
-        to = lanePoint(next, connection.to.lane, nt),
-        span = dist(from, to) * 0.45,
-        points: readonly [V, V, V, V] = [
-          from,
-          add(from, mul(tangent(road, ft), span * direction)),
-          add(to, mul(tangent(next, nt), -span * nextDirection)),
-          to,
-        ];
-      let previous = from,
-        length = 0;
-      for (let i = 1; i <= 64; i++) {
-        const p = bezier(...points, i / 64);
-        length += dist(previous, p);
-        previous = p;
-      }
+        curve = curves.get(connection.id);
+      if (!curve)
+        throw new Error(`Missing canonical connection curve ${connection.id}`);
+      const { points, length } = curve;
       const junction = owners.get(
         find(endpointKey(road.id, direction === 1 ? 1 : 0)),
       )!;

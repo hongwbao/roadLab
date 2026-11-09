@@ -484,6 +484,15 @@ it.each(["identity", "forbidden", "crossed", "junction"] as const)(
       synchronousPathsOnlyForTests: true,
     });
     sim.configure(project);
+    if (kind === "crossed") {
+      // Crossed targets now have a real connection region. Keep the actor10m
+      // before its physical entry, rather than creating it inside cropped road.
+      const incoming = sim.network!.lanes.get(
+        sim.network!.roadLaneIds.get(JSON.stringify(["part-0", 0]))!.at(-1)!,
+      )!;
+      car.s = incoming.roadInterval![1] * 120 - 10;
+      car.position = lanePoint(project.roads[0], 0, car.s / 120);
+    }
     sim.adoptVehicles([car]);
     sim.running = true;
     const metrics = observeSeam(sim, 1);

@@ -1,6 +1,10 @@
 /** Shared lane topology adapter; source boundaries are documented in CS2_NETWORK.md. */
 import type { Connection, Project, V } from "../core/types";
 import {
+  buildRoadConnectionPlan,
+  type RoadConnectionPlan,
+} from "../core/road-connection-geometry";
+import {
   add,
   arcParameter,
   arcTable,
@@ -111,6 +115,8 @@ export type Cs2NetworkInput = {
   revision: number;
   /** Metres along the geometric road centreline, from each end. */
   roadTrims?: ReadonlyMap<string, { start: number; end: number }>;
+  /** Reuse the caller's canonical road/node geometry without replanning it. */
+  connectionPlan?: RoadConnectionPlan;
   connectionGeometry?:
     | ReadonlyMap<string, Cs2NetworkConnectionGeometry>
     | ((connection: Connection) => Cs2NetworkConnectionGeometry | undefined);
@@ -268,6 +274,14 @@ export function cs2NetworkPathSpecification(
 
 /** Compile one immutable topology revision shared by route selection and motion. */
 export function compileCs2Network(input: Cs2NetworkInput): Cs2CompiledNetwork {
+  const plan =
+      input.connectionPlan ??
+      buildRoadConnectionPlan(
+        input.project,
+        input.connections,
+        input.roadTrims,
+      ),
+    roadTrims = plan.trims;
   const lanes = new Map<string, Cs2NetworkLane>(),
     curves = new Map<string, CS2NavigationCurve>(),
     groups = new Map<string, Cs2NetworkGroup>(),
@@ -349,7 +363,7 @@ export function compileCs2Network(input: Cs2NetworkInput): Cs2CompiledNetwork {
     const table = arcTable(road),
       total = table.at(-1)!.s;
     roadTables.set(road.id, table);
-    const trim = input.roadTrims?.get(road.id),
+    const trim = roadTrims.get(road.id),
       lower = arcParameter(table, Math.max(0, trim?.start ?? 0)),
       upper = arcParameter(table, total - Math.max(0, trim?.end ?? 0));
     if (upper - lower < tiny) {
@@ -523,8 +537,8 @@ export function compileCs2Network(input: Cs2NetworkInput): Cs2CompiledNetwork {
       to = lanes.get(toId)!,
       fromEnd = from.roadInterval![1],
       toStart = to.roadInterval![0],
-      fromTrim = input.roadTrims?.get(fromRoad.id),
-      toTrim = input.roadTrims?.get(toRoad.id),
+      fromTrim = roadTrims.get(fromRoad.id),
+      toTrim = roadTrims.get(toRoad.id),
       fromTable = roadTables.get(fromRoad.id)!,
       toTable = roadTables.get(toRoad.id)!,
       expectedFrom = arcParameter(
@@ -547,12 +561,12 @@ export function compileCs2Network(input: Cs2NetworkInput): Cs2CompiledNetwork {
       continue;
     }
     const supplied =
-      typeof input.connectionGeometry === "function"
-        ? input.connectionGeometry(connection)
-        : input.connectionGeometry?.get(connection.id);
+        typeof input.connectionGeometry === "function"
+          ? input.connectionGeometry(connection)
+          : input.connectionGeometry?.get(connection.id),
+      shared = supplied ?? plan.curves.get(connection.id);
     let points: Cs2NetworkBezier;
-    if (supplied)
-      points = supplied.points.map(copy) as unknown as Cs2NetworkBezier;
+    if (shared) points = shared.points.map(copy) as unknown as Cs2NetworkBezier;
     else {
       const a = from.curve.points[3],
         d = to.curve.points[0],
@@ -585,7 +599,7 @@ export function compileCs2Network(input: Cs2NetworkInput): Cs2CompiledNetwork {
         id,
         points,
         width,
-        length: supplied?.length ?? curveLength(points),
+        length: shared?.length ?? curveLength(points),
         widthOffset: supplied?.widthOffset ?? [
           laneWidth(fromRoad, connection.from.lane, fromEnd) - width,
           laneWidth(toRoad, connection.to.lane, toStart) - width,
