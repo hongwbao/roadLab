@@ -1,69 +1,59 @@
 {
-  "recorded_at": "2026-11-08T15:56:32.547293+00:00",
-  "latest_change": "合并用户56b7417非对称道路替换/滚动出口与本地56bd节点视觉解耦；发布双父merge b6767d15。仅显示平滑保持逻辑/活动车辆/时钟；另修正20km道路内侧trim误判外部sink的端点资格。",
-  "record_type": "精确333文件merge archive生产包发布；按版本保留owner独立证据，不相加326/153/176/9或旧UI数量。代码已优先推送GitHub，文档随后单独交付。",
+  "recorded_at": "2026-11-09T03:35:57.204804+00:00",
+  "latest_change": "修复合法手动车道偏移接头纵向空间不足造成急转、低速与倒车：UI/native/compat/铺面统一使用真实功能连接计划；完整5720168含交通7e89146，代码先推送后生产包验收上线。",
+  "record_type": "精确337文件git archive与道路r5/交通final逐字节一致；owner71核心、18UI、交通183分别按范围复用，不相加为整合数量。本轮4个唯一生产bundle case及线上同4项通过。",
   "checks": [
     {
-      "command": "git merge origin/main --no-commit then owner resolution and explicit8-file merge commit",
-      "app_commit": "b6767d15161744038dc73ed96ea3676c902a53c8",
-      "parents": [
-        "56bd8553d22042d80838104c76cea5b5794bf189",
-        "56b7417669d0478e2cb48dcd314e0c879d049df8"
-      ],
-      "scope": "user commit preserved as ancestor;road3/traffic5 hashes verified before staging latest host;protected draft excluded",
-      "artifact": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-user-visual-smooth-20261108/manifest.json"
+      "command": "git archive 572016805bb3be4c332171dc4abea862a9035161; compare337 source and18 owner files",
+      "passed": true,
+      "source_files": 337,
+      "source_manifest_sha256": "54799146b7f762ce5c795ea77ccf15e8b308b80e368115de38029af7e23e8938",
+      "artifact": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-city-connectors-20261109/manifest.json"
     },
     {
       "command": "npm run build",
       "exit_code": 0,
-      "scope": "exact merge333-file archive whole-project tsc and Vite;existing900kB chunk warning",
-      "artifact": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-user-visual-smooth-20261108/build.log"
+      "scope": "Exact archived337-file source;whole-project tsc+Vite;existing chunk warning",
+      "artifact": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-city-connectors-20261109/build.log"
     },
     {
-      "command": "reuse exact delivered road3 files and traffic5 files",
-      "scope": "road9UI belongs its isolated snapshot with prior host;traffic176/15suites belongs isolated traffic source with56bd UI;matching files verified but neither count relabeled whole-merge results",
-      "road_artifact": "/home/bhw/repos/interchange-lab/.cache/builds/user-remote-road-merge-20261108/validation.json",
-      "traffic_artifact": "/home/bhw/repos/interchange-lab/.cache/builds/rolling-exit-merge-r3-20261108/traffic-validation.json"
+      "command": "reuse file-hash-identical owner evidence",
+      "scope": "road71core+18uniqueUI in r5;traffic183/16suites in final;counts remain separate and are not relabeled combined release tests",
+      "road_artifact": "/home/bhw/repos/interchange-lab/.cache/builds/city-connector-road-r5/validation.json",
+      "traffic_artifact": "/home/bhw/repos/interchange-lab/.cache/builds/city-connector-traffic-final-20261109/traffic-validation.json"
     },
     {
-      "command": "actual production-bundle Playwright integration on5194",
-      "unique_cases": 6,
-      "passed": 6,
+      "command": "git push origin 572016805bb3be4c332171dc4abea862a9035161:refs/heads/main",
+      "exit_code": 0,
+      "remote_main_verified": "572016805bb3be4c332171dc4abea862a9035161",
+      "scope": "Complete paired source fast-forward pushed first per user priority;no force;documentation follows",
+      "artifact": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-city-connectors-20261109/app-sync.json"
+    },
+    {
+      "command": "static production-dist Playwright targeted integration",
+      "unique_cases": 4,
+      "passed": 4,
       "failed": 0,
       "skipped": 0,
-      "scope": "real replacement UI2;real3to5/fifth target/common ports/full graph equality;continuous fixed-dt active car/controller/stats;normal live/visual history orders and structural negative control;rolling positive/reverse external/internal20km/red/blocked",
-      "artifact": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-user-visual-smooth-20261108/bundle-final-summary.json",
-      "initial_report": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-user-visual-smooth-20261108/bundle-results.json",
-      "followup_reports": [
-        "/home/bhw/repos/interchange-lab/.cache/builds/integrated-user-visual-smooth-20261108/bundle-followup-results.json",
-        "/home/bhw/repos/interchange-lab/.cache/builds/integrated-user-visual-smooth-20261108/bundle-final-targeted-results.json"
-      ],
-      "fixture_notes": "initial multi-exit actor legally chose another exit;real UI then established sole fifth target. Optional missingroadVisuals meansdirect. Original failed supplemental attempts retained;no product/original-test assertion edits."
+      "scope": "real UI/native49 samples+actualScene vehicle envelope+median;all-closed coincident ports recovery;rolling external/internaltrim/red/leader;compiled-bundle exact bidirectional offsets and direct/style graph/trajectory equality",
+      "artifact": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-city-connectors-20261109/bundle-final-summary.json",
+      "reporters": [
+        "/home/bhw/repos/interchange-lab/.cache/builds/integrated-city-connectors-20261109/bundle-results.json",
+        "/home/bhw/repos/interchange-lab/.cache/builds/integrated-city-connectors-20261109/manual-results.json"
+      ]
     },
     {
-      "command": "SMOKE_URL=http://127.0.0.1:5194/ npm run test:smoke",
-      "exit_code": 0,
-      "artifact": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-user-visual-smooth-20261108/production-smoke.log"
-    },
-    {
-      "command": "postdeploy Environment/pointer/HTTP/production smoke/LAN bundle tests",
+      "command": "postdeploy service Environment/pointer,HTTP,production smoke,LAN production bundle",
       "passed": true,
       "resource_hash_checks": 8,
       "health_checks": 2,
-      "unique_bundle_cases": 6,
-      "first_attempt_passed": 6,
+      "unique_bundle_cases": 4,
+      "passed_cases": 4,
       "failed": 0,
       "skipped": 0,
-      "scope": "both address resources match original immutable dist;LAN complete6-case suite first attempt passes;page/console errors empty",
-      "artifact": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-user-visual-smooth-20261108/postdeploy.json",
-      "reporter": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-user-visual-smooth-20261108/postdeploy-bundle-results.json"
-    },
-    {
-      "command": "git push origin b6767d15161744038dc73ed96ea3676c902a53c8:refs/heads/main",
-      "exit_code": 0,
-      "remote_main_verified": "b6767d15161744038dc73ed96ea3676c902a53c8",
-      "scope": "fast-forward from user56b7417;no force;application pushed before documentation per user priority",
-      "artifact": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-user-visual-smooth-20261108/app-sync.json"
+      "flaky": 0,
+      "artifact": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-city-connectors-20261109/postdeploy.json",
+      "reporter": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-city-connectors-20261109/postdeploy-bundle-results.json"
     }
   ],
   "limitations": [
@@ -435,45 +425,32 @@
     "healthz": "ok"
   },
   "current_deployment": {
-    "version": "integrated-user-visual-smooth-20261108",
+    "version": "integrated-city-connectors-20261109",
     "url": "http://192.168.31.167:5173/",
-    "source_commit": "b6767d15161744038dc73ed96ea3676c902a53c8",
-    "source_snapshot": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-user-visual-smooth-20261108/source",
-    "parents": [
-      "56bd8553d22042d80838104c76cea5b5794bf189",
-      "56b7417669d0478e2cb48dcd314e0c879d049df8"
-    ],
-    "source_files": 333,
-    "source_manifest_sha256": "dcf7008403e721c8189ae011986bfbbc01a1feca26d6f023b8b84a40c4424383",
-    "release_directory": "/home/bhw/repos/interchange-lab/.cache/deployments/integrated-user-visual-smooth-20261108",
-    "manifest": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-user-visual-smooth-20261108/manifest.json",
-    "bundle": "index-DGSCxmwq.js",
-    "css": "index-Iu-XULhB.css",
+    "source_commit": "572016805bb3be4c332171dc4abea862a9035161",
+    "parent": "7e8914609d8b070b5edb1352e1a97fd2ec01fe4b",
+    "source_snapshot": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-city-connectors-20261109/source",
+    "source_files": 337,
+    "source_manifest_sha256": "54799146b7f762ce5c795ea77ccf15e8b308b80e368115de38029af7e23e8938",
+    "release_directory": "/home/bhw/repos/interchange-lab/.cache/deployments/integrated-city-connectors-20261109",
+    "manifest": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-city-connectors-20261109/manifest.json",
     "dist_sha256": {
       "assets/cs2-path-worker-DFcwOVUm.js": "98850414cebb8d678b7082ac85feaef178e9d67b2bf4f7cbb1707e248b3b074c",
-      "assets/index-DGSCxmwq.js": "3eaa0092de1cd8eeb477ae2b396683f33f9a6fb8494c905103929ac76244c47c",
+      "assets/index-DXDfEeU1.js": "1d10ebc66bb4273eb1a5c7f2bfc23918950c1d24c2e9c57608d8f6a8c007b2c4",
       "assets/index-Iu-XULhB.css": "cd61ad4b99cf784e94c5c3d6c0eebfba5ddc2784b8cad9e135d1a7bbcfab519c",
-      "index.html": "b71da037c05581ba799943031cf7db3e4e0444dfcda9d423990ab66953725971"
+      "index.html": "c95e7104741b1ce30992ac62c2e0ab8136a5b6d4a61ce3dc8820db079a3a95ca"
     },
     "service_restart_exit_code": 0,
-    "post_deploy_verification": "passed;8resourcehashes,2health,production smoke andLAN actual bundle6/6,0skip,0flaky",
-    "typecheck": "passed on exact merged source",
-    "browser_verification": {
-      "unique_cases": 6,
-      "passed": 6,
-      "postdeploy_first_attempt_passed": 6,
-      "artifact": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-user-visual-smooth-20261108/bundle-final-summary.json",
-      "postdeploy_report": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-user-visual-smooth-20261108/postdeploy-bundle-results.json"
-    },
+    "service_environment": "MainPID=117425\nEnvironment=ROADLAB_PORT=5173 ROADLAB_DIST_DIR=/home/bhw/repos/interchange-lab/.cache/deployments/integrated-city-connectors-20261109/dist\nActiveState=active\nSubState=running\n",
+    "post_deploy_verification": "passed;8resourcehashes,2health,production smoke,LAN4/4unique cases;0skip/0flaky",
     "previous_release": {
-      "id": "integrated-smooth-lanes-2b619311-20261108",
-      "commit": "2b6193117af42ec5967861af3d5e1bba612baf7e",
-      "source": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-smooth-lanes-2b619311-20261108/source",
-      "release": "/home/bhw/repos/interchange-lab/.cache/deployments/integrated-smooth-lanes-2b619311-20261108"
+      "id": "integrated-user-visual-smooth-20261108",
+      "commit": "b6767d15161744038dc73ed96ea3676c902a53c8",
+      "source": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-user-visual-smooth-20261108/source",
+      "release": "/home/bhw/repos/interchange-lab/.cache/deployments/integrated-user-visual-smooth-20261108"
     },
-    "rollback_directory": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-user-visual-smooth-20261108/rollback",
-    "service_environment": "MainPID=1989863\nEnvironment=ROADLAB_PORT=5173 ROADLAB_DIST_DIR=/home/bhw/repos/interchange-lab/.cache/deployments/integrated-user-visual-smooth-20261108/dist\nActiveState=active\nSubState=running\n",
-    "postdeploy_artifact": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-user-visual-smooth-20261108/postdeploy.json"
+    "rollback_directory": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-city-connectors-20261109/rollback",
+    "postdeploy_artifact": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-city-connectors-20261109/postdeploy.json"
   },
   "previous_cs2_preview_checks": [
     {
@@ -780,9 +757,9 @@
   "github_sync": {
     "repository": "https://github.com/hongwbao/roadLab",
     "branch": "main",
-    "pushed_application_commit": "b6767d15161744038dc73ed96ea3676c902a53c8",
-    "application_push_verified_at": "2026-11-08T15:54:36.083613+00:00",
-    "scope": "exact application merge pushed first;README/verification-only documentation commit follows;GitHub Actions not accepted in this delivery"
+    "pushed_application_commit": "572016805bb3be4c332171dc4abea862a9035161",
+    "application_push_record": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-city-connectors-20261109/app-sync.json",
+    "scope": "paired app source pushed before production-package/documentation tail;README/verification-only commit follows;GitHub Actions not accepted in this delivery"
   },
   "previous_road_expansion_deployment": {
     "version": "road-expansion-20261107-103432",
@@ -1872,14 +1849,15 @@
     ]
   },
   "completed_systems_release": {
-    "app_commit": "b6767d15161744038dc73ed96ea3676c902a53c8",
+    "app_commit": "572016805bb3be4c332171dc4abea862a9035161",
     "user_commit": "56b7417669d0478e2cb48dcd314e0c879d049df8",
     "local_visual_commit": "56bd8553d22042d80838104c76cea5b5794bf189",
     "focused_scope": [
       "node-only visual smoothing decoupled from logical geometry/traffic",
       "user forward/backward replacement counts shared by preview and commit",
       "user rolling external exits",
-      "strict canonical0/1 endpoint check for real external sink"
+      "strict canonical0/1 endpoint check for real external sink",
+      "shared true functional offset connector geometry independent of visual style; UI/native/compat/paving use same plan, aligned ordinary seams stay transparent"
     ],
     "deferred": [
       "overallProject/schema/completeCS2 reconstruction",
@@ -2293,7 +2271,7 @@
     "configure_calls": 0,
     "completed_actual_control": [1, 1],
     "failed": 0,
-    "scope": "automatic RAF isolated, saved actual facade.update invoked continuously;render cars,signals,plans,occupancy,clock,stats compared each matched sample;normal chronologicalparameter undo and reverse parameter-before-style order checked;true roadedit/undo structurally resets",
+    "scope": "Historical b676 production evidence only;not rerun or counted as current572 targeted cases. automatic RAF isolated, saved actual facade.update invoked continuously;render cars,signals,plans,occupancy,clock,stats compared each matched sample;normal chronologicalparameter undo and reverse parameter-before-style order checked;true roadedit/undo structurally resets",
     "artifact": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-user-visual-smooth-20261108/bundle-final-summary.json"
   },
   "new_direct_reference": {
@@ -2303,7 +2281,7 @@
     "merged_sha256": "0ff435a5728a191eb2a91fe0146cb993e8a38eb461274376748ba56f533a5d0c",
     "cases": 6,
     "real_trajectory_samples": 709,
-    "scope": "owner traffic exact5-file source matches;strict complete logical/trajectory equality for six fixtures.20km internal-sink correction intentionally differs and is separately tested;oldad27/750 SHA is historical only",
+    "scope": "Historical b676 direct reference only;functional offset geometry in572 intentionally changes old wrong paths. owner traffic exact5-file source matches;strict complete logical/trajectory equality for six fixtures.20km internal-sink correction intentionally differs and is separately tested;oldad27/750 SHA is historical only",
     "artifact": "/home/bhw/repos/interchange-lab/.cache/builds/rolling-exit-merge-r3-20261108/traffic-validation.json"
   },
   "unpublished_56bd_candidate": {
@@ -2326,5 +2304,354 @@
     "configure_calls": 0,
     "scope": "prior frozen node-visual sample;not warm hover benchmark orcurrent merge FPS promise;cold path remains about100ms",
     "artifact": "/home/bhw/repos/interchange-lab/.cache/builds/visual-only-smooth-r3/node-visual-performance.json"
+  },
+  "previous_b676_integrated_release_record": {
+    "recorded_at": "2026-11-08T15:56:32.547293+00:00",
+    "latest_change": "合并用户56b7417非对称道路替换/滚动出口与本地56bd节点视觉解耦；发布双父merge b6767d15。仅显示平滑保持逻辑/活动车辆/时钟；另修正20km道路内侧trim误判外部sink的端点资格。",
+    "record_type": "精确333文件merge archive生产包发布；按版本保留owner独立证据，不相加326/153/176/9或旧UI数量。代码已优先推送GitHub，文档随后单独交付。",
+    "checks": [
+      {
+        "command": "git merge origin/main --no-commit then owner resolution and explicit8-file merge commit",
+        "app_commit": "b6767d15161744038dc73ed96ea3676c902a53c8",
+        "parents": [
+          "56bd8553d22042d80838104c76cea5b5794bf189",
+          "56b7417669d0478e2cb48dcd314e0c879d049df8"
+        ],
+        "scope": "user commit preserved as ancestor;road3/traffic5 hashes verified before staging latest host;protected draft excluded",
+        "artifact": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-user-visual-smooth-20261108/manifest.json"
+      },
+      {
+        "command": "npm run build",
+        "exit_code": 0,
+        "scope": "exact merge333-file archive whole-project tsc and Vite;existing900kB chunk warning",
+        "artifact": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-user-visual-smooth-20261108/build.log"
+      },
+      {
+        "command": "reuse exact delivered road3 files and traffic5 files",
+        "scope": "road9UI belongs its isolated snapshot with prior host;traffic176/15suites belongs isolated traffic source with56bd UI;matching files verified but neither count relabeled whole-merge results",
+        "road_artifact": "/home/bhw/repos/interchange-lab/.cache/builds/user-remote-road-merge-20261108/validation.json",
+        "traffic_artifact": "/home/bhw/repos/interchange-lab/.cache/builds/rolling-exit-merge-r3-20261108/traffic-validation.json"
+      },
+      {
+        "command": "actual production-bundle Playwright integration on5194",
+        "unique_cases": 6,
+        "passed": 6,
+        "failed": 0,
+        "skipped": 0,
+        "scope": "real replacement UI2;real3to5/fifth target/common ports/full graph equality;continuous fixed-dt active car/controller/stats;normal live/visual history orders and structural negative control;rolling positive/reverse external/internal20km/red/blocked",
+        "artifact": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-user-visual-smooth-20261108/bundle-final-summary.json",
+        "initial_report": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-user-visual-smooth-20261108/bundle-results.json",
+        "followup_reports": [
+          "/home/bhw/repos/interchange-lab/.cache/builds/integrated-user-visual-smooth-20261108/bundle-followup-results.json",
+          "/home/bhw/repos/interchange-lab/.cache/builds/integrated-user-visual-smooth-20261108/bundle-final-targeted-results.json"
+        ],
+        "fixture_notes": "initial multi-exit actor legally chose another exit;real UI then established sole fifth target. Optional missingroadVisuals meansdirect. Original failed supplemental attempts retained;no product/original-test assertion edits."
+      },
+      {
+        "command": "SMOKE_URL=http://127.0.0.1:5194/ npm run test:smoke",
+        "exit_code": 0,
+        "artifact": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-user-visual-smooth-20261108/production-smoke.log"
+      },
+      {
+        "command": "postdeploy Environment/pointer/HTTP/production smoke/LAN bundle tests",
+        "passed": true,
+        "resource_hash_checks": 8,
+        "health_checks": 2,
+        "unique_bundle_cases": 6,
+        "first_attempt_passed": 6,
+        "failed": 0,
+        "skipped": 0,
+        "scope": "both address resources match original immutable dist;LAN complete6-case suite first attempt passes;page/console errors empty",
+        "artifact": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-user-visual-smooth-20261108/postdeploy.json",
+        "reporter": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-user-visual-smooth-20261108/postdeploy-bundle-results.json"
+      },
+      {
+        "command": "git push origin b6767d15161744038dc73ed96ea3676c902a53c8:refs/heads/main",
+        "exit_code": 0,
+        "remote_main_verified": "b6767d15161744038dc73ed96ea3676c902a53c8",
+        "scope": "fast-forward from user56b7417;no force;application pushed before documentation per user priority",
+        "artifact": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-user-visual-smooth-20261108/app-sync.json"
+      }
+    ],
+    "current_deployment": {
+      "version": "integrated-user-visual-smooth-20261108",
+      "url": "http://192.168.31.167:5173/",
+      "source_commit": "b6767d15161744038dc73ed96ea3676c902a53c8",
+      "source_snapshot": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-user-visual-smooth-20261108/source",
+      "parents": [
+        "56bd8553d22042d80838104c76cea5b5794bf189",
+        "56b7417669d0478e2cb48dcd314e0c879d049df8"
+      ],
+      "source_files": 333,
+      "source_manifest_sha256": "dcf7008403e721c8189ae011986bfbbc01a1feca26d6f023b8b84a40c4424383",
+      "release_directory": "/home/bhw/repos/interchange-lab/.cache/deployments/integrated-user-visual-smooth-20261108",
+      "manifest": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-user-visual-smooth-20261108/manifest.json",
+      "bundle": "index-DGSCxmwq.js",
+      "css": "index-Iu-XULhB.css",
+      "dist_sha256": {
+        "assets/cs2-path-worker-DFcwOVUm.js": "98850414cebb8d678b7082ac85feaef178e9d67b2bf4f7cbb1707e248b3b074c",
+        "assets/index-DGSCxmwq.js": "3eaa0092de1cd8eeb477ae2b396683f33f9a6fb8494c905103929ac76244c47c",
+        "assets/index-Iu-XULhB.css": "cd61ad4b99cf784e94c5c3d6c0eebfba5ddc2784b8cad9e135d1a7bbcfab519c",
+        "index.html": "b71da037c05581ba799943031cf7db3e4e0444dfcda9d423990ab66953725971"
+      },
+      "service_restart_exit_code": 0,
+      "post_deploy_verification": "passed;8resourcehashes,2health,production smoke andLAN actual bundle6/6,0skip,0flaky",
+      "typecheck": "passed on exact merged source",
+      "browser_verification": {
+        "unique_cases": 6,
+        "passed": 6,
+        "postdeploy_first_attempt_passed": 6,
+        "artifact": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-user-visual-smooth-20261108/bundle-final-summary.json",
+        "postdeploy_report": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-user-visual-smooth-20261108/postdeploy-bundle-results.json"
+      },
+      "previous_release": {
+        "id": "integrated-smooth-lanes-2b619311-20261108",
+        "commit": "2b6193117af42ec5967861af3d5e1bba612baf7e",
+        "source": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-smooth-lanes-2b619311-20261108/source",
+        "release": "/home/bhw/repos/interchange-lab/.cache/deployments/integrated-smooth-lanes-2b619311-20261108"
+      },
+      "rollback_directory": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-user-visual-smooth-20261108/rollback",
+      "service_environment": "MainPID=1989863\nEnvironment=ROADLAB_PORT=5173 ROADLAB_DIST_DIR=/home/bhw/repos/interchange-lab/.cache/deployments/integrated-user-visual-smooth-20261108/dist\nActiveState=active\nSubState=running\n",
+      "postdeploy_artifact": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-user-visual-smooth-20261108/postdeploy.json"
+    },
+    "github_sync": {
+      "repository": "https://github.com/hongwbao/roadLab",
+      "branch": "main",
+      "pushed_application_commit": "b6767d15161744038dc73ed96ea3676c902a53c8",
+      "application_push_verified_at": "2026-11-08T15:54:36.083613+00:00",
+      "scope": "exact application merge pushed first;README/verification-only documentation commit follows;GitHub Actions not accepted in this delivery"
+    },
+    "completed_systems_release": {
+      "app_commit": "b6767d15161744038dc73ed96ea3676c902a53c8",
+      "user_commit": "56b7417669d0478e2cb48dcd314e0c879d049df8",
+      "local_visual_commit": "56bd8553d22042d80838104c76cea5b5794bf189",
+      "focused_scope": [
+        "node-only visual smoothing decoupled from logical geometry/traffic",
+        "user forward/backward replacement counts shared by preview and commit",
+        "user rolling external exits",
+        "strict canonical0/1 endpoint check for real external sink"
+      ],
+      "deferred": [
+        "overallProject/schema/completeCS2 reconstruction",
+        "independent asymmetric crossing shared-node bug"
+      ],
+      "preserved": [
+        "least-occupied legal lane choice",
+        "no lane-change-only braking",
+        "signal tail/continuous green",
+        "receiving storage",
+        "real profiles/median/offset/direction"
+      ],
+      "saved_empty_rules": "no guessed restoration;manual relink or prior save required",
+      "protected_draft": "untouched/untracked/excluded"
+    },
+    "continuous_bundle_evidence": {
+      "frames": 3121,
+      "simulation_seconds": 52.016666666666666,
+      "matched_fixed_dt": 0.016666666666666666,
+      "ui_phases": ["apply", "undo", "redo", "right-cancel"],
+      "active_cars_each_phase": [1, 1, 1, 1],
+      "configure_calls": 0,
+      "completed_actual_control": [1, 1],
+      "failed": 0,
+      "scope": "automatic RAF isolated, saved actual facade.update invoked continuously;render cars,signals,plans,occupancy,clock,stats compared each matched sample;normal chronologicalparameter undo and reverse parameter-before-style order checked;true roadedit/undo structurally resets",
+      "artifact": "/home/bhw/repos/interchange-lab/.cache/builds/integrated-user-visual-smooth-20261108/bundle-final-summary.json"
+    },
+    "new_direct_reference": {
+      "baseline_commit": "56b7417669d0478e2cb48dcd314e0c879d049df8",
+      "smooth": "all off",
+      "sha256": "0ff435a5728a191eb2a91fe0146cb993e8a38eb461274376748ba56f533a5d0c",
+      "merged_sha256": "0ff435a5728a191eb2a91fe0146cb993e8a38eb461274376748ba56f533a5d0c",
+      "cases": 6,
+      "real_trajectory_samples": 709,
+      "scope": "owner traffic exact5-file source matches;strict complete logical/trajectory equality for six fixtures.20km internal-sink correction intentionally differs and is separately tested;oldad27/750 SHA is historical only",
+      "artifact": "/home/bhw/repos/interchange-lab/.cache/builds/rolling-exit-merge-r3-20261108/traffic-validation.json"
+    }
+  },
+  "connector_geometry_evidence": {
+    "app_commit": "572016805bb3be4c332171dc4abea862a9035161",
+    "intentional_difference": "Functional offset connection geometry changes the previous incorrect path;no old-pathSHA claim. New direct/style must remain strictly equal.",
+    "manual_bundle_directions": [
+      {
+        "direction": 1,
+        "sourceLane": 5,
+        "targetLane": 7,
+        "phases": [
+          {
+            "smooth": false,
+            "frames": 449,
+            "samples": 208,
+            "minSpeed": 16.666664783475692,
+            "maxAngleDegrees": 5.7033543078767845,
+            "reversed": false,
+            "entered": true,
+            "failed": 0,
+            "controls": [
+              {
+                "x": 89.57096902749078,
+                "y": 0,
+                "z": 12
+              },
+              {
+                "x": 109.85698967583025,
+                "y": 0,
+                "z": 12
+              },
+              {
+                "x": 130.14301032416972,
+                "y": 0,
+                "z": 16
+              },
+              {
+                "x": 150.4290309725092,
+                "y": 0,
+                "z": 16
+              }
+            ],
+            "graph_sha256": "48492837a76d2589ec7011223a67c4d13fb6c3866f8171f9f44128f2b003ad4c",
+            "trajectory_sha256": "c675111e13fe8074633de76943ad81d8652935b97eb3769ef777b78d9f78ab63"
+          },
+          {
+            "smooth": true,
+            "frames": 449,
+            "samples": 208,
+            "minSpeed": 16.666664783475692,
+            "maxAngleDegrees": 5.7033543078767845,
+            "reversed": false,
+            "entered": true,
+            "failed": 0,
+            "controls": [
+              {
+                "x": 89.57096902749078,
+                "y": 0,
+                "z": 12
+              },
+              {
+                "x": 109.85698967583025,
+                "y": 0,
+                "z": 12
+              },
+              {
+                "x": 130.14301032416972,
+                "y": 0,
+                "z": 16
+              },
+              {
+                "x": 150.4290309725092,
+                "y": 0,
+                "z": 16
+              }
+            ],
+            "graph_sha256": "48492837a76d2589ec7011223a67c4d13fb6c3866f8171f9f44128f2b003ad4c",
+            "trajectory_sha256": "c675111e13fe8074633de76943ad81d8652935b97eb3769ef777b78d9f78ab63"
+          }
+        ]
+      },
+      {
+        "direction": -1,
+        "sourceLane": 0,
+        "targetLane": 0,
+        "phases": [
+          {
+            "smooth": false,
+            "frames": 449,
+            "samples": 208,
+            "minSpeed": 16.666664267085487,
+            "maxAngleDegrees": 5.7033525147711845,
+            "reversed": false,
+            "entered": true,
+            "failed": 0,
+            "controls": [
+              {
+                "x": 30.429030972509224,
+                "y": 0,
+                "z": -12
+              },
+              {
+                "x": 10.14301032416967,
+                "y": 0,
+                "z": -12
+              },
+              {
+                "x": -10.143010324169879,
+                "y": 0,
+                "z": -16
+              },
+              {
+                "x": -30.429030972509434,
+                "y": 0,
+                "z": -16
+              }
+            ],
+            "graph_sha256": "6f08510e403ac0a6faacea42ed4ce322297c31e4779854f4c9bc0c8bedd7f941",
+            "trajectory_sha256": "92155ba3c2d26425cf6714d5b48e6cacd5008abafcefbd178e1047a1ba5ed7a3"
+          },
+          {
+            "smooth": true,
+            "frames": 449,
+            "samples": 208,
+            "minSpeed": 16.666664267085487,
+            "maxAngleDegrees": 5.7033525147711845,
+            "reversed": false,
+            "entered": true,
+            "failed": 0,
+            "controls": [
+              {
+                "x": 30.429030972509224,
+                "y": 0,
+                "z": -12
+              },
+              {
+                "x": 10.14301032416967,
+                "y": 0,
+                "z": -12
+              },
+              {
+                "x": -10.143010324169879,
+                "y": 0,
+                "z": -16
+              },
+              {
+                "x": -30.429030972509434,
+                "y": 0,
+                "z": -16
+              }
+            ],
+            "graph_sha256": "6f08510e403ac0a6faacea42ed4ce322297c31e4779854f4c9bc0c8bedd7f941",
+            "trajectory_sha256": "92155ba3c2d26425cf6714d5b48e6cacd5008abafcefbd178e1047a1ba5ed7a3"
+          }
+        ]
+      }
+    ],
+    "original_private_input": {
+      "sha256": "94ffb56bb98fdc41df871b58d6bfec34269217733c572c3a20d916430e1e7c26",
+      "roads": 21,
+      "rules": 55,
+      "traffic_multiplier": 0.5,
+      "seed": 19,
+      "fixed_dt": 0.016666666666666666,
+      "seconds": 120,
+      "generated_old_new": [300, 300],
+      "entered_old_new": [294, 294],
+      "completed_old_new": [95, 136],
+      "failed": 0,
+      "acute_turn_events_old_capped_new": [12, 0],
+      "connector_below1mps_vehicles_old_new": [56, 0],
+      "scope": "Owner original-input replay reused after exact final runtime/core and canonical graph equality;private map contents excluded from Git;bounded connector-specific observations,not global congestion/overlap guarantee."
+    },
+    "new_direct_style_original_map": {
+      "frames": 7200,
+      "graph_sha256": "ba41c8062081c3802f728702552eb43897f6a206a4bb50fef23461c4f79fac82",
+      "trajectory_signals_sha256": "eba6cc8f8acf29c6fe4d01a01ec0f2be2660e16da0c33bd0c84afa47a3709562",
+      "strictly_equal": true,
+      "scope": "owner final runtime/core identical;no repeated120s replay"
+    },
+    "pavement_owner": {
+      "cases": 12,
+      "poses": 4764,
+      "body_points": 400176,
+      "outside": 0
+    },
+    "fixture_notes": "Crossed mapping fixtures moved from old cropped-away s110 to actual source endpoint-10m=62;manual/forbidden/cache/completion/overlap assertions retained. In-progress adoption/overrun tests unchanged. Smooth tests reflect true functional trim rather than obsolete zero-trim policy;no safety algorithm/assertion reduction."
   }
 }
