@@ -55,6 +55,19 @@ for (const median of [false, true])
       };
     }, median);
     await page.waitForTimeout(350);
+    // fit/top can precede the renderer's camera-matrix update in a cold bundle.
+    // Wait for the fitted node's actual projection, then capture click/ROI data.
+    await page.waitForFunction(
+      () => {
+        const p = (window as any).lab.worldToScreen({ x: 0, y: 0, z: 0 });
+        return (
+          Math.abs(p.x - innerWidth / 2) < 1 &&
+          Math.abs(p.y - innerHeight / 2) < 1
+        );
+      },
+      undefined,
+      { timeout: 10000 },
+    );
     const center = await page.evaluate(() =>
       (window as any).lab.worldToScreen({ x: 0, y: 0, z: 0 }),
     );
